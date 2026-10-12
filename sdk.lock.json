@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "binding_version": "1.25.2",
+  "sdk_version": "5.14.3",
+  "target": "x86_64-pc-windows-msvc",
+  "archive": "MAA-win-x86_64-v5.14.3.zip",
+  "url": "https://github.com/MaaXYZ/MaaFramework/releases/download/v5.14.3/MAA-win-x86_64-v5.14.3.zip",
+  "sha256": "4042fde31c583cc5125ec5b12257f8d1929672bb5cb64c9052c34fc8ff4bb8ff",
+  "runtime_directory": "sdk/maa/bin"
+}

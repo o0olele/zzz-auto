@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = ["crates/od-core", "crates/od-protocol", "crates/maa-adapter", "crates/od-platform", "crates/zzz-engine", "crates/od-tools", "apps/desktop/src-tauri"]
+default-members = ["crates/od-core", "crates/od-protocol", "crates/maa-adapter", "crates/od-platform", "crates/zzz-engine", "crates/od-tools"]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-3.0-or-later"
+
+[workspace.dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
+thiserror = "2.0"
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "signal"] }
+uuid = { version = "1.18", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
+sha2 = "0.10"
+hex = "0.4"
+walkdir = "2.5"
+regex = "1.12"
+base64 = "0.22"
+ts-rs = { version = "11.0", features = ["uuid-impl", "serde-json-impl"] }
+maa-framework = { version = "=1.25.2", default-features = false, features = ["dynamic", "win32", "toolkit", "custom"] }
+maa-framework-sys = { version = "=5.14.3", default-features = false, features = ["dynamic", "toolkit"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading", "Win32_System_Pipes", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_System_RemoteDesktop"] }
+od-core = { path = "crates/od-core" }
+od-protocol = { path = "crates/od-protocol" }
+od-platform = { path = "crates/od-platform" }
+maa-adapter = { path = "crates/maa-adapter" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

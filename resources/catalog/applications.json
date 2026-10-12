@@ -1,0 +1,773 @@
+[
+  {
+    "id": "notify",
+    "name": "通知",
+    "execution": "rust_service",
+    "reason": "网络服务和通知使用 Rust，不经过游戏控制器",
+    "factory": "src/zzz_od/application/notify/notify_app_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [
+      "src/zzz_od/application/notify/notify_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/notify/__init__.py",
+      "src/zzz_od/application/notify/notify_app.py",
+      "src/zzz_od/application/notify/notify_app_factory.py",
+      "src/zzz_od/application/notify/notify_const.py",
+      "src/zzz_od/application/notify/notify_run_record.py"
+    ],
+    "priority": 3000,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "drive_disc_dismantle",
+    "name": "驱动盘拆解",
+    "execution": "pipeline",
+    "reason": "识别、点击和画面等待为主，结果及配置由 Rust 管理",
+    "factory": "src/zzz_od/application/drive_disc_dismantle/drive_disc_dismantle_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/drive_disc_dismantle/drive_disc_dismantle_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/drive_disc_dismantle_setting_flyout.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/drive_disc_dismantle/drive_disc_dismantle_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/drive_disc_dismantle/__init__.py",
+      "src/zzz_od/application/drive_disc_dismantle/drive_disc_dismantle_app.py",
+      "src/zzz_od/application/drive_disc_dismantle/drive_disc_dismantle_app_factory.py",
+      "src/zzz_od/application/drive_disc_dismantle/drive_disc_dismantle_app_setting.py",
+      "src/zzz_od/application/drive_disc_dismantle/drive_disc_dismantle_config.py",
+      "src/zzz_od/application/drive_disc_dismantle/drive_disc_dismantle_const.py",
+      "src/zzz_od/application/drive_disc_dismantle/drive_disc_dismantle_run_record.py"
+    ],
+    "priority": 1700,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "life_on_line",
+    "name": "真·拿命验收",
+    "execution": "hybrid",
+    "reason": "Rust 管理挑战、战斗与恢复，界面操作使用 Maa Pipeline",
+    "factory": "src/zzz_od/application/life_on_line/life_on_line_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/life_on_line/life_on_line_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/life_on_line_setting_flyout.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/life_on_line/life_on_line_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/life_on_line/__init__.py",
+      "src/zzz_od/application/life_on_line/life_on_line_app.py",
+      "src/zzz_od/application/life_on_line/life_on_line_app_factory.py",
+      "src/zzz_od/application/life_on_line/life_on_line_app_setting.py",
+      "src/zzz_od/application/life_on_line/life_on_line_config.py",
+      "src/zzz_od/application/life_on_line/life_on_line_const.py",
+      "src/zzz_od/application/life_on_line/life_on_line_run_record.py"
+    ],
+    "priority": 1600,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "world_patrol",
+    "name": "锄大地",
+    "execution": "rust",
+    "reason": "路径、转向和复杂状态决策由 Rust 实现，识别和输入经 Maa",
+    "factory": "src/zzz_od/application/world_patrol/world_patrol_factory.py",
+    "configs": [
+      "src/zzz_od/application/world_patrol/world_patrol_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/world_patrol_combined_setting_interface.py",
+      "src/zzz_od/gui/view/world_patrol/world_patrol_setting_interface.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/world_patrol/world_patrol_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/world_patrol/__init__.py",
+      "src/zzz_od/application/world_patrol/cal_pos_utils.py",
+      "src/zzz_od/application/world_patrol/mini_map_wrapper.py",
+      "src/zzz_od/application/world_patrol/operation/__init__.py",
+      "src/zzz_od/application/world_patrol/operation/transport_by_3d_map.py",
+      "src/zzz_od/application/world_patrol/operation/world_patrol_run_route.py",
+      "src/zzz_od/application/world_patrol/world_patrol_app.py",
+      "src/zzz_od/application/world_patrol/world_patrol_app_setting.py",
+      "src/zzz_od/application/world_patrol/world_patrol_area.py",
+      "src/zzz_od/application/world_patrol/world_patrol_config.py",
+      "src/zzz_od/application/world_patrol/world_patrol_const.py",
+      "src/zzz_od/application/world_patrol/world_patrol_factory.py",
+      "src/zzz_od/application/world_patrol/world_patrol_route.py",
+      "src/zzz_od/application/world_patrol/world_patrol_route_list.py",
+      "src/zzz_od/application/world_patrol/world_patrol_run_record.py",
+      "src/zzz_od/application/world_patrol/world_patrol_service.py"
+    ],
+    "priority": 1500,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "suibian_temple",
+    "name": "随便观",
+    "execution": "hybrid",
+    "reason": "Rust 保留配置、导航和经营决策，界面步骤使用 Maa Pipeline",
+    "factory": "src/zzz_od/application/suibian_temple/suibian_temple_factory.py",
+    "configs": [
+      "src/zzz_od/application/suibian_temple/suibian_temple_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/suibian_temple_setting_interface.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/suibian_temple/suibian_temple_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/suibian_temple/__init__.py",
+      "src/zzz_od/application/suibian_temple/operations/__init__.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_adventure_dispatch.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_adventure_squad.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_auto_manage.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_boo_box.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_craft.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_craft_dispatch.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_good_goods.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_pawnshop.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_sales_stall.py",
+      "src/zzz_od/application/suibian_temple/operations/suibian_temple_yum_cha_sin.py",
+      "src/zzz_od/application/suibian_temple/suibian_temple_app.py",
+      "src/zzz_od/application/suibian_temple/suibian_temple_app_setting.py",
+      "src/zzz_od/application/suibian_temple/suibian_temple_config.py",
+      "src/zzz_od/application/suibian_temple/suibian_temple_const.py",
+      "src/zzz_od/application/suibian_temple/suibian_temple_factory.py",
+      "src/zzz_od/application/suibian_temple/suibian_temple_run_record.py"
+    ],
+    "priority": 1400,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "intel_board",
+    "name": "情报板",
+    "execution": "hybrid",
+    "reason": "Rust 保留配置、导航和经营决策，界面步骤使用 Maa Pipeline",
+    "factory": "src/zzz_od/application/intel_board/intel_board_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/intel_board/intel_board_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/intel_board_setting_flyout.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/intel_board/intel_board_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/intel_board/__init__.py",
+      "src/zzz_od/application/intel_board/intel_board_app.py",
+      "src/zzz_od/application/intel_board/intel_board_app_factory.py",
+      "src/zzz_od/application/intel_board/intel_board_app_setting.py",
+      "src/zzz_od/application/intel_board/intel_board_config.py",
+      "src/zzz_od/application/intel_board/intel_board_const.py",
+      "src/zzz_od/application/intel_board/intel_board_run_record.py"
+    ],
+    "priority": 1300,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "shiyu_defense",
+    "name": "式舆防卫战",
+    "execution": "hybrid",
+    "reason": "Rust 管理挑战、战斗与恢复，界面操作使用 Maa Pipeline",
+    "factory": "src/zzz_od/application/shiyu_defense/shiyu_defense_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/shiyu_defense_setting_interface.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/shiyu_defense/__init__.py",
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_app.py",
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_app_factory.py",
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_app_setting.py",
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_battle.py",
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_config.py",
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_const.py",
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_run_record.py",
+      "src/zzz_od/application/shiyu_defense/shiyu_defense_team_utils.py"
+    ],
+    "priority": 1210,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "withered_domain",
+    "name": "枯萎之都",
+    "execution": "rust",
+    "reason": "路径、转向和复杂状态决策由 Rust 实现，识别和输入经 Maa",
+    "factory": "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/withered_domain_combined_setting_interface.py",
+      "src/zzz_od/gui/view/hollow_zero/withered_domain_setting_interface.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/hollow_zero/withered_domain/__init__.py",
+      "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_app.py",
+      "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_app_factory.py",
+      "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_app_setting.py",
+      "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_config.py",
+      "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_const.py",
+      "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_context.py",
+      "src/zzz_od/application/hollow_zero/withered_domain/withered_domain_run_record.py"
+    ],
+    "priority": 1120,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "lost_void",
+    "name": "迷失之地",
+    "execution": "rust",
+    "reason": "路径、转向和复杂状态决策由 Rust 实现，识别和输入经 Maa",
+    "factory": "src/zzz_od/application/hollow_zero/lost_void/lost_void_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_challenge_config.py",
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/lost_void_combined_setting_interface.py",
+      "src/zzz_od/gui/view/hollow_zero/lost_void_setting_interface.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/hollow_zero/lost_void/__init__.py",
+      "src/zzz_od/application/hollow_zero/lost_void/context/__init__.py",
+      "src/zzz_od/application/hollow_zero/lost_void/context/lost_void_artifact.py",
+      "src/zzz_od/application/hollow_zero/lost_void/context/lost_void_context.py",
+      "src/zzz_od/application/hollow_zero/lost_void/context/lost_void_det_class.py",
+      "src/zzz_od/application/hollow_zero/lost_void/context/lost_void_detector.py",
+      "src/zzz_od/application/hollow_zero/lost_void/context/lost_void_investigation_strategy.py",
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_app.py",
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_app_factory.py",
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_app_setting.py",
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_challenge_config.py",
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_config.py",
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_const.py",
+      "src/zzz_od/application/hollow_zero/lost_void/lost_void_run_record.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/__init__.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/interact/__init__.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_artifact_pos.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_bangboo_store.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_choose_common.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_choose_gear.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_interact_target_const.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_lottery.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_route_change.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/lost_void_move_by_det.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/lost_void_run_level.py",
+      "src/zzz_od/application/hollow_zero/lost_void/operation/update_priority_operation.py"
+    ],
+    "priority": 1110,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "notorious_hunt",
+    "name": "恶名狩猎",
+    "execution": "hybrid",
+    "reason": "Rust 管理挑战、战斗与恢复，界面操作使用 Maa Pipeline",
+    "factory": "src/zzz_od/application/notorious_hunt/notorious_hunt_factory.py",
+    "configs": [
+      "src/zzz_od/application/notorious_hunt/notorious_hunt_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/notorious_hunt_setting_interface.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/notorious_hunt/notorious_hunt_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/notorious_hunt/__init__.py",
+      "src/zzz_od/application/notorious_hunt/notorious_hunt_app.py",
+      "src/zzz_od/application/notorious_hunt/notorious_hunt_app_setting.py",
+      "src/zzz_od/application/notorious_hunt/notorious_hunt_config.py",
+      "src/zzz_od/application/notorious_hunt/notorious_hunt_const.py",
+      "src/zzz_od/application/notorious_hunt/notorious_hunt_factory.py",
+      "src/zzz_od/application/notorious_hunt/notorious_hunt_run_record.py"
+    ],
+    "priority": 1000,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "ridu_weekly",
+    "name": "丽都周纪 (领奖励)",
+    "execution": "pipeline",
+    "reason": "识别、点击和画面等待为主，结果及配置由 Rust 管理",
+    "factory": "src/zzz_od/application/ridu_weekly/ridu_weekly_app_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [
+      "src/zzz_od/application/ridu_weekly/ridu_weekly_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/ridu_weekly/__init__.py",
+      "src/zzz_od/application/ridu_weekly/ridu_weekly_app.py",
+      "src/zzz_od/application/ridu_weekly/ridu_weekly_app_factory.py",
+      "src/zzz_od/application/ridu_weekly/ridu_weekly_const.py",
+      "src/zzz_od/application/ridu_weekly/ridu_weekly_run_record.py"
+    ],
+    "priority": 900,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "city_fund",
+    "name": "丽都城募",
+    "execution": "pipeline",
+    "reason": "识别、点击和画面等待为主，结果及配置由 Rust 管理",
+    "factory": "src/zzz_od/application/city_fund/city_fund_app_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [
+      "src/zzz_od/application/city_fund/city_fund_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/city_fund/__init__.py",
+      "src/zzz_od/application/city_fund/city_fund_app.py",
+      "src/zzz_od/application/city_fund/city_fund_app_factory.py",
+      "src/zzz_od/application/city_fund/city_fund_const.py",
+      "src/zzz_od/application/city_fund/city_fund_run_record.py"
+    ],
+    "priority": 800,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "engagement_reward",
+    "name": "活跃度奖励",
+    "execution": "pipeline",
+    "reason": "识别、点击和画面等待为主，结果及配置由 Rust 管理",
+    "factory": "src/zzz_od/application/engagement_reward/engagement_reward_app_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [
+      "src/zzz_od/application/engagement_reward/engagement_reward_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/engagement_reward/__init__.py",
+      "src/zzz_od/application/engagement_reward/engagement_reward_app.py",
+      "src/zzz_od/application/engagement_reward/engagement_reward_app_factory.py",
+      "src/zzz_od/application/engagement_reward/engagement_reward_const.py",
+      "src/zzz_od/application/engagement_reward/engagement_reward_run_record.py"
+    ],
+    "priority": 700,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "charge_plan",
+    "name": "体力刷本",
+    "execution": "hybrid",
+    "reason": "Rust 管理挑战、战斗与恢复，界面操作使用 Maa Pipeline",
+    "factory": "src/zzz_od/application/charge_plan/charge_plan_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/charge_plan/charge_plan_config.py"
+    ],
+    "settings": [],
+    "run_records": [
+      "src/zzz_od/application/charge_plan/charge_plan_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/charge_plan/__init__.py",
+      "src/zzz_od/application/charge_plan/charge_plan_app.py",
+      "src/zzz_od/application/charge_plan/charge_plan_app_factory.py",
+      "src/zzz_od/application/charge_plan/charge_plan_app_setting.py",
+      "src/zzz_od/application/charge_plan/charge_plan_config.py",
+      "src/zzz_od/application/charge_plan/charge_plan_const.py",
+      "src/zzz_od/application/charge_plan/charge_plan_run_record.py"
+    ],
+    "priority": 600,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "coffee",
+    "name": "咖啡店",
+    "execution": "hybrid",
+    "reason": "Rust 保留配置、导航和经营决策，界面步骤使用 Maa Pipeline",
+    "factory": "src/zzz_od/application/coffee/coffee_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/coffee/coffee_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/coffee_setting_flyout.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/coffee/coffee_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/coffee/__init__.py",
+      "src/zzz_od/application/coffee/coffee_app.py",
+      "src/zzz_od/application/coffee/coffee_app_const.py",
+      "src/zzz_od/application/coffee/coffee_app_factory.py",
+      "src/zzz_od/application/coffee/coffee_app_setting.py",
+      "src/zzz_od/application/coffee/coffee_config.py",
+      "src/zzz_od/application/coffee/coffee_run_record.py"
+    ],
+    "priority": 500,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "random_play",
+    "name": "录像店营业",
+    "execution": "hybrid",
+    "reason": "Rust 保留配置、导航和经营决策，界面步骤使用 Maa Pipeline",
+    "factory": "src/zzz_od/application/random_play/random_play_factory.py",
+    "configs": [
+      "src/zzz_od/application/random_play/random_play_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/random_play_setting_flyout.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/random_play/random_play_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/random_play/__init__.py",
+      "src/zzz_od/application/random_play/random_play_app.py",
+      "src/zzz_od/application/random_play/random_play_app_setting.py",
+      "src/zzz_od/application/random_play/random_play_config.py",
+      "src/zzz_od/application/random_play/random_play_const.py",
+      "src/zzz_od/application/random_play/random_play_factory.py",
+      "src/zzz_od/application/random_play/random_play_run_record.py"
+    ],
+    "priority": 400,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "hou_hou_bakery",
+    "name": "吼吼饼铺",
+    "execution": "hybrid",
+    "reason": "Rust 保留配置、导航和经营决策，界面步骤使用 Maa Pipeline",
+    "factory": "src/zzz_od/application/hou_hou_bakery/hou_hou_bakery_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [
+      "src/zzz_od/application/hou_hou_bakery/hou_hou_bakery_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/hou_hou_bakery/__init__.py",
+      "src/zzz_od/application/hou_hou_bakery/hou_hou_bakery_app.py",
+      "src/zzz_od/application/hou_hou_bakery/hou_hou_bakery_const.py",
+      "src/zzz_od/application/hou_hou_bakery/hou_hou_bakery_factory.py",
+      "src/zzz_od/application/hou_hou_bakery/hou_hou_bakery_run_record.py"
+    ],
+    "priority": 330,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "trigrams_collection",
+    "name": "卦象集录",
+    "execution": "pipeline",
+    "reason": "识别、点击和画面等待为主，结果及配置由 Rust 管理",
+    "factory": "src/zzz_od/application/trigrams_collection/trigrams_collection_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [],
+    "source_files": [
+      "src/zzz_od/application/trigrams_collection/__init__.py",
+      "src/zzz_od/application/trigrams_collection/trigrams_collection_app.py",
+      "src/zzz_od/application/trigrams_collection/trigrams_collection_const.py",
+      "src/zzz_od/application/trigrams_collection/trigrams_collection_factory.py",
+      "src/zzz_od/application/trigrams_collection/trigrams_collection_record.py"
+    ],
+    "priority": 320,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "scratch_card",
+    "name": "刮刮卡",
+    "execution": "pipeline",
+    "reason": "识别、点击和画面等待为主，结果及配置由 Rust 管理",
+    "factory": "src/zzz_od/application/scratch_card/scratch_card_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [
+      "src/zzz_od/application/scratch_card/scratch_card_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/scratch_card/__init__.py",
+      "src/zzz_od/application/scratch_card/scratch_card_app.py",
+      "src/zzz_od/application/scratch_card/scratch_card_const.py",
+      "src/zzz_od/application/scratch_card/scratch_card_factory.py",
+      "src/zzz_od/application/scratch_card/scratch_card_run_record.py"
+    ],
+    "priority": 310,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "daily_signin",
+    "name": "每日签到",
+    "execution": "rust_service",
+    "reason": "网络服务和通知使用 Rust，不经过游戏控制器",
+    "factory": "src/zzz_od/application/daily_signin/daily_signin_factory.py",
+    "configs": [
+      "src/zzz_od/application/daily_signin/daily_signin_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/daily_signin_setting_flyout.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/daily_signin/daily_signin_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/daily_signin/__init__.py",
+      "src/zzz_od/application/daily_signin/daily_signin_app.py",
+      "src/zzz_od/application/daily_signin/daily_signin_app_setting.py",
+      "src/zzz_od/application/daily_signin/daily_signin_config.py",
+      "src/zzz_od/application/daily_signin/daily_signin_const.py",
+      "src/zzz_od/application/daily_signin/daily_signin_factory.py",
+      "src/zzz_od/application/daily_signin/daily_signin_run_record.py"
+    ],
+    "priority": 300,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "email",
+    "name": "邮件",
+    "execution": "pipeline",
+    "reason": "识别、点击和画面等待为主，结果及配置由 Rust 管理",
+    "factory": "src/zzz_od/application/email_app/email_app_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [
+      "src/zzz_od/application/email_app/email_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/email_app/__init__.py",
+      "src/zzz_od/application/email_app/email_app.py",
+      "src/zzz_od/application/email_app/email_app_const.py",
+      "src/zzz_od/application/email_app/email_app_factory.py",
+      "src/zzz_od/application/email_app/email_run_record.py"
+    ],
+    "priority": 200,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "redemption_code",
+    "name": "兑换码",
+    "execution": "pipeline",
+    "reason": "识别、点击和画面等待为主，结果及配置由 Rust 管理",
+    "factory": "src/zzz_od/application/redemption_code/redemption_code_factory.py",
+    "configs": [
+      "src/zzz_od/application/redemption_code/redemption_code_config.py"
+    ],
+    "settings": [
+      "src/zzz_od/gui/app_setting/redemption_code_setting_interface.py"
+    ],
+    "run_records": [
+      "src/zzz_od/application/redemption_code/redemption_code_run_record.py"
+    ],
+    "source_files": [
+      "src/zzz_od/application/redemption_code/__init__.py",
+      "src/zzz_od/application/redemption_code/redemption_code_app.py",
+      "src/zzz_od/application/redemption_code/redemption_code_app_setting.py",
+      "src/zzz_od/application/redemption_code/redemption_code_config.py",
+      "src/zzz_od/application/redemption_code/redemption_code_const.py",
+      "src/zzz_od/application/redemption_code/redemption_code_factory.py",
+      "src/zzz_od/application/redemption_code/redemption_code_run_record.py"
+    ],
+    "priority": 100,
+    "default_group": true,
+    "implemented": false
+  },
+  {
+    "id": "auto_battle",
+    "name": "自动战斗",
+    "execution": "rust",
+    "reason": "高频状态时间窗、声音及动作抢占由 Rust 实现，识别和输入经 Maa",
+    "factory": "src/zzz_od/application/battle_assistant/auto_battle/auto_battle_app_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [],
+    "source_files": [
+      "src/zzz_od/application/battle_assistant/auto_battle/__init__.py",
+      "src/zzz_od/application/battle_assistant/auto_battle/auto_battle_app.py",
+      "src/zzz_od/application/battle_assistant/auto_battle/auto_battle_app_factory.py",
+      "src/zzz_od/application/battle_assistant/auto_battle/auto_battle_const.py"
+    ],
+    "priority": 0,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "commission_assistant",
+    "name": "委托助手",
+    "execution": "rust",
+    "reason": "路径、转向和复杂状态决策由 Rust 实现，识别和输入经 Maa",
+    "factory": "src/zzz_od/application/commission_assistant/commission_assistant_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/commission_assistant/commission_assistant_config.py"
+    ],
+    "settings": [],
+    "run_records": [],
+    "source_files": [
+      "src/zzz_od/application/commission_assistant/__init__.py",
+      "src/zzz_od/application/commission_assistant/commission_assistant_app.py",
+      "src/zzz_od/application/commission_assistant/commission_assistant_app_factory.py",
+      "src/zzz_od/application/commission_assistant/commission_assistant_config.py",
+      "src/zzz_od/application/commission_assistant/commission_assistant_const.py"
+    ],
+    "priority": 0,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "dodge_assistant",
+    "name": "闪避助手",
+    "execution": "rust",
+    "reason": "高频状态时间窗、声音及动作抢占由 Rust 实现，识别和输入经 Maa",
+    "factory": "src/zzz_od/application/battle_assistant/dodge_assitant/dodge_assistant_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [],
+    "source_files": [
+      "src/zzz_od/application/battle_assistant/dodge_assitant/__init__.py",
+      "src/zzz_od/application/battle_assistant/dodge_assitant/dodge_assistant_app.py",
+      "src/zzz_od/application/battle_assistant/dodge_assitant/dodge_assistant_const.py",
+      "src/zzz_od/application/battle_assistant/dodge_assitant/dodge_assistant_factory.py"
+    ],
+    "priority": 0,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "mouse_sensitivity_checker",
+    "name": "鼠标灵敏度检测",
+    "execution": "rust",
+    "reason": "编排、调试、测量或识别结果处理保留 Rust 业务接口",
+    "factory": "src/zzz_od/application/game_config_checker/mouse_sensitivity_checker/mouse_sensitivity_checker_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [],
+    "source_files": [
+      "src/zzz_od/application/game_config_checker/mouse_sensitivity_checker/__init__.py",
+      "src/zzz_od/application/game_config_checker/mouse_sensitivity_checker/mouse_sensitivity_checker.py",
+      "src/zzz_od/application/game_config_checker/mouse_sensitivity_checker/mouse_sensitivity_checker_const.py",
+      "src/zzz_od/application/game_config_checker/mouse_sensitivity_checker/mouse_sensitivity_checker_factory.py"
+    ],
+    "priority": 0,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "one_dragon",
+    "name": "一条龙",
+    "execution": "rust",
+    "reason": "编排、调试、测量或识别结果处理保留 Rust 业务接口",
+    "factory": "src/zzz_od/application/one_dragon_app/zzz_one_dragon_app_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [],
+    "source_files": [
+      "src/zzz_od/application/one_dragon_app/__init__.py",
+      "src/zzz_od/application/one_dragon_app/zzz_one_dragon_app.py",
+      "src/zzz_od/application/one_dragon_app/zzz_one_dragon_app_const.py",
+      "src/zzz_od/application/one_dragon_app/zzz_one_dragon_app_factory.py"
+    ],
+    "priority": 0,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "operation_debug",
+    "name": "指令调试",
+    "execution": "rust",
+    "reason": "编排、调试、测量或识别结果处理保留 Rust 业务接口",
+    "factory": "src/zzz_od/application/devtools/operation_debug/operation_debug_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/devtools/operation_debug/operation_debug_config.py"
+    ],
+    "settings": [],
+    "run_records": [],
+    "source_files": [
+      "src/zzz_od/application/devtools/operation_debug/__init__.py",
+      "src/zzz_od/application/devtools/operation_debug/operation_debug_app.py",
+      "src/zzz_od/application/devtools/operation_debug/operation_debug_app_factory.py",
+      "src/zzz_od/application/devtools/operation_debug/operation_debug_config.py",
+      "src/zzz_od/application/devtools/operation_debug/operation_debug_const.py"
+    ],
+    "priority": 0,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "predefined_team_checker",
+    "name": "预备编队角色识别",
+    "execution": "rust",
+    "reason": "编排、调试、测量或识别结果处理保留 Rust 业务接口",
+    "factory": "src/zzz_od/application/game_config_checker/predefined_team_checker/predefined_team_checker_factory.py",
+    "configs": [],
+    "settings": [],
+    "run_records": [],
+    "source_files": [
+      "src/zzz_od/application/game_config_checker/predefined_team_checker/__init__.py",
+      "src/zzz_od/application/game_config_checker/predefined_team_checker/predefined_team_checker.py",
+      "src/zzz_od/application/game_config_checker/predefined_team_checker/predefined_team_checker_const.py",
+      "src/zzz_od/application/game_config_checker/predefined_team_checker/predefined_team_checker_factory.py"
+    ],
+    "priority": 0,
+    "default_group": false,
+    "implemented": false
+  },
+  {
+    "id": "screenshot_helper",
+    "name": "闪避截图",
+    "execution": "rust",
+    "reason": "编排、调试、测量或识别结果处理保留 Rust 业务接口",
+    "factory": "src/zzz_od/application/devtools/screenshot_helper/screenshot_helper_app_factory.py",
+    "configs": [
+      "src/zzz_od/application/devtools/screenshot_helper/screenshot_helper_config.py"
+    ],
+    "settings": [],
+    "run_records": [],
+    "source_files": [
+      "src/zzz_od/application/devtools/screenshot_helper/__init__.py",
+      "src/zzz_od/application/devtools/screenshot_helper/screenshot_helper_app.py",
+      "src/zzz_od/application/devtools/screenshot_helper/screenshot_helper_app_factory.py",
+      "src/zzz_od/application/devtools/screenshot_helper/screenshot_helper_config.py",
+      "src/zzz_od/application/devtools/screenshot_helper/screenshot_helper_const.py"
+    ],
+    "priority": 0,
+    "default_group": false,
+    "implemented": false
+  }
+]

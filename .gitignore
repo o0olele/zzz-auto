@@ -1,0 +1,13 @@
+/target/
+/artifacts/
+/sdk/
+/data/
+/zzz-od-test/
+/resources/generated/
+**/node_modules/
+**/dist/
+**/gen/
+/apps/desktop/src-tauri/binaries/
+*.log
+*.tsbuildinfo
+.env

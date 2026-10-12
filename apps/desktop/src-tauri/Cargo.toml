@@ -1,0 +1,25 @@
+[package]
+name = "zzz-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[dependencies]
+tauri = { version = "2.10", features = ["tray-icon"] }
+od-core.workspace = true
+od-protocol.workspace = true
+od-platform.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "绝区零一条龙 · Rust",
+  "version": "0.1.1",
+  "identifier": "io.onedragon.zzz-auto",
+  "build": {
+    "beforeDevCommand": "npm run prepare:engine && npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run prepare:engine -- --release && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{ "label": "main", "title": "绝区零一条龙 · Rust 原型", "width": 1280, "height": 840, "minWidth": 960, "minHeight": 640 }],
+    "security": { "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; script-src 'self'" }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "externalBin": ["binaries/zzz-auto-engine"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "resources": {
+      "../../../resources/pipeline/": "resources/pipeline/",
+      "../../../resources/catalog/": "resources/catalog/",
+      "../../../resources/sdk-manifest.json": "resources/sdk-manifest.json",
+      "../../../resources/licenses/": "licenses/",
+      "../../../LICENSE": "licenses/project.LICENSE",
+      "../../../docs/migration/third-party.md": "licenses/THIRD-PARTY.md",
+      "../../../sdk/maa/bin/*.dll": "sdk/maa/bin/"
+    },
+    "windows": { "nsis": { "displayLanguageSelector": true, "languages": ["SimpChinese", "English"] } }
+  }
+}

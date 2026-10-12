@@ -1,0 +1,17 @@
+// 由 od-tools types 生成；请修改 Rust 协议。
+export type AppDefinition = { id: string, name: string, execution: string, reason: string, factory: string, configs: Array<string>, settings: Array<string>, run_records: Array<string>, source_files: Array<string>, priority: number, default_group: boolean, implemented: boolean, };
+export type RunState = "running" | "stopping" | "succeeded" | "failed" | "stopped";
+export type RunRecord = { id: string, app_id: string, state: RunState, started_at: string, finished_at: string | null, message: string, };
+export type RunEvent = { sequence: number, run_id: string | null, at: string, level: string, message: string, };
+export type WindowInfo = { hwnd: string, pid: number, title: string, executable: string, width: number, height: number, };
+export type SdkStatus = { ready: boolean, version: string | null, expected_version: string, binding_version: string, directory: string, message: string, };
+export type CaptureMethod = "frame_pool" | "print_window" | "dxgi" | "screen_dc" | "gdi";
+export type ScreenshotQuality = { mean_luma: number, dark_pixel_ratio: number, near_black: boolean, };
+export type Snapshot = { engine_version: string, sdk: SdkStatus, window: WindowInfo | null, capture_method: CaptureMethod | null, run: RunRecord | null, events: Array<RunEvent>, event_sequence: number, dropped_events: number, };
+export type Screenshot = { png_base64: string, width: number, height: number, color_order: string, capture_method: CaptureMethod | null, quality: ScreenshotQuality, captured_at: string, elapsed_ms: number, };
+export type Command = { "type": "snapshot" } | { "type": "applications" } | { "type": "windows" } | { "type": "attach", "params": { hwnd: string, capture_method: CaptureMethod, } } | { "type": "screenshot" } | { "type": "start_probe" } | { "type": "start_application", "params": { app_id: string, } } | { "type": "stop", "params": { run_id: string, } } | { "type": "events", "params": { after: number, } } | { "type": "shutdown" };
+export type Request = { version: number, id: string, command: Command, };
+export type Payload = { "type": "snapshot", "data": Snapshot } | { "type": "applications", "data": Array<AppDefinition> } | { "type": "windows", "data": Array<WindowInfo> } | { "type": "screenshot", "data": Screenshot } | { "type": "run", "data": RunRecord } | { "type": "events", "data": Array<RunEvent> } | { "type": "ack" };
+export type ApiError = { code: string, message: string, details: string | null, };
+export type Response = { version: number, id: string, result: Payload | null, error: ApiError | null, };
+export type DesktopUpdate = { "type": "snapshot", "data": Snapshot } | { "type": "offline", "data": ApiError };

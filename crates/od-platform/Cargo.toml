@@ -1,0 +1,15 @@
+[package]
+name = "od-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+od-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+ts-rs.workspace = true
+tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

@@ -35,7 +35,9 @@ enum Capture {
 #[derive(Clone, Copy, ValueEnum)]
 enum Input {
     Foreground,
+    ForegroundLegacy,
     Background,
+    BackgroundPost,
     Xbox,
     Ds4,
 }
@@ -210,7 +212,9 @@ async fn main() -> Result<()> {
             ensure!((1..=2000).contains(&hold_ms), "按住时间须为 1..2000ms");
             let mode = match mode {
                 Input::Foreground => InputMode::Foreground,
+                Input::ForegroundLegacy => InputMode::ForegroundLegacy,
                 Input::Background => InputMode::Background,
+                Input::BackgroundPost => InputMode::BackgroundPost,
                 Input::Xbox => InputMode::Xbox,
                 Input::Ds4 => InputMode::Ds4,
             };

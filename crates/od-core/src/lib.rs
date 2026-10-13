@@ -61,7 +61,9 @@ pub struct RunRecord {
 pub enum InputMode {
     #[default]
     Foreground,
+    ForegroundLegacy,
     Background,
+    BackgroundPost,
     Xbox,
     Ds4,
 }
@@ -80,7 +82,10 @@ impl InputProbeConfig {
             return Err("按住时间须为 1..2000ms，启动延时须为 0..10000ms");
         }
         let valid = match self.mode {
-            InputMode::Foreground | InputMode::Background => (1..=254).contains(&self.key),
+            InputMode::Foreground
+            | InputMode::ForegroundLegacy
+            | InputMode::Background
+            | InputMode::BackgroundPost => (1..=254).contains(&self.key),
             // 固定 SDK 的 XUSB 数字按键，DS4 另含 PS 与触摸板按键。
             InputMode::Xbox => self.key > 0 && self.key & !0xf7ff == 0,
             InputMode::Ds4 => self.key > 0 && self.key & !0x3f7ff == 0,
@@ -240,6 +245,25 @@ pub struct WindowInfo {
     pub executable: String,
     pub width: i32,
     pub height: i32,
+    #[serde(default)]
+    pub keyboard_permission: Option<KeyboardPermission>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct KeyboardPermission {
+    pub engine_integrity: u32,
+    pub game_integrity: u32,
+    pub compatible: bool,
+}
+
+impl KeyboardPermission {
+    pub fn from_integrity(engine_integrity: u32, game_integrity: u32) -> Self {
+        Self {
+            engine_integrity,
+            game_integrity,
+            compatible: engine_integrity >= game_integrity,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

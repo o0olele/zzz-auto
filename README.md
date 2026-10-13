@@ -35,7 +35,9 @@ cargo run -p zzz-engine -- probe --fixture zzz-od-test/screens/邮件/列表.web
 
 `capture --hwnd <十六进制句柄> --output <PNG>` 获取游戏截图，默认 `frame-pool`，`--method` 可选择 `gdi`、`print-window`、`frame-pool`、`dxgi`、`screen-dc`，结果包含实际方式和黑帧诊断。`recognize` 接收 `--fixture`、`--image`、`--kind` 和 `--params <JSON>`，调用 Maa 独立识别；默认 CPU，`--directml <设备编号>` 仅供受控模型验证。资源包可通过全局 `--resources <绝对目录>` 指定。CLI 文件入口只用于开发者显式调用，桌面不开放任意文件和 Pipeline 执行。
 
-桌面“原生诊断 → 真实输入诊断”提供前台 / 后台键盘和 Xbox / DS4 数字按键。连接游戏后填写按键、按住时间和启动延时，勾选真实输入确认，再点击“开始输入诊断”。修改参数、启动、错误或失联后需重新确认；停止按钮等待原生队列与输入释放后显示终态。默认延时三秒，按住最长两秒；鼠标、摇杆和扳机尚未开放。
+桌面“原生诊断 → 真实输入诊断”提供前台 / 后台键盘和 Xbox / DS4 数字按键。连接游戏后按名称下拉选择按键，填写按住时间和启动延时，勾选真实输入确认，再点击“开始输入诊断”。鼠标被游戏锁定时，可先按 Win 或 Alt+Tab 回到工具；启动后在延时期间切回游戏。修改参数、启动、错误或失联后需重新确认；停止按钮等待原生队列与输入释放后显示终态。默认延时三秒，按住最长两秒；鼠标、摇杆和扳机尚未开放。
+
+前台键盘在延时结束时要求游戏处于前台。工具会检测游戏与引擎权限，发现游戏权限更高时提示从托盘退出、以管理员身份重新打开工具。启动器正常启动无法直接证明游戏权限与工具匹配。标准方式未响应时，可对照“前台键盘（兼容方式）”或“后台键盘（异步方式）”；后台键盘是否被游戏消费仍需实测。用户已反馈 Xbox 数字按键正常，键盘和 DS4 尚未通过游戏验收。
 
 CLI `input-probe` 使用同一实现，指定 `--hwnd`、`--key`、`--hold-ms`、`--mode` 和 `--allow-input`。`--start-delay-ms` 默认为 3000；`--cancel-after-ms` 从探针开始计时，包括启动延时。Ctrl+C 请求收尾后退出。程序返回按下投递、按下完成、实际持有、释放和取消收尾耗时；这些是控制器完成数据，游戏响应仍需观察。示例：
 
@@ -43,7 +45,7 @@ CLI `input-probe` 使用同一实现，指定 `--hwnd`、`--key`、`--hold-ms`�
 cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode background --key 87 --hold-ms 1000 --start-delay-ms 3000 --cancel-after-ms 3200 --allow-input
 ```
 
-键盘使用 Win32 VK；手柄参数、计时边界和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。首轮未提供权限自动提升、声音闪避、暂停恢复、HTTP、MCP、旧配置导入与游戏应用运行。
+CLI 键盘使用 Win32 VK，可选 `--mode foreground-legacy` 或 `background-post` 对照 Maa 的兼容方式；手柄参数、计时边界和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。首轮未提供权限自动提升、声音闪避、暂停恢复、HTTP、MCP、旧配置导入与游戏应用运行。
 
 ## 工程与数据
 

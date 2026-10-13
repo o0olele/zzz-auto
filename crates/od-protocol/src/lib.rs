@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v3 增加真实输入诊断及结构化结果，桌面与引擎必须成套使用。
-pub const PROTOCOL_VERSION: u32 = 3;
+// v4 增加键盘兼容方式与权限诊断，桌面与引擎必须成套使用。
+pub const PROTOCOL_VERSION: u32 = 4;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 

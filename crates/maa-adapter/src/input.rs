@@ -119,6 +119,21 @@ impl NativeSession {
             if observe_cancel(&cancel, &mut stopped_at) {
                 return Ok(());
             }
+            if let Some(window) = &self.game_window
+                && !matches!(config.mode, crate::InputMode::Xbox | crate::InputMode::Ds4)
+            {
+                od_platform::check_keyboard_target(
+                    window,
+                    matches!(
+                        config.mode,
+                        crate::InputMode::Foreground | crate::InputMode::ForegroundLegacy
+                    ),
+                )?;
+            }
+            // 权限与前台检查可能耗时；检查期间停止也不能再投递按下。
+            if observe_cancel(&cancel, &mut stopped_at) {
+                return Ok(());
+            }
             // 投递前登记；即使回调返回失败，也可能已经按下，必须尝试释放。
             self.held_keys.insert(config.key);
             self.input_cleanup_pending = true;

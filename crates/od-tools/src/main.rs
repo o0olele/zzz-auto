@@ -69,6 +69,7 @@ fn main() -> Result<()> {
                 od_core::RunRecord::decl(),
                 od_core::RunEvent::decl(),
                 od_core::WindowInfo::decl(),
+                od_core::KeyboardPermission::decl(),
                 od_core::SdkStatus::decl(),
                 od_core::CaptureMethod::decl(),
                 od_core::ScreenshotQuality::decl(),

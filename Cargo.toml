@@ -4,7 +4,7 @@ members = ["crates/od-core", "crates/od-protocol", "crates/maa-adapter", "crates
 default-members = ["crates/od-core", "crates/od-protocol", "crates/maa-adapter", "crates/od-platform", "crates/zzz-engine", "crates/od-tools"]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 rust-version = "1.95"
 license = "GPL-3.0-or-later"

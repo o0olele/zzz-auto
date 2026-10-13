@@ -1,12 +1,13 @@
 // 由 od-tools types 生成；请修改 Rust 协议。
 export type AppDefinition = { id: string, name: string, execution: string, reason: string, factory: string, configs: Array<string>, settings: Array<string>, run_records: Array<string>, source_files: Array<string>, priority: number, default_group: boolean, implemented: boolean, };
 export type RunState = "running" | "stopping" | "succeeded" | "failed" | "stopped";
-export type InputMode = "foreground" | "background" | "xbox" | "ds4";
+export type InputMode = "foreground" | "foreground_legacy" | "background" | "background_post" | "xbox" | "ds4";
 export type InputProbeConfig = { mode: InputMode, key: number, hold_ms: number, start_delay_ms: number, };
 export type InputProbeResult = { config: InputProbeConfig, pressed: boolean, released: boolean, stopped: boolean, enqueue_us: number, key_down_ms: number, held_ms: number, release_ms: number, stop_ms: number | null, elapsed_ms: number, };
 export type RunRecord = { id: string, app_id: string, state: RunState, started_at: string, finished_at: string | null, message: string, input_probe: InputProbeResult | null, };
 export type RunEvent = { sequence: number, run_id: string | null, at: string, level: string, message: string, };
-export type WindowInfo = { hwnd: string, pid: number, title: string, executable: string, width: number, height: number, };
+export type WindowInfo = { hwnd: string, pid: number, title: string, executable: string, width: number, height: number, keyboard_permission: KeyboardPermission | null, };
+export type KeyboardPermission = { engine_integrity: number, game_integrity: number, compatible: boolean, };
 export type SdkStatus = { ready: boolean, version: string | null, expected_version: string, binding_version: string, directory: string, message: string, };
 export type CaptureMethod = "frame_pool" | "print_window" | "dxgi" | "screen_dc" | "gdi";
 export type ScreenshotQuality = { mean_luma: number, dark_pixel_ratio: number, near_black: boolean, };

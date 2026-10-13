@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
-use od_core::WindowInfo;
+use od_core::{KeyboardPermission, WindowInfo};
 use std::{ffi::c_void, os::windows::io::AsRawHandle, path::Path, ptr};
 use tokio::net::windows::named_pipe::{NamedPipeClient, NamedPipeServer, ServerOptions};
 use windows_sys::Win32::{
@@ -8,7 +8,8 @@ use windows_sys::Win32::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
         },
-        GetTokenInformation, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
+        GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, SECURITY_ATTRIBUTES,
+        TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER, TokenIntegrityLevel, TokenUser,
     },
     System::{
         Pipes::{GetNamedPipeClientProcessId, GetNamedPipeServerProcessId},
@@ -19,8 +20,8 @@ use windows_sys::Win32::{
         },
     },
     UI::WindowsAndMessaging::{
-        EnumWindows, GetClientRect, GetWindowTextW, GetWindowThreadProcessId, IsWindow,
-        IsWindowVisible,
+        EnumWindows, GetClientRect, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+        IsWindow, IsWindowVisible,
     },
 };
 
@@ -228,7 +229,85 @@ pub fn window_info(hwnd: usize) -> Result<WindowInfo> {
         title: String::from_utf16_lossy(&title[..title_length.max(0) as usize]),
         width: rect.right - rect.left,
         height: rect.bottom - rect.top,
+        keyboard_permission: keyboard_permission(pid).ok(),
     })
+}
+
+pub fn process_integrity(pid: u32) -> Result<u32> {
+    let target = process(pid)?;
+    let mut token = ptr::null_mut();
+    ensure!(
+        unsafe { OpenProcessToken(target.0, TOKEN_QUERY, &mut token) } != 0,
+        "无法读取进程键盘权限：{}",
+        std::io::Error::last_os_error()
+    );
+    let token = checked_handle(token)?;
+    let mut length = 0;
+    unsafe {
+        GetTokenInformation(
+            token.0,
+            TokenIntegrityLevel,
+            ptr::null_mut(),
+            0,
+            &mut length,
+        );
+    }
+    ensure!(
+        length as usize >= std::mem::size_of::<TOKEN_MANDATORY_LABEL>(),
+        "无法读取进程完整性级别"
+    );
+    let mut buffer = vec![0_u64; (length as usize).div_ceil(8)];
+    ensure!(
+        unsafe {
+            GetTokenInformation(
+                token.0,
+                TokenIntegrityLevel,
+                buffer.as_mut_ptr().cast(),
+                length,
+                &mut length,
+            )
+        } != 0,
+        "无法检查键盘输入权限"
+    );
+    let label = unsafe { &*buffer.as_ptr().cast::<TOKEN_MANDATORY_LABEL>() };
+    ensure!(!label.Label.Sid.is_null(), "进程没有完整性 SID");
+    let count = unsafe { GetSidSubAuthorityCount(label.Label.Sid) };
+    ensure!(
+        !count.is_null() && unsafe { *count } > 0,
+        "进程完整性 SID 无效"
+    );
+    let authority = unsafe { GetSidSubAuthority(label.Label.Sid, u32::from(*count - 1)) };
+    ensure!(!authority.is_null(), "进程完整性级别无效");
+    Ok(unsafe { *authority })
+}
+
+pub fn keyboard_permission(game_pid: u32) -> Result<KeyboardPermission> {
+    Ok(KeyboardPermission::from_integrity(
+        process_integrity(unsafe { GetCurrentProcessId() })?,
+        process_integrity(game_pid)?,
+    ))
+}
+
+pub fn check_keyboard_target(window: &WindowInfo, foreground: bool) -> Result<()> {
+    let current = parse_game_window(&window.hwnd)?;
+    ensure!(current.pid == window.pid, "游戏窗口身份已变化，请重新连接");
+    let permission =
+        keyboard_permission(current.pid).context("无法确认键盘权限，请检查游戏与工具的运行权限")?;
+    ensure!(
+        permission.compatible,
+        "游戏权限高于引擎，Windows 会限制键盘输入。请从托盘退出工具，再以管理员身份启动工具；启动器正常启动不代表游戏没有管理员权限"
+    );
+    if foreground {
+        let mut foreground_pid = 0;
+        unsafe {
+            GetWindowThreadProcessId(GetForegroundWindow(), &mut foreground_pid);
+        }
+        ensure!(
+            foreground_pid == current.pid,
+            "启动延时已结束，但游戏不在前台；未发送按键。请增加延时并在延时期间切回游戏"
+        );
+    }
+    Ok(())
 }
 
 pub fn is_game_window(window: &WindowInfo) -> bool {

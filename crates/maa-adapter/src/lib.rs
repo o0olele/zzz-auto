@@ -88,6 +88,7 @@ pub struct NativeSession {
     controller: fixture::NativeController,
     _resource: Resource,
     input_mode: Option<InputMode>,
+    game_window: Option<WindowInfo>,
     capture_method: Option<CaptureMethod>,
     held_keys: BTreeSet<i32>,
     input_cleanup_pending: bool,
@@ -114,6 +115,8 @@ impl NativeSession {
             mode => {
                 let method = match mode {
                     InputMode::Background => Win32InputMethod::SEND_MESSAGE,
+                    InputMode::BackgroundPost => Win32InputMethod::POST_MESSAGE,
+                    InputMode::ForegroundLegacy => Win32InputMethod::LEGACY_EVENT,
                     _ => Win32InputMethod::SEIZE,
                 };
                 Controller::new_win32(
@@ -124,14 +127,16 @@ impl NativeSession {
                 )?
             }
         };
-        Self::bind(
+        let mut session = Self::bind(
             fixture::NativeController::Game(controller),
             resources,
             device,
             Some(lease),
             Some(input),
             Some(capture),
-        )
+        )?;
+        session.game_window = Some(window.clone());
+        Ok(session)
     }
 
     pub fn for_fixture(images: &Path, resources: &Path, device: InferenceDevice) -> Result<Self> {
@@ -195,6 +200,7 @@ impl NativeSession {
             controller,
             _resource: resource,
             input_mode,
+            game_window: None,
             capture_method,
             held_keys: BTreeSet::new(),
             input_cleanup_pending: false,

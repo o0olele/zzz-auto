@@ -52,6 +52,64 @@ pub struct RunRecord {
     #[ts(type = "string | null")]
     pub finished_at: Option<DateTime<Utc>>,
     pub message: String,
+    #[serde(default)]
+    pub input_probe: Option<InputProbeResult>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum InputMode {
+    #[default]
+    Foreground,
+    Background,
+    Xbox,
+    Ds4,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+pub struct InputProbeConfig {
+    pub mode: InputMode,
+    pub key: i32,
+    pub hold_ms: u32,
+    pub start_delay_ms: u32,
+}
+
+impl InputProbeConfig {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !(1..=2000).contains(&self.hold_ms) || self.start_delay_ms > 10_000 {
+            return Err("按住时间须为 1..2000ms，启动延时须为 0..10000ms");
+        }
+        let valid = match self.mode {
+            InputMode::Foreground | InputMode::Background => (1..=254).contains(&self.key),
+            // 固定 SDK 的 XUSB 数字按键，DS4 另含 PS 与触摸板按键。
+            InputMode::Xbox => self.key > 0 && self.key & !0xf7ff == 0,
+            InputMode::Ds4 => self.key > 0 && self.key & !0x3f7ff == 0,
+        };
+        if !valid {
+            return Err("输入模式与 VK / 手柄按键位掩码不匹配");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct InputProbeResult {
+    pub config: InputProbeConfig,
+    pub pressed: bool,
+    pub released: bool,
+    pub stopped: bool,
+    #[ts(type = "number")]
+    pub enqueue_us: u64,
+    #[ts(type = "number")]
+    pub key_down_ms: u64,
+    #[ts(type = "number")]
+    pub held_ms: u64,
+    #[ts(type = "number")]
+    pub release_ms: u64,
+    #[ts(type = "number | null")]
+    pub stop_ms: Option<u64>,
+    #[ts(type = "number")]
+    pub elapsed_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -92,6 +150,7 @@ impl RunSlot {
             started_at: Utc::now(),
             finished_at: None,
             message: "任务已启动".into(),
+            input_probe: None,
         };
         self.current = Some(run.clone());
         Ok(run)
@@ -128,6 +187,34 @@ impl RunSlot {
         run.state = state;
         run.message = message;
         run.finished_at = Some(Utc::now());
+        Ok(run.clone())
+    }
+
+    pub fn finish_input_probe(
+        &mut self,
+        id: Uuid,
+        result: InputProbeResult,
+    ) -> Result<RunRecord, &'static str> {
+        if !result.released {
+            return Err("输入尚未确认释放，不能完成输入诊断");
+        }
+        let state = if result.stopped {
+            RunState::Stopped
+        } else {
+            RunState::Succeeded
+        };
+        self.finish(
+            id,
+            state,
+            if result.stopped {
+                "输入诊断已停止，输入已释放"
+            } else {
+                "输入诊断完成，输入已释放"
+            }
+            .into(),
+        )?;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        run.input_probe = Some(result);
         Ok(run.clone())
     }
 }

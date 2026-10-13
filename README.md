@@ -35,7 +35,15 @@ cargo run -p zzz-engine -- probe --fixture zzz-od-test/screens/邮件/列表.web
 
 `capture --hwnd <十六进制句柄> --output <PNG>` 获取游戏截图，默认 `frame-pool`，`--method` 可选择 `gdi`、`print-window`、`frame-pool`、`dxgi`、`screen-dc`，结果包含实际方式和黑帧诊断。`recognize` 接收 `--fixture`、`--image`、`--kind` 和 `--params <JSON>`，调用 Maa 独立识别；默认 CPU，`--directml <设备编号>` 仅供受控模型验证。资源包可通过全局 `--resources <绝对目录>` 指定。CLI 文件入口只用于开发者显式调用，桌面不开放任意文件和 Pipeline 执行。
 
-`input-probe` 是显式游戏输入探针：指定 `--hwnd`、`--key`、`--hold-ms`、`--mode` 和 `--allow-input`。按住最长两秒；程序等待按下、释放和控制器恢复完成。键鼠使用 Win32 VK；手柄参数和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。首轮未提供权限自动提升、声音闪避、暂停恢复、HTTP、MCP、旧配置导入与游戏应用运行。
+桌面“原生诊断 → 真实输入诊断”提供前台 / 后台键盘和 Xbox / DS4 数字按键。连接游戏后填写按键、按住时间和启动延时，勾选真实输入确认，再点击“开始输入诊断”。修改参数、启动、错误或失联后需重新确认；停止按钮等待原生队列与输入释放后显示终态。默认延时三秒，按住最长两秒；鼠标、摇杆和扳机尚未开放。
+
+CLI `input-probe` 使用同一实现，指定 `--hwnd`、`--key`、`--hold-ms`、`--mode` 和 `--allow-input`。`--start-delay-ms` 默认为 3000；`--cancel-after-ms` 从探针开始计时，包括启动延时。Ctrl+C 请求收尾后退出。程序返回按下投递、按下完成、实际持有、释放和取消收尾耗时；这些是控制器完成数据，游戏响应仍需观察。示例：
+
+```powershell
+cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode background --key 87 --hold-ms 1000 --start-delay-ms 3000 --cancel-after-ms 3200 --allow-input
+```
+
+键盘使用 Win32 VK；手柄参数、计时边界和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。首轮未提供权限自动提升、声音闪避、暂停恢复、HTTP、MCP、旧配置导入与游戏应用运行。
 
 ## 工程与数据
 

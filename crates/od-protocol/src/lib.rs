@@ -1,13 +1,14 @@
 use od_core::{
-    AppDefinition, CaptureMethod, RunEvent, RunRecord, Screenshot, Snapshot, WindowInfo,
+    AppDefinition, CaptureMethod, InputProbeConfig, RunEvent, RunRecord, Screenshot, Snapshot,
+    WindowInfo,
 };
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v2 在截图响应中增加质量统计，新旧桌面与引擎必须成套使用。
-pub const PROTOCOL_VERSION: u32 = 2;
+// v3 增加真实输入诊断及结构化结果，桌面与引擎必须成套使用。
+pub const PROTOCOL_VERSION: u32 = 3;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -38,6 +39,11 @@ pub enum Command {
     },
     Screenshot,
     StartProbe,
+    StartInputProbe {
+        config: InputProbeConfig,
+        #[serde(default)]
+        allow_input: bool,
+    },
     StartApplication {
         app_id: String,
     },

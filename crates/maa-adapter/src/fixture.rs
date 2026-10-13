@@ -98,8 +98,11 @@ impl NativeController {
             image.height()
         );
         let png = image.to_vec().context("固定截图转为 PNG 失败")?;
-        let mut callback: Box<Box<dyn CustomControllerCallback>> =
-            Box::new(Box::new(ImageController { png }));
+        Self::from_callback(ImageController { png })
+    }
+
+    pub fn from_callback(callback: impl CustomControllerCallback + 'static) -> Result<Self> {
+        let mut callback: Box<Box<dyn CustomControllerCallback>> = Box::new(Box::new(callback));
         let handle = unsafe {
             sys::MaaCustomControllerCreate(
                 get_callbacks() as *const _ as *mut _,
@@ -121,6 +124,9 @@ impl NativeController {
     }
     pub fn wait(&self, id: i64) -> MaaStatus {
         MaaStatus(unsafe { sys::MaaControllerWait(self.raw(), id) })
+    }
+    pub fn status(&self, id: i64) -> MaaStatus {
+        MaaStatus(unsafe { sys::MaaControllerStatus(self.raw(), id) })
     }
     pub fn post_connection(&self) -> Result<i64> {
         Ok(unsafe { sys::MaaControllerPostConnection(self.raw()) })

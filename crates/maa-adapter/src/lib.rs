@@ -1,6 +1,8 @@
 mod fixture;
+mod input;
 mod sdk;
-pub use od_core::CaptureMethod;
+pub use maa_framework::custom_controller::CustomControllerCallback;
+pub use od_core::{CaptureMethod, InputMode, InputProbeConfig, InputProbeResult};
 pub use sdk::{BINDING_VERSION, SDK_VERSION, load_sdk};
 
 use anyhow::{Context, Result, bail, ensure};
@@ -17,7 +19,7 @@ use maa_framework::{
 };
 use od_core::{BASE_HEIGHT, BASE_WIDTH, Screenshot, ScreenshotQuality, WindowInfo};
 use od_platform::GameLease;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{
     collections::BTreeSet,
     path::Path,
@@ -63,16 +65,6 @@ fn screenshot_quality(image: &MaaImageBuffer) -> Result<ScreenshotQuality> {
     })
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InputMode {
-    #[default]
-    Foreground,
-    Background,
-    Xbox,
-    Ds4,
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub enum InferenceDevice {
     #[default]
@@ -98,6 +90,7 @@ pub struct NativeSession {
     input_mode: Option<InputMode>,
     capture_method: Option<CaptureMethod>,
     held_keys: BTreeSet<i32>,
+    input_cleanup_pending: bool,
     _lease: Option<GameLease>,
 }
 
@@ -146,6 +139,22 @@ impl NativeSession {
         Self::bind(controller, resources, device, None, None, None)
     }
 
+    // 离线验证入口：回调由测试仓提供，使用真实 Maa 队列，不取得游戏控制权。
+    pub fn for_custom_controller(
+        callback: impl maa_framework::custom_controller::CustomControllerCallback + 'static,
+        resources: &Path,
+        input: InputMode,
+    ) -> Result<Self> {
+        Self::bind(
+            fixture::NativeController::from_callback(callback)?,
+            resources,
+            InferenceDevice::Cpu,
+            None,
+            Some(input),
+            None,
+        )
+    }
+
     fn bind(
         controller: fixture::NativeController,
         resources: &Path,
@@ -188,6 +197,7 @@ impl NativeSession {
             input_mode,
             capture_method,
             held_keys: BTreeSet::new(),
+            input_cleanup_pending: false,
             _lease: lease,
         })
     }
@@ -337,51 +347,24 @@ impl NativeSession {
 
     pub fn hold_key_probe(&mut self, key: i32, duration: Duration) -> Result<()> {
         let mode = self.input_mode.context("离线控制器不投递游戏输入")?;
-        let valid_key = match mode {
-            InputMode::Foreground | InputMode::Background => (1..=254).contains(&key),
-            InputMode::Xbox | InputMode::Ds4 => {
-                key > 0
-                    && maa_framework::common::GamepadButton::from_bits(key as u32).is_some()
-                    && (!matches!(mode, InputMode::Xbox) || key & 0x30000 == 0)
-            }
-        };
         ensure!(
-            valid_key && !duration.is_zero() && duration <= Duration::from_secs(2),
-            "输入探针需要有效 VK 或手柄按键位掩码，按住时间为 1..2000ms"
+            duration <= Duration::from_secs(2),
+            "按住时间不能超过 2000ms"
         );
-        // 投递前登记，部分失败也必须尝试释放。
-        self.held_keys.insert(key);
-        let result = (|| {
-            ensure!(
-                self.controller
-                    .wait(self.controller.post_key_down(key)?)
-                    .is_success(),
-                "按下失败"
-            );
-            std::thread::sleep(duration);
-            Ok(())
-        })();
-        let cleanup = self.release_inputs();
-        result.and(cleanup)
+        self.input_probe(
+            InputProbeConfig {
+                mode,
+                key,
+                hold_ms: duration.as_millis() as u32,
+                start_delay_ms: 0,
+            },
+            Arc::new(AtomicBool::new(false)),
+        )
+        .map(|_| ())
     }
 
     pub fn release_inputs(&mut self) -> Result<()> {
-        let mut errors = Vec::new();
-        for key in self.held_keys.clone() {
-            match self.controller.post_key_up(key) {
-                Ok(id) if self.controller.wait(id).is_success() => {
-                    self.held_keys.remove(&key);
-                }
-                _ => errors.push(format!("按键 {key} 释放失败")),
-            }
-        }
-        // inactive 放在队列末端并等待，完成前不交还控制权。
-        match self.controller.post_inactive() {
-            Ok(id) if self.controller.wait(id).is_success() => {}
-            _ => errors.push("控制器恢复输入失败".into()),
-        }
-        ensure!(errors.is_empty(), "{}", errors.join("；"));
-        Ok(())
+        self.release_inputs_observed(&AtomicBool::new(false), &mut None)
     }
 }
 

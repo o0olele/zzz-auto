@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand, ValueEnum};
-use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, NativeSession};
+use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, InputProbeConfig, NativeSession};
 use std::{
     io::{BufRead, Read},
     path::PathBuf,
@@ -84,6 +84,10 @@ enum Action {
         key: i32,
         #[arg(long, default_value_t = 100)]
         hold_ms: u64,
+        #[arg(long, default_value_t = 3000)]
+        start_delay_ms: u32,
+        #[arg(long)]
+        cancel_after_ms: Option<u64>,
         #[arg(long, value_enum, default_value = "foreground")]
         mode: Input,
         #[arg(long, value_enum, default_value = "frame-pool")]
@@ -193,6 +197,8 @@ async fn main() -> Result<()> {
             hwnd,
             key,
             hold_ms,
+            start_delay_ms,
+            cancel_after_ms,
             mode,
             capture: method,
             allow_input,
@@ -201,14 +207,25 @@ async fn main() -> Result<()> {
                 allow_input,
                 "输入探针会操作游戏，必须显式指定 --allow-input"
             );
-            ensure!(hold_ms <= 2000, "按住时间不能超过 2000ms");
-            let window = od_platform::parse_game_window(&hwnd)?;
+            ensure!((1..=2000).contains(&hold_ms), "按住时间须为 1..2000ms");
             let mode = match mode {
                 Input::Foreground => InputMode::Foreground,
                 Input::Background => InputMode::Background,
                 Input::Xbox => InputMode::Xbox,
                 Input::Ds4 => InputMode::Ds4,
             };
+            let config = InputProbeConfig {
+                mode,
+                key,
+                hold_ms: hold_ms as u32,
+                start_delay_ms,
+            };
+            config.validate().map_err(anyhow::Error::msg)?;
+            let window = od_platform::parse_game_window(&hwnd)?;
+            ensure!(
+                window.width == 1920 && window.height == 1080,
+                "游戏客户区须为 1920×1080"
+            );
             let mut native = NativeSession::for_game(
                 &window,
                 &paths.resources,
@@ -216,8 +233,26 @@ async fn main() -> Result<()> {
                 mode,
                 InferenceDevice::Cpu,
             )?;
-            native.hold_key_probe(key, Duration::from_millis(hold_ms))?;
-            print(serde_json::json!({"completed": true, "released": true}))
+            let cancel = Arc::new(AtomicBool::new(false));
+            let interrupt = cancel.clone();
+            let signal = tokio::spawn(async move {
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    interrupt.store(true, std::sync::atomic::Ordering::Release);
+                }
+            });
+            let timer = cancel_after_ms.map(|delay| {
+                let flag = cancel.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    flag.store(true, std::sync::atomic::Ordering::Release);
+                })
+            });
+            let result = native.input_probe(config, cancel);
+            signal.abort();
+            if let Some(timer) = timer {
+                timer.abort();
+            }
+            print(result?)
         }
         _ => unreachable!(),
     }

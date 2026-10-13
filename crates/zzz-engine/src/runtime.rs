@@ -1,6 +1,8 @@
 use chrono::Utc;
 use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, NativeSession};
-use od_core::{RunEvent, RunSlot, RunState, SdkStatus, Snapshot, WindowInfo};
+use od_core::{
+    InputProbeConfig, RunEvent, RunRecord, RunSlot, RunState, SdkStatus, Snapshot, WindowInfo,
+};
 use od_protocol::{ApiError, Command, Payload};
 use std::{
     collections::VecDeque,
@@ -74,6 +76,13 @@ enum Work {
     ),
     Screenshot(oneshot::Sender<Result<Payload, ApiError>>),
     Probe(Uuid, Arc<AtomicBool>),
+    InputProbe {
+        id: Uuid,
+        config: InputProbeConfig,
+        window: WindowInfo,
+        capture: CaptureMethod,
+        cancel: Arc<AtomicBool>,
+    },
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -211,6 +220,63 @@ impl Engine {
                 );
                 Ok(Payload::Run(record))
             }
+            Command::StartInputProbe {
+                config,
+                allow_input,
+            } => {
+                if !allow_input {
+                    return Err(ApiError::new(
+                        "input_not_confirmed",
+                        "输入诊断会操作游戏，请先确认允许真实输入",
+                    ));
+                }
+                config
+                    .validate()
+                    .map_err(|e| ApiError::new("invalid_input", e))?;
+                let mut state = self.state.lock().expect("运行状态锁失效");
+                if !state.sdk.ready {
+                    return Err(ApiError::new("sdk_not_ready", state.sdk.message.clone()));
+                }
+                let window = state
+                    .window
+                    .clone()
+                    .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
+                if state.native_pending {
+                    return Err(ApiError::new("busy", "截图或连接操作尚未完成"));
+                }
+                let capture = state.capture_method.unwrap_or_default();
+                let record = state
+                    .slot
+                    .begin("prototype.input_probe")
+                    .map_err(|e| ApiError::new("busy", e))?;
+                let cancel = Arc::new(AtomicBool::new(false));
+                if self
+                    .sender
+                    .try_send(Work::InputProbe {
+                        id: record.id,
+                        config,
+                        window,
+                        capture,
+                        cancel: cancel.clone(),
+                    })
+                    .is_err()
+                {
+                    let _ = state
+                        .slot
+                        .finish(record.id, RunState::Failed, "工作线程不可用".into());
+                    return Err(ApiError::new("worker_unavailable", "工作线程无法接收任务"));
+                }
+                state.cancel = Some(cancel);
+                state.event(
+                    Some(record.id),
+                    "info",
+                    format!(
+                        "开始真实输入诊断：{:?}，按键 {}，延时 {}ms，按住 {}ms",
+                        config.mode, config.key, config.start_delay_ms, config.hold_ms
+                    ),
+                );
+                Ok(Payload::Run(record))
+            }
             Command::Stop { run_id } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 let record = state
@@ -294,6 +360,9 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
                         window.height
                     );
                     // 释放旧控制器与控制权，再创建新控制器；切换中不保留旧窗口快照。
+                    if let Some(controller) = &mut native {
+                        controller.release_inputs()?;
+                    }
                     native.take();
                     {
                         let mut state = state.lock().expect("运行状态锁失效");
@@ -307,21 +376,7 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
                         InputMode::Foreground,
                         InferenceDevice::Cpu,
                     )?;
-                    let sink_state = state.clone();
-                    let dropped = state
-                        .lock()
-                        .expect("运行状态锁失效")
-                        .callback_dropped
-                        .clone();
-                    controller.add_event_sink(move |message| {
-                        // 回调不等待锁；日志拥堵时允许丢弃，终态另行保存。
-                        if let Ok(mut state) = sink_state.try_lock() {
-                            let run_id = state.slot.current().map(|run| run.id);
-                            state.event(run_id, "debug", message);
-                        } else {
-                            dropped.fetch_add(1, Ordering::Relaxed);
-                        }
-                    })?;
+                    watch_native(&controller, &state)?;
                     native = Some(controller);
                     let mut state = state.lock().expect("运行状态锁失效");
                     state.window = Some(window);
@@ -422,16 +477,7 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
                     terminal
                 };
                 if let Ok(record) = state.slot.finish(id, terminal, message.clone()) {
-                    let path = paths.data.join("runs").join(format!("{id}.json"));
-                    let saved = (|| -> anyhow::Result<()> {
-                        let temp = path.with_extension("json.tmp");
-                        std::fs::write(&temp, serde_json::to_vec_pretty(&record)?)?;
-                        std::fs::rename(temp, path)?;
-                        Ok(())
-                    })();
-                    if let Err(error) = saved {
-                        state.event(Some(id), "error", format!("运行结果保存失败：{error}"));
-                    }
+                    save_run(&paths, &mut state, &record);
                 }
                 state.cancel = None;
                 state.event(
@@ -444,11 +490,142 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
                     message,
                 );
             }
+            Work::InputProbe {
+                id,
+                config,
+                window,
+                capture,
+                cancel,
+            } => {
+                let result = (|| -> anyhow::Result<_> {
+                    // 延时前已收到停止时不切换控制器，也不投递按下。
+                    if !cancel.load(Ordering::Acquire) {
+                        if let Some(controller) = &mut native {
+                            controller.release_inputs()?;
+                        }
+                        native.take();
+                        {
+                            let mut state = state.lock().expect("运行状态锁失效");
+                            state.window = None;
+                            state.capture_method = None;
+                        }
+                        // 重新解析句柄，不能沿用游戏重启前的进程身份。
+                        let current = od_platform::parse_game_window(&window.hwnd)?;
+                        anyhow::ensure!(
+                            current.pid == window.pid,
+                            "游戏窗口身份已改变，请重新连接"
+                        );
+                        anyhow::ensure!(
+                            current.width == 1920 && current.height == 1080,
+                            "游戏客户区须为 1920×1080"
+                        );
+                        let controller = NativeSession::for_game(
+                            &current,
+                            &paths.resources,
+                            capture,
+                            config.mode,
+                            InferenceDevice::Cpu,
+                        )?;
+                        watch_native(&controller, &state)?;
+                        native = Some(controller);
+                        let mut state = state.lock().expect("运行状态锁失效");
+                        state.window = Some(current);
+                        state.capture_method = Some(capture);
+                    }
+                    // 取消发生在重建前时，原控制器模式可能不同；返回未按下的终态。
+                    if cancel.load(Ordering::Acquire) {
+                        let started = std::time::Instant::now();
+                        if let Some(controller) = &mut native {
+                            controller.release_inputs()?;
+                        }
+                        return Ok(od_core::InputProbeResult {
+                            config,
+                            pressed: false,
+                            released: true,
+                            stopped: true,
+                            enqueue_us: 0,
+                            key_down_ms: 0,
+                            held_ms: 0,
+                            release_ms: started.elapsed().as_millis() as u64,
+                            stop_ms: Some(started.elapsed().as_millis() as u64),
+                            elapsed_ms: started.elapsed().as_millis() as u64,
+                        });
+                    }
+                    native
+                        .as_mut()
+                        .ok_or_else(|| anyhow::anyhow!("控制器未连接"))?
+                        .input_probe(config, cancel)
+                })();
+                let mut state = state.lock().expect("运行状态锁失效");
+                let record = match result {
+                    Ok(mut result) => {
+                        if state
+                            .slot
+                            .current()
+                            .is_some_and(|run| run.state == RunState::Stopping)
+                        {
+                            result.stopped = true;
+                        }
+                        state.slot.finish_input_probe(id, result)
+                    }
+                    Err(error) => state
+                        .slot
+                        .finish(id, RunState::Failed, format!("{error:#}")),
+                };
+                if let Ok(record) = record {
+                    save_run(&paths, &mut state, &record);
+                    state.event(
+                        Some(id),
+                        if record.state == RunState::Failed {
+                            "error"
+                        } else {
+                            "info"
+                        },
+                        record.message,
+                    );
+                }
+                state.cancel = None;
+            }
             Work::Shutdown(reply) => {
                 native.take();
                 let _ = reply.send(());
                 return;
             }
         }
+    }
+}
+
+fn watch_native(controller: &NativeSession, state: &Arc<Mutex<State>>) -> anyhow::Result<()> {
+    let sink_state = state.clone();
+    let dropped = state
+        .lock()
+        .expect("运行状态锁失效")
+        .callback_dropped
+        .clone();
+    controller.add_event_sink(move |message| {
+        // 回调不等待锁；日志拥堵时允许丢弃，终态另行保存。
+        if let Ok(mut state) = sink_state.try_lock() {
+            let run_id = state.slot.current().map(|run| run.id);
+            state.event(run_id, "debug", message);
+        } else {
+            dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    })
+}
+
+fn save_run(paths: &EnginePaths, state: &mut State, record: &RunRecord) {
+    let path = paths.data.join("runs").join(format!("{}.json", record.id));
+    let saved = (|| -> anyhow::Result<()> {
+        let temp = path.with_extension("json.tmp");
+        std::fs::write(&temp, serde_json::to_vec_pretty(record)?)?;
+        std::fs::rename(temp, path)?;
+        Ok(())
+    })();
+    if let Err(error) = saved {
+        state.event(
+            Some(record.id),
+            "error",
+            format!("运行结果保存失败：{error}"),
+        );
     }
 }

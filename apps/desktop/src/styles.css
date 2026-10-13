@@ -85,6 +85,11 @@ p { color: var(--muted); font-size: 13px; line-height: 1.85; margin: 0; }
 .running-indicator>div:last-child { flex: 1; }
 .result-line { display: flex; align-items: flex-start; gap: 12px; }
 .result-line code { font-size: 11px; overflow-wrap: anywhere; color: var(--muted); }
+.input-fields, .input-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+.input-fields>div { min-width: 0; }
+.input-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.input-metrics>span { color: var(--muted); font-size: 11px; }
+.input-metrics strong { display: block; color: var(--text); font-size: 15px; margin-top: 4px; }
 .logs { max-height: 320px; overflow: auto; font-family: Consolas, 'Microsoft YaHei', monospace; }
 .log-line { display: grid; grid-template-columns: 72px 44px 1fr; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 10px; }
 .log-line time { color: var(--muted); }

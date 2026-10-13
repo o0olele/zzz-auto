@@ -63,6 +63,9 @@ fn main() -> Result<()> {
             let declarations = [
                 od_core::AppDefinition::decl(),
                 od_core::RunState::decl(),
+                od_core::InputMode::decl(),
+                od_core::InputProbeConfig::decl(),
+                od_core::InputProbeResult::decl(),
                 od_core::RunRecord::decl(),
                 od_core::RunEvent::decl(),
                 od_core::WindowInfo::decl(),

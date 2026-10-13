@@ -1883,7 +1883,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "maa-adapter"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2288,7 +2288,7 @@ dependencies = [
 
 [[package]]
 name = "od-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "serde",
@@ -2300,7 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "od-platform"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "od-core",
@@ -2312,7 +2312,7 @@ dependencies = [
 
 [[package]]
 name = "od-protocol"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "od-core",
  "serde",
@@ -2325,7 +2325,7 @@ dependencies = [
 
 [[package]]
 name = "od-tools"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -4683,7 +4683,7 @@ dependencies = [
 
 [[package]]
 name = "zzz-desktop"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "od-core",
@@ -4700,7 +4700,7 @@ dependencies = [
 
 [[package]]
 name = "zzz-engine"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

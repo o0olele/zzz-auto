@@ -1,8 +1,9 @@
 mod fixture;
 mod input;
 mod sdk;
+pub use maa_framework::common::ControllerFeature;
 pub use maa_framework::custom_controller::CustomControllerCallback;
-pub use od_core::{CaptureMethod, InputMode, InputProbeConfig, InputProbeResult};
+pub use od_core::{CaptureMethod, InputMode, InputProbeAction, InputProbeConfig, InputProbeResult};
 pub use sdk::{BINDING_VERSION, SDK_VERSION, load_sdk};
 
 use anyhow::{Context, Result, bail, ensure};
@@ -91,6 +92,7 @@ pub struct NativeSession {
     game_window: Option<WindowInfo>,
     capture_method: Option<CaptureMethod>,
     held_keys: BTreeSet<i32>,
+    held_contacts: BTreeSet<i32>,
     input_cleanup_pending: bool,
     _lease: Option<GameLease>,
 }
@@ -203,6 +205,7 @@ impl NativeSession {
             game_window: None,
             capture_method,
             held_keys: BTreeSet::new(),
+            held_contacts: BTreeSet::new(),
             input_cleanup_pending: false,
             _lease: lease,
         })
@@ -255,6 +258,9 @@ impl NativeSession {
         timeout: Duration,
     ) -> Result<ProbeResult> {
         let started = Instant::now();
+        if self.input_cleanup_pending {
+            self.release_inputs()?;
+        }
         if cancel.load(Ordering::Acquire) {
             self.release_inputs()?;
             return Ok(ProbeResult {
@@ -360,7 +366,7 @@ impl NativeSession {
         self.input_probe(
             InputProbeConfig {
                 mode,
-                key,
+                action: InputProbeAction::Key { key },
                 hold_ms: duration.as_millis() as u32,
                 start_delay_ms: 0,
             },

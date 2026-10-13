@@ -68,12 +68,75 @@ pub enum InputMode {
     Ds4,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+impl InputMode {
+    pub fn is_gamepad(self) -> bool {
+        matches!(self, Self::Xbox | Self::Ds4)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum InputSide {
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    X1,
+    X2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum InputProbeAction {
+    Key { key: i32 },
+    MouseButton { button: MouseButton, x: i32, y: i32 },
+    Stick { stick: InputSide, x: i32, y: i32 },
+    Trigger { trigger: InputSide, value: i32 },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, TS)]
 pub struct InputProbeConfig {
     pub mode: InputMode,
-    pub key: i32,
+    pub action: InputProbeAction,
     pub hold_ms: u32,
     pub start_delay_ms: u32,
+}
+
+// 已保存的数字按键运行记录仍可读取；新请求只生成显式 action。
+impl<'de> Deserialize<'de> for InputProbeConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Fields {
+            mode: InputMode,
+            action: Option<InputProbeAction>,
+            key: Option<i32>,
+            hold_ms: u32,
+            start_delay_ms: u32,
+        }
+        let fields = Fields::deserialize(deserializer)?;
+        let action = match (fields.action, fields.key) {
+            (Some(action), None) => action,
+            (None, Some(key)) => InputProbeAction::Key { key },
+            _ => {
+                return Err(serde::de::Error::custom(
+                    "输入必须指定 action 或旧版 key，不能同时指定",
+                ));
+            }
+        };
+        Ok(Self {
+            mode: fields.mode,
+            action,
+            hold_ms: fields.hold_ms,
+            start_delay_ms: fields.start_delay_ms,
+        })
+    }
 }
 
 impl InputProbeConfig {
@@ -81,14 +144,48 @@ impl InputProbeConfig {
         if !(1..=2000).contains(&self.hold_ms) || self.start_delay_ms > 10_000 {
             return Err("按住时间须为 1..2000ms，启动延时须为 0..10000ms");
         }
+        let InputProbeAction::Key { key } = self.action else {
+            return match self.action {
+                InputProbeAction::MouseButton { x, y, .. } => {
+                    if self.mode.is_gamepad() {
+                        Err("鼠标诊断须选择前台或后台键鼠方式")
+                    } else if !(0..BASE_WIDTH).contains(&x) || !(0..BASE_HEIGHT).contains(&y) {
+                        Err("鼠标坐标须位于 1920×1080 游戏客户区内")
+                    } else {
+                        Ok(())
+                    }
+                }
+                InputProbeAction::Stick { x, y, .. } => {
+                    if !self.mode.is_gamepad() {
+                        Err("摇杆诊断须选择 Xbox 或 DS4")
+                    } else if !(-32768..=32767).contains(&x) || !(-32768..=32767).contains(&y) {
+                        Err("摇杆 X / Y 须为 -32768..32767")
+                    } else if x == 0 && y == 0 {
+                        Err("摇杆诊断须设置非零偏移")
+                    } else {
+                        Ok(())
+                    }
+                }
+                InputProbeAction::Trigger { value, .. } => {
+                    if !self.mode.is_gamepad() {
+                        Err("扳机诊断须选择 Xbox 或 DS4")
+                    } else if !(1..=255).contains(&value) {
+                        Err("扳机力度须为 1..255，释放时归零")
+                    } else {
+                        Ok(())
+                    }
+                }
+                InputProbeAction::Key { .. } => unreachable!(),
+            };
+        };
         let valid = match self.mode {
             InputMode::Foreground
             | InputMode::ForegroundLegacy
             | InputMode::Background
-            | InputMode::BackgroundPost => (1..=254).contains(&self.key),
+            | InputMode::BackgroundPost => (1..=254).contains(&key),
             // 固定 SDK 的 XUSB 数字按键，DS4 另含 PS 与触摸板按键。
-            InputMode::Xbox => self.key > 0 && self.key & !0xf7ff == 0,
-            InputMode::Ds4 => self.key > 0 && self.key & !0x3f7ff == 0,
+            InputMode::Xbox => key > 0 && key & !0xf7ff == 0,
+            InputMode::Ds4 => key > 0 && key & !0x3f7ff == 0,
         };
         if !valid {
             return Err("输入模式与 VK / 手柄按键位掩码不匹配");

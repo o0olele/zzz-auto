@@ -1,6 +1,9 @@
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand, ValueEnum};
-use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, InputProbeConfig, NativeSession};
+use maa_adapter::{
+    CaptureMethod, InferenceDevice, InputMode, InputProbeAction, InputProbeConfig, NativeSession,
+};
+use od_core::{InputSide, MouseButton};
 use std::{
     io::{BufRead, Read},
     path::PathBuf,
@@ -40,6 +43,48 @@ enum Input {
     BackgroundPost,
     Xbox,
     Ds4,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ProbeAction {
+    Key,
+    Mouse,
+    Stick,
+    Trigger,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Side {
+    Left,
+    Right,
+}
+impl From<Side> for InputSide {
+    fn from(side: Side) -> Self {
+        match side {
+            Side::Left => Self::Left,
+            Side::Right => Self::Right,
+        }
+    }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Button {
+    Left,
+    Right,
+    Middle,
+    X1,
+    X2,
+}
+impl From<Button> for MouseButton {
+    fn from(button: Button) -> Self {
+        match button {
+            Button::Left => Self::Left,
+            Button::Right => Self::Right,
+            Button::Middle => Self::Middle,
+            Button::X1 => Self::X1,
+            Button::X2 => Self::X2,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -82,8 +127,20 @@ enum Action {
     InputProbe {
         #[arg(long)]
         hwnd: String,
-        #[arg(long)]
-        key: i32,
+        #[arg(long, value_enum, default_value = "key")]
+        action: ProbeAction,
+        #[arg(long, required_if_eq("action", "key"), conflicts_with_all = ["button", "side", "x", "y", "value"])]
+        key: Option<i32>,
+        #[arg(long, value_enum, required_if_eq("action", "mouse"), conflicts_with_all = ["side", "value"])]
+        button: Option<Button>,
+        #[arg(long, value_enum, required_if_eq_any = [("action", "stick"), ("action", "trigger")])]
+        side: Option<Side>,
+        #[arg(long, allow_hyphen_values = true, required_if_eq_any = [("action", "mouse"), ("action", "stick")])]
+        x: Option<i32>,
+        #[arg(long, allow_hyphen_values = true, required_if_eq_any = [("action", "mouse"), ("action", "stick")])]
+        y: Option<i32>,
+        #[arg(long, required_if_eq("action", "trigger"), conflicts_with_all = ["x", "y"])]
+        value: Option<i32>,
         #[arg(long, default_value_t = 100)]
         hold_ms: u64,
         #[arg(long, default_value_t = 3000)]
@@ -197,7 +254,13 @@ async fn main() -> Result<()> {
         }
         Action::InputProbe {
             hwnd,
+            action,
             key,
+            button,
+            side,
+            x,
+            y,
+            value,
             hold_ms,
             start_delay_ms,
             cancel_after_ms,
@@ -210,6 +273,43 @@ async fn main() -> Result<()> {
                 "输入探针会操作游戏，必须显式指定 --allow-input"
             );
             ensure!((1..=2000).contains(&hold_ms), "按住时间须为 1..2000ms");
+            let action = match action {
+                ProbeAction::Key => InputProbeAction::Key {
+                    key: key.context("缺少 --key")?,
+                },
+                ProbeAction::Mouse => {
+                    ensure!(
+                        key.is_none() && side.is_none() && value.is_none(),
+                        "鼠标动作不接受按键、手柄或力度参数"
+                    );
+                    InputProbeAction::MouseButton {
+                        button: button.context("缺少 --button")?.into(),
+                        x: x.context("缺少 --x")?,
+                        y: y.context("缺少 --y")?,
+                    }
+                }
+                ProbeAction::Stick => {
+                    ensure!(
+                        key.is_none() && button.is_none() && value.is_none(),
+                        "摇杆动作不接受按键、鼠标或力度参数"
+                    );
+                    InputProbeAction::Stick {
+                        stick: side.context("缺少 --side")?.into(),
+                        x: x.context("缺少 --x")?,
+                        y: y.context("缺少 --y")?,
+                    }
+                }
+                ProbeAction::Trigger => {
+                    ensure!(
+                        key.is_none() && button.is_none() && x.is_none() && y.is_none(),
+                        "扳机动作不接受按键、鼠标或坐标参数"
+                    );
+                    InputProbeAction::Trigger {
+                        trigger: side.context("缺少 --side")?.into(),
+                        value: value.context("缺少 --value")?,
+                    }
+                }
+            };
             let mode = match mode {
                 Input::Foreground => InputMode::Foreground,
                 Input::ForegroundLegacy => InputMode::ForegroundLegacy,
@@ -220,7 +320,7 @@ async fn main() -> Result<()> {
             };
             let config = InputProbeConfig {
                 mode,
-                key,
+                action,
                 hold_ms: hold_ms as u32,
                 start_delay_ms,
             };

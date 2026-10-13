@@ -2,7 +2,10 @@
 export type AppDefinition = { id: string, name: string, execution: string, reason: string, factory: string, configs: Array<string>, settings: Array<string>, run_records: Array<string>, source_files: Array<string>, priority: number, default_group: boolean, implemented: boolean, };
 export type RunState = "running" | "stopping" | "succeeded" | "failed" | "stopped";
 export type InputMode = "foreground" | "foreground_legacy" | "background" | "background_post" | "xbox" | "ds4";
-export type InputProbeConfig = { mode: InputMode, key: number, hold_ms: number, start_delay_ms: number, };
+export type InputSide = "left" | "right";
+export type MouseButton = "left" | "right" | "middle" | "x1" | "x2";
+export type InputProbeAction = { "type": "key", key: number, } | { "type": "mouse_button", button: MouseButton, x: number, y: number, } | { "type": "stick", stick: InputSide, x: number, y: number, } | { "type": "trigger", trigger: InputSide, value: number, };
+export type InputProbeConfig = { mode: InputMode, action: InputProbeAction, hold_ms: number, start_delay_ms: number, };
 export type InputProbeResult = { config: InputProbeConfig, pressed: boolean, released: boolean, stopped: boolean, enqueue_us: number, key_down_ms: number, held_ms: number, release_ms: number, stop_ms: number | null, elapsed_ms: number, };
 export type RunRecord = { id: string, app_id: string, state: RunState, started_at: string, finished_at: string | null, message: string, input_probe: InputProbeResult | null, };
 export type RunEvent = { sequence: number, run_id: string | null, at: string, level: string, message: string, };

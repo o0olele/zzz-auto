@@ -143,6 +143,12 @@ impl NativeController {
     pub fn post_key_up(&self, key: i32) -> Result<i64> {
         Ok(unsafe { sys::MaaControllerPostKeyUp(self.raw(), key) })
     }
+    pub fn post_touch_down(&self, contact: i32, x: i32, y: i32, pressure: i32) -> Result<i64> {
+        Ok(unsafe { sys::MaaControllerPostTouchDown(self.raw(), contact, x, y, pressure) })
+    }
+    pub fn post_touch_up(&self, contact: i32) -> Result<i64> {
+        Ok(unsafe { sys::MaaControllerPostTouchUp(self.raw(), contact) })
+    }
 
     pub fn cached_image(&self) -> Result<MaaImageBuffer> {
         let image = MaaImageBuffer::new()?;

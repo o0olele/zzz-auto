@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v4 增加键盘兼容方式与权限诊断，桌面与引擎必须成套使用。
-pub const PROTOCOL_VERSION: u32 = 4;
+// v5 使用显式输入动作，增加鼠标、摇杆与扳机；桌面与引擎必须成套使用。
+pub const PROTOCOL_VERSION: u32 = 5;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 

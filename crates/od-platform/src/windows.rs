@@ -291,11 +291,15 @@ pub fn keyboard_permission(game_pid: u32) -> Result<KeyboardPermission> {
 pub fn check_keyboard_target(window: &WindowInfo, foreground: bool) -> Result<()> {
     let current = parse_game_window(&window.hwnd)?;
     ensure!(current.pid == window.pid, "游戏窗口身份已变化，请重新连接");
+    ensure!(
+        current.width == 1920 && current.height == 1080,
+        "游戏客户区须为 1920×1080，请恢复窗口后重新连接"
+    );
     let permission =
-        keyboard_permission(current.pid).context("无法确认键盘权限，请检查游戏与工具的运行权限")?;
+        keyboard_permission(current.pid).context("无法确认键鼠权限，请检查游戏与工具的运行权限")?;
     ensure!(
         permission.compatible,
-        "游戏权限高于引擎，Windows 会限制键盘输入。请从托盘退出工具，再以管理员身份启动工具；启动器正常启动不代表游戏没有管理员权限"
+        "游戏权限高于引擎，Windows 会限制键鼠输入。请从托盘退出工具，再以管理员身份启动工具；启动器正常启动不代表游戏没有管理员权限"
     );
     if foreground {
         let mut foreground_pid = 0;
@@ -304,7 +308,7 @@ pub fn check_keyboard_target(window: &WindowInfo, foreground: bool) -> Result<()
         }
         ensure!(
             foreground_pid == current.pid,
-            "启动延时已结束，但游戏不在前台；未发送按键。请增加延时并在延时期间切回游戏"
+            "启动延时已结束，但游戏不在前台；未发送输入。请增加延时并在延时期间切回游戏"
         );
     }
     Ok(())

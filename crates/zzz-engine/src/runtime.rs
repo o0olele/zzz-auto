@@ -271,8 +271,8 @@ impl Engine {
                     Some(record.id),
                     "info",
                     format!(
-                        "开始真实输入诊断：{:?}，按键 {}，延时 {}ms，按住 {}ms",
-                        config.mode, config.key, config.start_delay_ms, config.hold_ms
+                        "开始真实输入诊断：{:?}，动作 {:?}，延时 {}ms，按住 {}ms",
+                        config.mode, config.action, config.start_delay_ms, config.hold_ms
                     ),
                 );
                 Ok(Payload::Run(record))

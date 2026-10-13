@@ -89,6 +89,20 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    RecognitionCheck {
+        #[arg(long)]
+        cases: PathBuf,
+        #[arg(long)]
+        fixture_root: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        directml: Option<i32>,
+        #[arg(long, default_value_t = 5)]
+        warmup: usize,
+        #[arg(long, default_value_t = 30)]
+        samples: usize,
+    },
     Doctor,
     Applications,
     Windows,
@@ -198,6 +212,40 @@ async fn main() -> Result<()> {
     let sdk = maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"))?;
     match args.command {
         Action::Doctor => print(sdk),
+        Action::RecognitionCheck {
+            cases,
+            fixture_root,
+            output,
+            directml,
+            warmup,
+            samples,
+        } => {
+            let report = zzz_engine::recognition::run(
+                &paths.resources,
+                &fixture_root,
+                &cases,
+                &paths.data.join("maa-log"),
+                directml,
+                warmup,
+                samples,
+            )?;
+            if let Some(parent) = output
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&output, serde_json::to_vec_pretty(&report)?)?;
+            print(
+                serde_json::json!({"report":output,"cases":report.devices.iter().map(|device| serde_json::json!({"device":device.device,"successful":device.cases.iter().filter(|case| case.errors.is_empty()).count(),"failed":device.cases.iter().filter(|case| !case.errors.is_empty()).count(),"expectation_failed":device.cases.iter().filter(|case| case.expectation_passed == Some(false)).count(),"error":device.error})).collect::<Vec<_>>(),"device_comparisons_passed":report.comparisons.iter().filter(|case| case.equal_within_tolerance).count(),"legacy_compatible":report.legacy_compatible,"acceptance":report.acceptance}),
+            )?;
+            ensure!(
+                report.basic_checks_passed(),
+                "识别能力、预期、稳定性或设备输出对照未通过，请查看 {}",
+                output.display()
+            );
+            Ok(())
+        }
         Action::Probe {
             fixture,
             cancel_after_ms,

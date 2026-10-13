@@ -1,6 +1,8 @@
 mod fixture;
+mod inference;
 mod input;
 mod sdk;
+pub use inference::{GpuLease, RecognitionImage, RecognitionMeasurement, RecognitionTiming};
 pub use maa_framework::common::ControllerFeature;
 pub use maa_framework::custom_controller::CustomControllerCallback;
 pub use od_core::{CaptureMethod, InputMode, InputProbeAction, InputProbeConfig, InputProbeResult};
@@ -95,6 +97,7 @@ pub struct NativeSession {
     held_contacts: BTreeSet<i32>,
     input_cleanup_pending: bool,
     _lease: Option<GameLease>,
+    _gpu_lease: Option<GpuLease>,
 }
 
 impl NativeSession {
@@ -170,6 +173,10 @@ impl NativeSession {
         input_mode: Option<InputMode>,
         capture_method: Option<CaptureMethod>,
     ) -> Result<Self> {
+        let gpu_lease = match device {
+            InferenceDevice::Cpu => None,
+            InferenceDevice::DirectMl(id) => Some(GpuLease::acquire(id)?),
+        };
         controller.set_screenshot_use_raw_size(true)?;
         ensure!(
             controller.wait(controller.post_connection()?).is_success(),
@@ -208,6 +215,7 @@ impl NativeSession {
             held_contacts: BTreeSet::new(),
             input_cleanup_pending: false,
             _lease: lease,
+            _gpu_lease: gpu_lease,
         })
     }
 
@@ -319,6 +327,31 @@ impl NativeSession {
         kind: &str,
         params: &serde_json::Value,
     ) -> Result<serde_json::Value> {
+        Ok(self.recognize_timed(image, kind, params)?.detail)
+    }
+
+    pub fn recognize_timed(
+        &self,
+        image: &Path,
+        kind: &str,
+        params: &serde_json::Value,
+    ) -> Result<RecognitionMeasurement> {
+        let started = Instant::now();
+        let prepared = RecognitionImage::load(image)?;
+        let mut result = self.recognize_prepared(&prepared, kind, params)?;
+        result.timing.prepare_us = prepared.prepare_us;
+        result.timing.total_us = started.elapsed().as_micros() as u64;
+        Ok(result)
+    }
+
+    pub fn recognize_prepared(
+        &self,
+        image: &RecognitionImage,
+        kind: &str,
+        params: &serde_json::Value,
+    ) -> Result<RecognitionMeasurement> {
+        let started = Instant::now();
+        ensure!(!self.tasker.running(), "Maa Tasker 正在执行其他任务");
         ensure!(
             [
                 "OCR",
@@ -331,17 +364,19 @@ impl NativeSession {
             .contains(&kind),
             "不支持的识别类型"
         );
-        let bytes = fixture::read_png(image)?;
-        let mut buffer = MaaImageBuffer::new()?;
-        buffer.set_encoded(&bytes)?;
-        ensure!(
-            buffer.width() == BASE_WIDTH && buffer.height() == BASE_HEIGHT,
-            "识别语料必须是 1920×1080"
-        );
+        let enqueue_at = Instant::now();
         let job = self
             .tasker
-            .post_recognition(kind, &params.to_string(), &buffer)?;
-        ensure!(job.wait().is_success(), "Maa 识别调用失败");
+            .post_recognition(kind, &params.to_string(), &image.buffer)?;
+        let enqueue_us = enqueue_at.elapsed().as_micros() as u64;
+        let completion_at = Instant::now();
+        let status = job.wait();
+        ensure!(
+            status.is_success() || status == MaaStatus::FAILED,
+            "Maa 识别调用状态无效：{status}"
+        );
+        let completion_us = completion_at.elapsed().as_micros() as u64;
+        let details_at = Instant::now();
         // SDK 返回 MaaTaskId；1.25.2 的 job.get 把它当成 MaaRecoId。
         // 按任务 → 节点 → 识别详情读取，保持使用固定官方绑定。
         let task = self
@@ -354,7 +389,22 @@ impl NativeSession {
             .flatten()
             .find_map(|node| node.recognition)
             .context("Maa 未返回识别详情")?;
-        Ok(serde_json::to_value(detail)?)
+        // 未命中可能返回 Failed，但有完整 recognition 详情，不能当作原生异常。
+        ensure!(
+            status.is_success() || !detail.hit,
+            "Maa 识别任务失败但详情报告命中"
+        );
+        Ok(RecognitionMeasurement {
+            detail: serde_json::to_value(detail)?,
+            native_status: status.to_string(),
+            timing: RecognitionTiming {
+                prepare_us: 0,
+                enqueue_us,
+                completion_us,
+                details_us: details_at.elapsed().as_micros() as u64,
+                total_us: started.elapsed().as_micros() as u64,
+            },
+        })
     }
 
     pub fn hold_key_probe(&mut self, key: i32, duration: Duration) -> Result<()> {

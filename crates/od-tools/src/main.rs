@@ -12,6 +12,12 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    Models {
+        #[arg(long, default_value = "sdk/models")]
+        source: PathBuf,
+        #[arg(long, default_value = "resources/generated/recognition")]
+        output: PathBuf,
+    },
     Baseline {
         #[arg(long)]
         reference: PathBuf,
@@ -46,6 +52,14 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::Models { source, output } => {
+            let manifest = od_tools::models::convert(&source, &output)?;
+            println!(
+                "已校验并转换 {} 个模型；兼容差异保留在 model-manifest.json",
+                manifest["models"].as_array().map_or(0, Vec::len)
+            );
+            Ok(())
+        }
         Tool::Baseline {
             reference,
             test_root,

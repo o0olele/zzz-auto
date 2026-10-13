@@ -39,7 +39,7 @@ cargo run -p zzz-engine -- probe --fixture zzz-od-test/screens/邮件/列表.web
 
 鼠标可选择左、右、中或两个侧键；坐标以 1920×1080 游戏客户区左上角为原点，X 为 0..1919，Y 为 0..1079。前台方式会移动鼠标到该位置。摇杆 X / Y 为 -32768..32767，X 正值向右、Y 正值向上；扳机力度为 1..255。摇杆和扳机仅用于 Xbox / DS4 方式。鼠标输入前确认截图尺寸，避免截图失败时点到错误位置；数字按键、鼠标与模拟量共用运行槽与停止规则。拖动、滚轮和连续模拟量变化尚未实现。
 
-前台键鼠在延时结束时要求游戏处于前台。工具会检测游戏与引擎权限，发现游戏权限更高时提示从托盘退出、以管理员身份重新打开工具。启动器正常启动无法直接证明游戏权限与工具匹配。用户已反馈前台键盘响应、持有期间停止与无残留动作，以及游戏后台时的 Xbox 数字按键正常；两种后台键盘方式均未生效，暂保留为诊断选项。新增鼠标、摇杆 / 扳机诊断已完成离线回归；这些动作在游戏中的响应、DS4、完整任务与异常收尾等场景仍待验收，具体范围见[验收记录](docs/migration/acceptance.md)。
+前台键鼠在延时结束时要求游戏处于前台。工具会检测游戏与引擎权限，发现游戏权限更高时提示从托盘退出、以管理员身份重新打开工具。启动器正常启动无法直接证明游戏权限与工具匹配。用户已反馈前台键盘响应、持有期间停止与无残留动作，以及游戏后台时的 Xbox 数字按键正常；两种后台键盘方式均未生效，暂保留为诊断选项。0.1.4 鼠标按键及 Xbox / DS4 摇杆与扳机已有基础实机通过反馈；具体前后台组合、DS4 数字按键、完整任务与异常收尾等场景继续验收，具体范围见[验收记录](docs/migration/acceptance.md)。
 
 CLI `input-probe` 使用同一实现，指定 `--hwnd`、`--key`、`--hold-ms`、`--mode` 和 `--allow-input`。`--start-delay-ms` 默认为 3000；`--cancel-after-ms` 从探针开始计时，包括启动延时。Ctrl+C 请求收尾后退出。程序返回按下投递、按下完成、实际持有、释放和取消收尾耗时；这些是控制器完成数据，游戏响应仍需观察。示例：
 
@@ -58,6 +58,21 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 ```
 
 0.1.4 协议为 v5，桌面与引擎必须使用同一版本。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
+
+## 离线模型对照
+
+准备固定的旧版 PP-OCRv5、闪光及两种 YOLO 模型，再运行同一批固定图的 CPU / DirectML 对照：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-models.ps1
+cargo run -p zzz-engine -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/cases.json --fixture-root zzz-od-test --output artifacts/recognition-report.json --directml 0
+```
+
+`models.lock.json` 固定四个官方发布包及使用文件的 SHA-256。模型缓存位于 `sdk/models/`，转换资源位于 `resources/generated/recognition/`；已有 ZIP 缓存时可为安装脚本加 `-Offline`。转换保持字典字节和标签索引，附带已发现的预处理差异，参考仓不会被修改。当前便携测试包仍不包含这些模型和新增命令，需要从本工程构建引擎。
+
+验证仅进行离线识别，先 CPU 后 DirectML，每案默认预热 5 次、正式测量 30 次。省略 `--directml` 时只跑 CPU；`--warmup` 和 `--samples` 可调整轮数。图像准备、首次识别与正式样本分别记录，正式样本使用同一份已解码帧。JSON 报告包含文字 / 类别 / 框 / 分数、预期检查、结果稳定性和 P50 / P95；原生未命中保留为未命中，错误单独记录。能力调用、预期、稳定性、设备对照或 DirectML 配置证据未通过时，报告仍写出，命令以失败状态退出；已登记的旧版兼容性缺口继续标记 pending。
+
+当前对照不代表旧版完全兼容：Maa 闪光分类再次 softmax，YOLO 的补边和插值与旧版不同；旧版实际输出、正样本和同机性能基线还需补齐。报告明确区分设备请求与可取得的 DirectML 配置日志证据。具体约定见[模型对照说明](docs/develop/recognition-validation.md)，阶段结论以[验收记录](docs/migration/acceptance.md)为准。
 
 ## 工程与数据
 

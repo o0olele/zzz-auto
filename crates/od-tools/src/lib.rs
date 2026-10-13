@@ -1,5 +1,6 @@
 pub mod baseline;
 pub mod inventory;
+pub mod models;
 pub mod resources;
 
 use anyhow::{Context, Result};

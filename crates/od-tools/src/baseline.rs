@@ -51,19 +51,47 @@ pub fn prepare(reference: &Path, test_root: &Path) -> Result<()> {
     let model_source =
         std::fs::read_to_string(reference.join("src/zzz_od/config/model_config.py"))?;
     let pattern = regex::Regex::new(r"(?m)^_DEFAULT_(\w+)\s*=\s*'([^']+)'")?;
-    let models: Vec<_> = pattern.captures_iter(&model_source).map(|capture| json!({"role": capture[1].to_lowercase(), "name": &capture[2], "present": false, "accepted": false})).collect();
+    let model_lock = crate::models::locked_models()?;
+    let test_directory = test_root.canonicalize()?;
+    let model_cache = test_directory
+        .parent()
+        .context("测试仓缺少父目录")?
+        .join("sdk/models");
+    let models: Vec<_> = pattern.captures_iter(&model_source).map(|capture| {
+        let present = model_lock.models.iter().find(|model| model.id == capture[2])
+            .is_some_and(|model| crate::models::cached_files_valid(&model_cache, model));
+        json!({"role":capture[1].to_lowercase(),"name":&capture[2],"present":present,"accepted":false})
+    }).collect();
+    let ocr_present = model_lock
+        .models
+        .iter()
+        .find(|model| model.id == "ppocrv5")
+        .is_some_and(|model| crate::models::cached_files_valid(&model_cache, model));
+    let mut missing = vec![
+        "完整旧识别输出及预处理对照",
+        "红光 / 黄光、检测正样本和阈值附近语料",
+        "声音边界录音",
+        "同机完整输入与性能基线",
+    ];
+    if !ocr_present {
+        missing.push("旧 OCR 模型与字典");
+    }
+    if models.iter().any(|model| model["present"] != true) {
+        missing.push("闪光与 YOLO ONNX 模型");
+    }
     crate::write_json(
         &destination.join("baseline.json"),
         &json!({
             "schema_version": 1, "base_size": [1920,1080], "random_seed": 42,
             "clock": {"calendar_time":"2026-10-12T00:00:00+08:00", "monotonic_ms":0},
             "screenshots": screenshots, "inputs": inputs, "models": models,
-            "ocr": {"source":"src/one_dragon/base/matcher/ocr/onnx_ocr_matcher.py", "present":false, "accepted":false},
+            "ocr": {"source":"src/one_dragon/base/matcher/ocr/onnx_ocr_matcher.py", "present":ocr_present, "accepted":false},
+            "model_lock": {"path":"models.lock.json", "cache":"sdk/models", "availability":"缓存文件按锁文件校验；不代表旧行为已经验收"},
             "legacy_observations": {"source":"docs/game/screens/邮件.md", "title":"邮件", "claim_all":"全部领取", "back_box":[92,23,48,57], "kind":"文档快照，尚无同机旧实现性能结果"},
             "performance": {"warmup":5,"samples":30,"quantiles":[0.5,0.95],"legacy_measurements":null},
-            "acceptance":"pending", "missing":["旧 OCR 模型与字典","闪光与 YOLO ONNX 模型及旧输出","声音边界录音","同机游戏输入与性能基线"]
+            "acceptance":"pending", "missing":missing
         }),
     )?;
-    println!("已固定 3 张邮件画面和 4 份资源 / 配置，缺失模型和实机基线见 baseline.json");
+    println!("已固定 3 张邮件画面和 4 份资源 / 配置，模型可用性与验收缺口见 baseline.json");
     Ok(())
 }

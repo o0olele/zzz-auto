@@ -7,3 +7,5 @@
 - Maa SDK 包含 OpenCV、ONNX Runtime、DirectML 等原生依赖。本轮记录实际 DLL SHA-256；M7 仍须核对每项原生依赖的许可、可再分发范围与发布清单。该步骤未由编译成功代替。
 
 Rust 与前端精确依赖分别保存在 `Cargo.lock` 和 `apps/desktop/package-lock.json`。SDK 中的 Node 包装器、CLI、示例插件和 AgentBinary 不列入本项目运行包；只打包固定运行 DLL。
+
+M1 离线模型缓存来自参考项目配置使用的 [OneDragon-Env PP-OCRv5 发布](https://github.com/OneDragon-Anything/OneDragon-Env/releases/tag/ppocrv5)和 [OneDragon-YOLO 模型发布](https://github.com/OneDragon-Anything/OneDragon-YOLO/releases/tag/zzz_model)。发布包和使用文件的 SHA-256 在 `models.lock.json` 固定，来源不变，字典和标签保留。缓存与转换结果不作为源码提交，也未加入当前便携包；正式模型分发的许可与来源清单继续按 M7 核对。

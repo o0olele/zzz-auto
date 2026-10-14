@@ -21,6 +21,16 @@ pub struct ModelAsset {
     pub sha256: String,
     pub files: Vec<ModelFile>,
     pub known_differences: Vec<String>,
+    #[serde(default)]
+    pub adaptation: Option<ModelAdaptation>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ModelAdaptation {
+    pub kind: String,
+    pub bundle_path: String,
+    pub bytes: u64,
+    pub sha256: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -86,13 +96,25 @@ pub fn convert(source: &Path, output: &Path) -> Result<serde_json::Value> {
     let source = source
         .canonicalize()
         .context("模型缓存不存在，先运行 scripts/setup-models.ps1")?;
+    // 创建输出目录前解析已存在的祖先，拒绝尚不存在但位于来源内的目标。
+    let mut ancestor = std::path::absolute(output)?;
+    let mut missing = Vec::new();
+    while !ancestor.exists() {
+        missing.push(ancestor.file_name().context("模型输出路径无效")?.to_owned());
+        ensure!(ancestor.pop(), "模型输出缺少有效祖先目录");
+    }
+    let mut output = ancestor.canonicalize()?;
+    for part in missing.into_iter().rev() {
+        output.push(part);
+    }
     ensure!(
-        !output.exists() || !output.canonicalize()?.starts_with(&source),
-        "模型输出不能写入来源目录"
+        !output.starts_with(&source) && !source.starts_with(&output),
+        "模型来源与输出目录不能重叠"
     );
     let mut files = Vec::new();
     let mut models = Vec::new();
     let mut destinations = BTreeSet::new();
+    let mut derived_files = Vec::new();
     // 全部校验通过之后才写文件，不能将未校验模型带入生成目录。
     for model in &lock.models {
         crate::resources::safe_relative(&model.id)?;
@@ -121,9 +143,31 @@ pub fn convert(source: &Path, output: &Path) -> Result<serde_json::Value> {
                 files.push(serde_json::json!({"path":destination, "sha256":file.sha256, "bytes":file.bytes}));
             }
         }
-        models.push(serde_json::json!({"id":model.id,"role":model.role,"labels":labels,"known_differences":model.known_differences,"legacy_compatible":false}));
+        if let Some(adaptation) = &model.adaptation {
+            ensure!(
+                model.role == "classify" && adaptation.kind == "remove_output_softmax",
+                "模型适配类型无效"
+            );
+            crate::resources::safe_relative(&adaptation.bundle_path)?;
+            ensure!(
+                destinations.insert(adaptation.bundle_path.clone()),
+                "生成模型路径重复"
+            );
+            let bytes = crate::flash_model::remove_output_softmax(&std::fs::read(
+                source.join(&model.id).join("model.onnx"),
+            )?)?;
+            use sha2::{Digest, Sha256};
+            ensure!(
+                bytes.len() as u64 == adaptation.bytes
+                    && hex::encode(Sha256::digest(&bytes)) == adaptation.sha256,
+                "衍生闪光模型与锁定哈希不符"
+            );
+            files.push(serde_json::json!({"path":adaptation.bundle_path,"sha256":adaptation.sha256,"bytes":adaptation.bytes}));
+            derived_files.push((adaptation.bundle_path.clone(), bytes));
+        }
+        models.push(serde_json::json!({"id":model.id,"role":model.role,"labels":labels,"adaptation":model.adaptation,"known_differences":model.known_differences,"legacy_compatible":false}));
     }
-    std::fs::create_dir_all(output)?;
+    std::fs::create_dir_all(&output)?;
     let output = output.canonicalize()?;
     ensure!(
         !output.starts_with(&source) && !source.starts_with(&output),
@@ -154,12 +198,29 @@ pub fn convert(source: &Path, output: &Path) -> Result<serde_json::Value> {
             }
         }
     }
+    for (name, bytes) in derived_files {
+        let destination = output.join(name);
+        std::fs::create_dir_all(destination.parent().context("衍生路径缺少目录")?)?;
+        ensure!(
+            destination
+                .parent()
+                .unwrap()
+                .canonicalize()?
+                .starts_with(&output),
+            "衍生目录指向输出之外"
+        );
+        ensure!(
+            !destination.exists() || destination.canonicalize()?.starts_with(&output),
+            "衍生文件指向输出之外"
+        );
+        std::fs::write(&destination, bytes)?;
+    }
     // 资源包含一个无输入节点，保证可单独载入；诊断只调用识别接口。
     crate::write_json(
         &output.join("pipeline/model-diagnostics.json"),
         &serde_json::json!({"Diagnostics.Ready":{"recognition":"DirectHit","action":"DoNothing"}}),
     )?;
-    let manifest = serde_json::json!({"schema_version":1,"sdk_version":lock.sdk_version,"reference_commit":lock.reference_commit,"files":files,"models":models,"legacy_compatible":false});
+    let manifest = serde_json::json!({"schema_version":2,"sdk_version":lock.sdk_version,"reference_commit":lock.reference_commit,"files":files,"models":models,"legacy_compatible":false});
     crate::write_json(&output.join("model-manifest.json"), &manifest)?;
     Ok(manifest)
 }

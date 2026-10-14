@@ -1,4 +1,5 @@
 mod fixture;
+pub mod flash;
 mod inference;
 mod input;
 mod sdk;
@@ -339,7 +340,7 @@ impl NativeSession {
         let started = Instant::now();
         let prepared = RecognitionImage::load(image)?;
         let mut result = self.recognize_prepared(&prepared, kind, params)?;
-        result.timing.prepare_us = prepared.prepare_us;
+        result.timing.prepare_us += prepared.prepare_us;
         result.timing.total_us = started.elapsed().as_micros() as u64;
         Ok(result)
     }
@@ -352,6 +353,9 @@ impl NativeSession {
     ) -> Result<RecognitionMeasurement> {
         let started = Instant::now();
         ensure!(!self.tasker.running(), "Maa Tasker 正在执行其他任务");
+        if kind == "LegacyFlashClassify" {
+            return self.recognize_flash(image, params);
+        }
         ensure!(
             [
                 "OCR",

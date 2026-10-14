@@ -74,6 +74,15 @@ cargo run -p zzz-engine -- --resources resources/generated/recognition recogniti
 
 当前对照不代表旧版完全兼容：Maa 闪光分类再次 softmax，YOLO 的补边和插值与旧版不同；旧版实际输出、正样本和同机性能基线还需补齐。报告明确区分设备请求与可取得的 DirectML 配置日志证据。具体约定见[模型对照说明](docs/develop/recognition-validation.md)，阶段结论以[验收记录](docs/migration/acceptance.md)为准。
 
+闪光适配入口 `LegacyFlashClassify` 已补旧版的等比缩放、右下补边和概率判定，继续由 Maa 推理。先重新生成模型资源，再运行原生 / 适配路径的固定图对照：
+
+```powershell
+cargo run -p od-tools --locked -- models
+cargo run -p zzz-engine --locked -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/flash-cases.json --fixture-root zzz-od-test --output artifacts/flash-report.json --directml 0
+```
+
+生成的 logits 模型与原模型分别校验，资源清单升级为 v2；旧生成目录需要重新转换。正式采样中的 `prepare` 包括每轮缩放、补边与 Maa 图像缓存，`total` 包括适配和推理；固定图解码仍单列。Maa 分数的六位小数会使约 0.8999998 变为 0.9，适配入口对距阈值不超过 0.000001 的值返回精度错误。真实红光 / 黄光、旧版实际输出和该精度边界仍未验收，详见[闪光适配方案](docs/develop/recognition-validation.md#闪光分类适配方案)。当前便携包不包含本轮新增实现。
+
 ## 工程与数据
 
 六个 Rust crate 分别负责通用核心、协议、平台、Maa 适配、引擎与迁移工具；桌面位于 `apps/desktop/`。详见 [首轮实现说明](docs/develop/implementation.md)。
@@ -94,6 +103,8 @@ cargo run -p od-tools -- types
 区域转换保留 1080p 坐标、识别节点与导航元信息，报告 OCR LCS、模板掩码和颜色过滤差异。生成文件不手改，尚未验收的节点不能直接用于领取流程。原生新 Pipeline 放在 `resources/pipeline/`。
 
 测试代码在独立 `zzz-od-test/test/zzz_auto/`，主工程不含测试模块。当前本机已有配套 Rust 与前端测试；新环境需要获取包含这些改动的配套测试分支，不能仅克隆旧测试仓主分支就假定新测试存在。
+
+Rust 模型回归需要固定 Maa SDK 和 `sdk/models/` 缓存，先执行 `scripts/setup-sdk.ps1` 与 `scripts/setup-models.ps1`；已有完整 ZIP 缓存时模型脚本可用 `-Offline`。验证脚本不自动下载模型。
 
 ```powershell
 cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --locked -- --test-threads=1

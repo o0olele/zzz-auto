@@ -62,6 +62,8 @@ pub struct Item {
 pub struct Observation {
     pub hit: bool,
     pub items: Vec<Item>,
+    #[serde(default)]
+    pub classification_candidate: Option<Item>,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,6 +83,7 @@ pub struct CaseReport {
     pub legacy_evidence: String,
     pub expectation_passed: Option<bool>,
     pub observation: Option<Observation>,
+    pub adaptation: Option<serde_json::Value>,
     pub native_status: Option<String>,
     pub first_call: Option<RecognitionTiming>,
     pub fixture_prepare_us: Option<u64>,
@@ -192,6 +195,7 @@ pub fn load_cases(path: &Path, fixture_root: &Path) -> Result<CaseManifest> {
                 "FeatureMatch",
                 "ColorMatch",
                 "NeuralNetworkClassify",
+                "LegacyFlashClassify",
                 "NeuralNetworkDetect"
             ]
             .contains(&case.kind.as_str()),
@@ -239,7 +243,7 @@ pub fn verify_model_bundle(root: &Path) -> Result<serde_json::Value> {
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(root.join("model-manifest.json"))?)?;
     ensure!(
-        manifest["schema_version"] == 1 && manifest["sdk_version"] == maa_adapter::SDK_VERSION,
+        manifest["schema_version"] == 2 && manifest["sdk_version"] == maa_adapter::SDK_VERSION,
         "模型资源清单版本不兼容"
     );
     let mut expected = BTreeMap::new();
@@ -251,6 +255,20 @@ pub fn verify_model_bundle(root: &Path) -> Result<serde_json::Value> {
                     (file["sha256"].clone(), file["bytes"].clone()),
                 );
             }
+        }
+        if let Some(adaptation) = model.get("adaptation") {
+            let name = adaptation["bundle_path"]
+                .as_str()
+                .context("衍生模型路径无效")?;
+            ensure!(
+                expected
+                    .insert(
+                        name.to_owned(),
+                        (adaptation["sha256"].clone(), adaptation["bytes"].clone())
+                    )
+                    .is_none(),
+                "衍生模型路径重复"
+            );
         }
     }
     let files = manifest["files"].as_array().context("缺少模型文件清单")?;
@@ -285,13 +303,28 @@ pub fn validate_model_requests(
     for case in cases {
         let role = match case.kind.as_str() {
             "OCR" => "ocr",
-            "NeuralNetworkClassify" => "classify",
+            "NeuralNetworkClassify" | "LegacyFlashClassify" => "classify",
             "NeuralNetworkDetect" => "detect",
             _ => continue,
         };
         let requested = case.params["model"]
             .as_str()
             .context("模型诊断须显式指定锁定模型名称")?;
+        if case.kind == "LegacyFlashClassify" {
+            maa_adapter::flash::FlashConfig::parse(&case.params)?;
+            ensure!(
+                models
+                    .as_array()
+                    .context("固定模型目录无效")?
+                    .iter()
+                    .any(|model| model["role"] == role
+                        && model["adaptation"]["kind"] == "remove_output_softmax"
+                        && model["adaptation"]["bundle_path"]
+                            == format!("model/classify/{requested}")),
+                "闪光适配请求未锁定的衍生模型"
+            );
+            continue;
+        }
         ensure!(
             models
                 .as_array()
@@ -352,7 +385,22 @@ pub fn normalize(detail: &serde_json::Value) -> Result<Observation> {
         });
     }
     ensure!(!hit || !items.is_empty(), "原生命中但没有可比较结果");
-    Ok(Observation { hit, items })
+    let classification_candidate = detail
+        .get("adaptation")
+        .map(|adaptation| {
+            let candidate = adaptation
+                .get("candidate")
+                .context("闪光适配缺少候选结果")?;
+            let normalized =
+                normalize(&serde_json::json!({"hit":true,"detail":{"filtered":[candidate]}}))?;
+            Ok::<_, anyhow::Error>(normalized.items.into_iter().next().unwrap())
+        })
+        .transpose()?;
+    Ok(Observation {
+        hit,
+        items,
+        classification_candidate,
+    })
 }
 
 fn item_equal(left: &Item, right: &Item, tolerance: Tolerance) -> bool {
@@ -401,6 +449,16 @@ pub fn compare(left: &Observation, right: &Observation, tolerance: Tolerance) ->
         return false;
     }
     if left.hit != right.hit || left.items.len() != right.items.len() || left.items.len() > 512 {
+        return false;
+    }
+    if !match (
+        &left.classification_candidate,
+        &right.classification_candidate,
+    ) {
+        (Some(a), Some(b)) => item_equal(a, b, tolerance),
+        (None, None) => true,
+        _ => false,
+    } {
         return false;
     }
     let mut matched = vec![None; right.items.len()];
@@ -470,6 +528,7 @@ fn check_case(
         legacy_evidence: case.legacy_evidence.clone(),
         expectation_passed: None,
         observation: None,
+        adaptation: None,
         native_status: None,
         first_call: None,
         fixture_prepare_us: None,
@@ -484,6 +543,7 @@ fn check_case(
         report.fixture_prepare_us = Some(image.prepare_us);
         let first = native.recognize_prepared(&image, &case.kind, &case.params)?;
         let reference = normalize(&first.detail)?;
+        report.adaptation = first.detail.get("adaptation").cloned();
         report.first_call = Some(first.timing);
         report.native_status = Some(first.native_status);
         report.observation = Some(reference.clone());
@@ -600,7 +660,13 @@ pub fn run(
     );
     let manifest = load_cases(cases_path, fixture_root)?;
     let models_needed = manifest.cases.iter().any(|case| {
-        ["OCR", "NeuralNetworkClassify", "NeuralNetworkDetect"].contains(&case.kind.as_str())
+        [
+            "OCR",
+            "NeuralNetworkClassify",
+            "LegacyFlashClassify",
+            "NeuralNetworkDetect",
+        ]
+        .contains(&case.kind.as_str())
     });
     let differences = if models_needed {
         verify_model_bundle(resources)?

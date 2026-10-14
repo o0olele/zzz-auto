@@ -23,7 +23,13 @@
         { "path": "model.onnx", "bytes": 5772841, "sha256": "cdd4ffc7a4610321724e6acd43032cc95b8f8431deba3d4c5849c335d4dc08a0", "bundle_path": "model/classify/yolov8n-640-flash-20250921.onnx" },
         { "path": "labels.csv", "bytes": 39, "sha256": "d0840043a15377fbeba8ea04fed6860b810656da79d6c3dd82bf524d3e62954a", "bundle_path": null }
       ],
-      "known_differences": ["旧版 INTER_LINEAR 保持比例并在右下补 114；Maa 分类用 INTER_AREA 直接缩放整个 ROI", "Maa 对模型输出再做 softmax；旧版直接取模型输出且用 0.9 阈值，不能直接比较 Maa score"]
+      "adaptation": {
+        "kind": "remove_output_softmax",
+        "bundle_path": "model/classify/yolov8n-640-flash-20250921-logits.onnx",
+        "bytes": 5772829,
+        "sha256": "6d26f22aa8a52180709bdf883721a5c494e0c80be5cbff4d4f326c8ecf299886"
+      },
+      "known_differences": ["原生分类仍使用 INTER_AREA 拉伸并再次 softmax；LegacyFlashClassify 使用衍生 logits 模型及 SDK OpenCV INTER_LINEAR / 右下补 114", "适配保留旧版默认 0.9 阈值；仍需同机旧输出、红光 / 黄光和阈值附近的标注语料验收"]
     },
     {
       "id": "yolov8s-736-hollow-zero-event-0126", "role": "detect", "archive": "yolov8s-736-hollow-zero-event-0126.zip", "bytes": 33267044,

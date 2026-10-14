@@ -12,7 +12,8 @@ use std::{ffi::CStr, path::Path, sync::Mutex, time::Instant};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 
 use crate::{
-    InferenceDevice, NativeSession, RecognitionImage, RecognitionMeasurement, RecognitionTiming,
+    InferenceDevice, NativeSession, RawRecognitionControl, RawRecognitionPhase, RecognitionImage,
+    RecognitionMeasurement, RecognitionTiming,
     flash::{self, FLASH_LABELS, FLASH_SIZE, FlashConfig},
 };
 
@@ -100,6 +101,14 @@ pub(crate) fn bgr_to_rgb_tensor_sized(bgr: &[u8], size: i32) -> Result<Vec<f32>>
 }
 
 pub(crate) fn bgr_to_rgb_tensor_dimensions(bgr: &[u8], size: [i32; 2]) -> Result<Vec<f32>> {
+    bgr_to_rgb_tensor_controlled(bgr, size, None)
+}
+
+pub(crate) fn bgr_to_rgb_tensor_controlled(
+    bgr: &[u8],
+    size: [i32; 2],
+    control: Option<&RawRecognitionControl>,
+) -> Result<Vec<f32>> {
     let [width, height] = size;
     ensure!(
         (1..=1920).contains(&width) && (1..=1080).contains(&height),
@@ -112,6 +121,11 @@ pub(crate) fn bgr_to_rgb_tensor_dimensions(bgr: &[u8], size: [i32; 2]) -> Result
     );
     let mut tensor = vec![0f32; plane * 3];
     for (position, pixel) in bgr.chunks_exact(3).enumerate() {
+        if position % 4096 == 0
+            && let Some(control) = control
+        {
+            control.checkpoint(RawRecognitionPhase::Preprocessing)?;
+        }
         for (channel, source) in [2, 1, 0].into_iter().enumerate() {
             // 旧版先 NumPy float64 除法，最后 astype(float32)，不使用 f32 乘倒数。
             tensor[channel * plane + position] = (f64::from(pixel[source]) / 255.0) as f32;
@@ -221,6 +235,7 @@ impl NativeSession {
         &self,
         image: &RecognitionImage,
         params: &Value,
+        control: &RawRecognitionControl,
     ) -> Result<RecognitionMeasurement> {
         let started = Instant::now();
         let config = FlashConfig::parse_raw(params)?;
@@ -246,12 +261,22 @@ impl NativeSession {
             0
         };
         let classifier = cached.as_mut().unwrap();
+        control.checkpoint(RawRecognitionPhase::Preprocessing)?;
         let prepare_at = Instant::now();
         let prepared = flash::prepare_flash_image(image, config.roi)?;
-        let tensor = Tensor::from_array(([1, 3, 640, 640], bgr_to_rgb_tensor(&prepared.bgr)?))?;
+        let tensor = Tensor::from_array((
+            [1, 3, 640, 640],
+            bgr_to_rgb_tensor_controlled(&prepared.bgr, [640, 640], Some(control))?,
+        ))?;
         let prepare_us = prepare_at.elapsed().as_micros() as u64;
         let completion_at = Instant::now();
-        let output = classifier.session.run(ort::inputs!["images"=>tensor])?;
+        let options = control.start_inference()?;
+        let output = classifier
+            .session
+            .run_with_options(ort::inputs!["images"=>tensor], &options);
+        control.end_inference(output.as_ref().err().map(ToString::to_string))?;
+        control.checkpoint(RawRecognitionPhase::Postprocessing)?;
+        let output = output?;
         let completion_us = completion_at.elapsed().as_micros() as u64;
         let details_at = Instant::now();
         let (shape, scores) = output["output0"].try_extract_tensor::<f32>()?;

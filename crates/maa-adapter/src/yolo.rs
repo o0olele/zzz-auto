@@ -10,10 +10,11 @@ use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::Path, time::Instant};
 
 use crate::{
-    InferenceDevice, NativeSession, RecognitionImage, RecognitionMeasurement, RecognitionTiming,
+    InferenceDevice, NativeSession, RawRecognitionControl, RawRecognitionPhase, RecognitionImage,
+    RecognitionMeasurement, RecognitionTiming,
     flash::prepare_letterbox_bgr,
     raw_inference::{
-        RawRuntimeInfo, bgr_to_rgb_tensor_dimensions, create_raw_session, tensor_shape,
+        RawRuntimeInfo, bgr_to_rgb_tensor_controlled, create_raw_session, tensor_shape,
     },
 };
 
@@ -145,6 +146,17 @@ pub fn decode_yolo(
     labels: &[String],
     config: &YoloConfig,
 ) -> Result<Vec<YoloDetection>> {
+    decode_yolo_controlled(output, shape, scaled_size, labels, config, None)
+}
+
+fn decode_yolo_controlled(
+    output: &[f32],
+    shape: &[i64],
+    scaled_size: [i32; 2],
+    labels: &[String],
+    config: &YoloConfig,
+    control: Option<&RawRecognitionControl>,
+) -> Result<Vec<YoloDetection>> {
     ensure!(
         !labels.is_empty() && labels.len() <= 1024,
         "YOLO 标签数量无效"
@@ -165,13 +177,20 @@ pub fn decode_yolo(
     );
     let count = shape[2] as usize;
     ensure!(
-        output.len() == (labels.len() + 4) * count && output.iter().all(|v| v.is_finite()),
-        "YOLO 输出长度或数值无效"
+        output.len() == (labels.len() + 4) * count,
+        "YOLO 输出长度无效"
     );
-    ensure!(
-        output[4 * count..].iter().all(|v| (0.0..=1.0).contains(v)),
-        "YOLO 类别分数无效"
-    );
+    for (chunk_index, chunk) in output.chunks(4096).enumerate() {
+        if let Some(control) = control {
+            control.checkpoint(RawRecognitionPhase::Postprocessing)?;
+        }
+        for (offset, value) in chunk.iter().enumerate() {
+            ensure!(value.is_finite(), "YOLO 输出数值无效");
+            if chunk_index * 4096 + offset >= 4 * count {
+                ensure!((0.0..=1.0).contains(value), "YOLO 类别分数无效");
+            }
+        }
+    }
     ensure!(scaled_size == [736, 414], "YOLO 缩放尺寸不符合完整帧约定");
     let allowed: Vec<bool> = labels
         .iter()
@@ -186,6 +205,11 @@ pub fn decode_yolo(
         .collect();
     let mut by_class: BTreeMap<usize, Vec<Candidate>> = BTreeMap::new();
     for index in 0..count {
+        if index % 128 == 0
+            && let Some(control) = control
+        {
+            control.checkpoint(RawRecognitionPhase::Postprocessing)?;
+        }
         let mut class = 0;
         let mut score = 0f32;
         for (next, keep) in allowed.iter().enumerate() {
@@ -230,6 +254,9 @@ pub fn decode_yolo(
     for mut candidates in by_class.into_values() {
         candidates.sort_by(|a, b| b.score.total_cmp(&a.score).then(b.index.cmp(&a.index)));
         while !candidates.is_empty() {
+            if let Some(control) = control {
+                control.checkpoint(RawRecognitionPhase::Postprocessing)?;
+            }
             let picked = candidates.remove(0);
             for other in &candidates {
                 ensure!(
@@ -353,6 +380,7 @@ impl NativeSession {
         &self,
         image: &RecognitionImage,
         params: &Value,
+        control: &RawRecognitionControl,
     ) -> Result<RecognitionMeasurement> {
         let started = Instant::now();
         let config = YoloConfig::parse(params)?;
@@ -371,6 +399,7 @@ impl NativeSession {
             0
         };
         let detector = cached.get_mut(&config.model).unwrap();
+        control.checkpoint(RawRecognitionPhase::Preprocessing)?;
         ensure!(
             config
                 .labels
@@ -394,20 +423,27 @@ impl NativeSession {
                 config.input_size()[1] as i64,
                 config.input_size()[0] as i64,
             ],
-            bgr_to_rgb_tensor_dimensions(&prepared.bgr, config.input_size())?,
+            bgr_to_rgb_tensor_controlled(&prepared.bgr, config.input_size(), Some(control))?,
         ))?;
         let prepare_us = prepare_at.elapsed().as_micros() as u64;
         let completion_at = Instant::now();
-        let output = detector.session.run(ort::inputs!["images" => tensor])?;
+        let options = control.start_inference()?;
+        let output = detector
+            .session
+            .run_with_options(ort::inputs!["images" => tensor], &options);
+        control.end_inference(output.as_ref().err().map(ToString::to_string))?;
+        control.checkpoint(RawRecognitionPhase::Postprocessing)?;
+        let output = output?;
         let completion_us = completion_at.elapsed().as_micros() as u64;
         let details_at = Instant::now();
         let (shape, values) = output["output0"].try_extract_tensor::<f32>()?;
-        let detections = decode_yolo(
+        let detections = decode_yolo_controlled(
             values,
             shape,
             prepared.scaled_size,
             &detector.labels,
             &config,
+            Some(control),
         )?;
         let detail = json!({"hit":!detections.is_empty(), "detail":{"all":detections,"filtered":detections,"best":detections.first()},
             "adaptation":{"kind":"LegacyYoloDetect","model":config.model,"model_sha256":detector.sha256,"labels_sha256":detector.labels_sha256,

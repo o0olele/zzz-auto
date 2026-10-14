@@ -2,6 +2,7 @@ mod fixture;
 pub mod flash;
 mod inference;
 mod input;
+mod raw_control;
 pub mod raw_inference;
 mod sdk;
 pub mod yolo;
@@ -9,6 +10,9 @@ pub use inference::{GpuLease, RecognitionImage, RecognitionMeasurement, Recognit
 pub use maa_framework::common::ControllerFeature;
 pub use maa_framework::custom_controller::CustomControllerCallback;
 pub use od_core::{CaptureMethod, InputMode, InputProbeAction, InputProbeConfig, InputProbeResult};
+pub use raw_control::{
+    RawRecognitionCancelled, RawRecognitionControl, RawRecognitionPhase, RawRecognitionStatus,
+};
 pub use sdk::{BINDING_VERSION, SDK_VERSION, load_sdk};
 
 use anyhow::{Context, Result, bail, ensure};
@@ -363,6 +367,14 @@ impl NativeSession {
         kind: &str,
         params: &serde_json::Value,
     ) -> Result<RecognitionMeasurement> {
+        if matches!(kind, "LegacyFlashRaw" | "LegacyYoloDetect") {
+            return self.recognize_prepared_cancellable(
+                image,
+                kind,
+                params,
+                &RawRecognitionControl::default(),
+            );
+        }
         let _guard = self
             .inference_gate
             .try_lock()
@@ -371,13 +383,65 @@ impl NativeSession {
         if kind == "LegacyFlashClassify" {
             return self.recognize_flash(image, params);
         }
-        if kind == "LegacyFlashRaw" {
-            return self.recognize_raw_flash(image, params);
-        }
-        if kind == "LegacyYoloDetect" {
-            return self.recognize_yolo(image, params);
-        }
         self.recognize_maa_prepared(image, kind, params)
+    }
+
+    /// 原始闪光 / YOLO 的可取消调用；收到停止后仍等待在途原生调用返回。
+    pub fn recognize_timed_cancellable(
+        &self,
+        image: &Path,
+        kind: &str,
+        params: &serde_json::Value,
+        control: &RawRecognitionControl,
+    ) -> Result<RecognitionMeasurement> {
+        ensure!(
+            matches!(kind, "LegacyFlashRaw" | "LegacyYoloDetect"),
+            "此取消入口只支持原始闪光与 YOLO 推理"
+        );
+        control.execute(|| {
+            let started = Instant::now();
+            control.checkpoint(RawRecognitionPhase::ImageLoad)?;
+            let prepared = RecognitionImage::load(image)?;
+            let mut result = self.recognize_raw_prepared(&prepared, kind, params, control)?;
+            result.timing.prepare_us += prepared.prepare_us;
+            result.timing.total_us = started.elapsed().as_micros() as u64;
+            Ok(result)
+        })
+    }
+
+    /// 复用已准备的图像；控制对象只用于一次调用，取消返回 RawRecognitionCancelled。
+    pub fn recognize_prepared_cancellable(
+        &self,
+        image: &RecognitionImage,
+        kind: &str,
+        params: &serde_json::Value,
+        control: &RawRecognitionControl,
+    ) -> Result<RecognitionMeasurement> {
+        ensure!(
+            matches!(kind, "LegacyFlashRaw" | "LegacyYoloDetect"),
+            "此取消入口只支持原始闪光与 YOLO 推理"
+        );
+        control.execute(|| self.recognize_raw_prepared(image, kind, params, control))
+    }
+
+    fn recognize_raw_prepared(
+        &self,
+        image: &RecognitionImage,
+        kind: &str,
+        params: &serde_json::Value,
+        control: &RawRecognitionControl,
+    ) -> Result<RecognitionMeasurement> {
+        control.checkpoint(RawRecognitionPhase::SessionSetup)?;
+        let _guard = self
+            .inference_gate
+            .try_lock()
+            .map_err(|_| anyhow::anyhow!("本会话已有识别调用，请等待完成"))?;
+        ensure!(!self.tasker.running(), "Maa Tasker 正在执行其他任务");
+        match kind {
+            "LegacyFlashRaw" => self.recognize_raw_flash(image, params, control),
+            "LegacyYoloDetect" => self.recognize_yolo(image, params, control),
+            _ => unreachable!(),
+        }
     }
 
     pub(crate) fn recognize_maa_prepared(

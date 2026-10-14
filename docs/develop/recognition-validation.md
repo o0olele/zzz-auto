@@ -24,7 +24,7 @@ CPU / DirectML 对照忽略原生请求 ID 和结果顺序，逐项比较文字�
 
 输出要求 float32 `[1,4+C,N]`，类别过滤在 argmax 前执行，置信度严格大于 float32 阈值。坐标先按各轴实际缩放尺寸恢复为 float32，再转 xyxy；在浮点框上按类别执行 NMS，IoU 相等也抑制，最后向零取整并保留越界坐标。相同类别、相同分数且互相抑制的候选返回明确的排序歧义错误，不能把尚未核对的 NumPy 排序当作兼容通过。错误张量、非有限数值、无效框、取整后空框或超过 512 个结果返回诊断错误，不当作未命中。
 
-每个原生会话缓存检测会话，和 Maa / 闪光共用识别互斥与 GPU 使用权。报告单列模型校验和会话创建、预处理、推理及后处理，并记录实际模型 / 标签哈希、输出形状和 DirectML 注册证据。测试仓覆盖已知张量、阈值相邻 float32、NMS 相等边界、类别过滤、越界与整数框、遮罩端点、真实 SDK 合成模型及固定图设备对照。真实正例、同机旧输出、性能、在途取消仍单独验收。
+每个原生会话缓存检测会话，和 Maa / 闪光共用识别互斥与 GPU 使用权。报告单列模型校验和会话创建、预处理、推理及后处理，并记录实际模型 / 标签哈希、输出形状和 DirectML 注册证据。测试仓覆盖已知张量、阈值相邻 float32、NMS 相等边界、类别过滤、越界与整数框、遮罩端点、真实 SDK 合成模型及固定图设备对照。取消约定见[原始推理的取消](#原始推理的取消)，真实正例、同机旧输出与性能仍单独验收。
 
 浮点运算顺序依据参考源码与 [NumPy 2.4 类型提升规则](https://numpy.org/doc/2.4/reference/arrays.promotion.html)：float32 数组与 Python float 阈值比较时保留 float32；与 int64 尺寸数组相乘按提升后的精度计算，再写回 float32。参考 NMS 的 `np.argsort(scores)[::-1]` 未指定 stable，依据 [argsort 文档](https://numpy.org/doc/2.4/reference/generated/numpy.argsort.html)不能假定同分稳定排序；需要同环境旧输出之后才能解除当前重叠同分拒绝。
 
@@ -54,7 +54,17 @@ Rust 适配入口 `LegacyFlashClassify` 接收原图 ROI，在 SDK 自带的 `op
 
 首次模型校验 / 会话创建由 `session_setup_us` 单列，正式采样区分预处理、同步推理和结果读取；补充路径没有 Maa 队列，报告的 `execution_path` 为 `sdk_onnxruntime_direct`，`enqueue` 为 0。DirectML 配置证据分为 Maa 日志与原始 SDK 注册成功，不能解释为全部算子都在 GPU 执行。注册时关闭内存模式和并行执行，遵循 [ONNX Runtime DirectML 约定](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html)。
 
-阈值附近的已知概率、RGB / NCHW、CPU / DirectML、错误模型和设备失败已通过本轮回归；真实游戏正例、同机旧实现输出及完整性能基线仍待补齐。补充路径目前同步等待推理完成，没有对在途推理接入停止 / 取消；不把此诊断入口当成已具备自动战斗停止能力。SDK 与旧版 ORT / OpenCV 的计算差异仍需真实语料对照，原始分数可读不等于已经验收全部旧行为。
+阈值附近的已知概率、RGB / NCHW、CPU / DirectML、错误模型和设备失败已通过回归；真实游戏正例、同机旧实现输出及完整性能基线仍待补齐。SDK 与旧版 ORT / OpenCV 的计算差异仍需真实语料对照，原始分数可读不等于已经验收全部旧行为。
+
+## 原始推理的取消
+
+`LegacyFlashRaw` 和 `LegacyYoloDetect` 共用每次调用独立的 `RawRecognitionControl`。调用方可以从其他线程请求取消并查看阶段；一个控制对象只用于一次调用，取消不可撤销。原有识别入口继续使用相同实现，无取消时返回格式保持不变。显式取消入口只接收这两种原始推理类型，Maa 原生识别与 logits 入口的取消另行验收。
+
+图像读取、模型会话创建、预处理、原生推理和后处理分别检查取消，Rust 张量转换每 4096 像素、YOLO 数值校验每 4096 元素、候选处理每 128 项及每轮 NMS 再检查一次。在途 ORT 调用使用独立的 `RunOptions`，取消线程调用 `terminate()`；请求、登记和移除当前 RunOptions 使用同一把锁，避免请求刚好发生在推理开始前被遗漏。依据 [ONNX Runtime 取消接口](https://onnxruntime.ai/docs/api/c/struct_ort_api.html)，请求只设置停止标记，调用线程仍同步等待原生 `run_with_options` 返回。DirectML 已提交的计算、单个算子、模型加载与 SDK OpenCV 调用不承诺立即中断；不通过提前返回或超时释放会话与 GPU 使用权。
+
+只要取消先于最终结果提交，结果均丢弃，返回可识别的 `RawRecognitionCancelled` 错误。错误记录请求阶段、调用总耗时、请求到收尾完成的耗时、是否投递原生停止、原生调用是否返回及原生错误；取消不能变成普通未命中。终态与取消请求通过同一把锁确定先后，完成之后的取消不改变结果。未请求取消的模型或推理失败保持原错误。每次新调用重新创建 RunOptions，停止标记不会污染缓存会话的后续调用。
+
+CLI `recognize` 为这两种类型接入 Ctrl+C 与 `--cancel-after-ms`，计时从识别调用开始，包括图像读取和首次模型加载。取消时输出结构化错误，直到原生调用和当前数据已收尾才退出；其他类型显式指定取消参数时拒绝。该离线接口没有游戏输入，不能据此验收战斗、Pipeline 暂停或崩溃恢复。CPU / DirectML 在途取消、会话复用、阶段取消及停止耗时通过独立测试仓验收。
 
 Maa 依据固定版本的[识别协议](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/docs/en_us/3.1-PipelineProtocol.md)、[分类源码](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Vision/NeuralNetworkClassifier.cpp)、[检测源码](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Vision/NeuralNetworkDetector.cpp)和[OCR 资源约定](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Resource/OCRResMgr.h)。旧实现的具体版本与结果在独立测试仓案例和验收记录中维护。
 

@@ -2,6 +2,7 @@ use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand, ValueEnum};
 use maa_adapter::{
     CaptureMethod, InferenceDevice, InputMode, InputProbeAction, InputProbeConfig, NativeSession,
+    RawRecognitionCancelled, RawRecognitionControl,
 };
 use od_core::{InputSide, MouseButton};
 use std::{
@@ -137,6 +138,8 @@ enum Action {
         params: PathBuf,
         #[arg(long)]
         directml: Option<i32>,
+        #[arg(long)]
+        cancel_after_ms: Option<u64>,
     },
     InputProbe {
         #[arg(long)]
@@ -291,14 +294,56 @@ async fn main() -> Result<()> {
             kind,
             params,
             directml,
+            cancel_after_ms,
         } => {
+            let raw = matches!(kind.as_str(), "LegacyFlashRaw" | "LegacyYoloDetect");
+            ensure!(
+                raw || cancel_after_ms.is_none(),
+                "--cancel-after-ms 只支持原始闪光与 YOLO 推理"
+            );
             let device = directml.map(InferenceDevice::DirectMl).unwrap_or_default();
             let native = NativeSession::for_fixture(&fixture, &paths.resources, device)?;
-            print(native.recognize(
-                &image,
-                &kind,
-                &serde_json::from_slice(&std::fs::read(params)?)?,
-            )?)
+            let params = serde_json::from_slice(&std::fs::read(params)?)?;
+            if !raw {
+                return print(native.recognize(&image, &kind, &params)?);
+            }
+            let control = RawRecognitionControl::default();
+            let interrupt = control.clone();
+            let signal = tokio::spawn(async move {
+                if tokio::signal::ctrl_c().await.is_ok()
+                    && let Err(error) = interrupt.cancel()
+                {
+                    eprintln!("原始识别停止请求失败：{error:#}");
+                }
+            });
+            let timer = if cancel_after_ms == Some(0) {
+                control.cancel()?;
+                None
+            } else {
+                cancel_after_ms.map(|delay| {
+                    let interrupt = control.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        if let Err(error) = interrupt.cancel() {
+                            eprintln!("原始识别停止请求失败：{error:#}");
+                        }
+                    })
+                })
+            };
+            let result = native.recognize_timed_cancellable(&image, &kind, &params, &control);
+            signal.abort();
+            if let Some(timer) = timer {
+                timer.abort();
+            }
+            match result {
+                Ok(measurement) => print(measurement.detail),
+                Err(error) => {
+                    if let Some(cancelled) = error.downcast_ref::<RawRecognitionCancelled>() {
+                        print(serde_json::json!({"status":"cancelled", "error":cancelled}))?;
+                    }
+                    Err(error)
+                }
+            }
         }
         Action::InputProbe {
             hwnd,

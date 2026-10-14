@@ -98,7 +98,13 @@ cargo run -p od-tools --locked -- models
 cargo run -p zzz-engine --locked -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/yolo-cases.json --fixture-root zzz-od-test --output artifacts/yolo-report.json --directml 0
 ```
 
-参数为固定 `model`、默认 `threshold=0.6`、`iou=0.5` 与可选 `label_list` / `category_list`；标签顺序从已校验 CSV 读取，当前只接收完整 1080p 帧。空洞模型实际输入为 736×416，迷失之地为 736×736。分数保留原始 float32，框同时包含旧版 xyxy 和对照用 xywh。相同类别、相同分数的重叠框返回排序歧义错误。此入口仍用于离线诊断，同机旧输出、性能及在途取消待验收，详见 [YOLO 适配方案](docs/develop/recognition-validation.md#yolo-适配方案)。现有便携包未更新。
+参数为固定 `model`、默认 `threshold=0.6`、`iou=0.5` 与可选 `label_list` / `category_list`；标签顺序从已校验 CSV 读取，当前只接收完整 1080p 帧。空洞模型实际输入为 736×416，迷失之地为 736×736。分数保留原始 float32，框同时包含旧版 xyxy 和对照用 xywh。相同类别、相同分数的重叠框返回排序歧义错误。此入口仍用于离线诊断，同机旧输出与性能待验收，详见 [YOLO 适配方案](docs/develop/recognition-validation.md#yolo-适配方案)。现有便携包未更新。
+
+CLI `recognize` 的 `LegacyFlashRaw` / `LegacyYoloDetect` 支持 Ctrl+C 和 `--cancel-after-ms`。定时从识别调用开始，包含图像读取和首次原始模型加载；`0` 表示开始前取消。取消先于结果提交时丢弃结果，等待原生调用及数据收尾后输出 `status=cancelled`、`error.code=raw_recognition_cancelled`、停止耗时与原生错误，退出码为 1。DirectML 可能完成已提交的计算再返回，模型加载也不能立即中断。其他识别类型不支持此取消参数，具体边界见[原始推理的取消](docs/develop/recognition-validation.md#原始推理的取消)。例如先把 `{"model":"yolov8n-640-flash-20250921.onnx"}` 保存到 `artifacts/raw-flash-params.json`，再执行：
+
+```powershell
+cargo run -p zzz-engine --locked -- --resources resources/generated/recognition recognize --fixture zzz-od-test/screens/战斗画面/默认.webp --image zzz-od-test/screens/战斗画面/默认.webp --kind LegacyFlashRaw --params artifacts/raw-flash-params.json --cancel-after-ms 100
+```
 
 ## 工程与数据
 

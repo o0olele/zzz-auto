@@ -92,10 +92,23 @@ pub fn raw_runtime_info() -> Result<RawRuntimeInfo> {
 }
 
 pub fn bgr_to_rgb_tensor(bgr: &[u8]) -> Result<Vec<f32>> {
-    let plane = (FLASH_SIZE * FLASH_SIZE) as usize;
+    bgr_to_rgb_tensor_sized(bgr, FLASH_SIZE)
+}
+
+pub(crate) fn bgr_to_rgb_tensor_sized(bgr: &[u8], size: i32) -> Result<Vec<f32>> {
+    bgr_to_rgb_tensor_dimensions(bgr, [size, size])
+}
+
+pub(crate) fn bgr_to_rgb_tensor_dimensions(bgr: &[u8], size: [i32; 2]) -> Result<Vec<f32>> {
+    let [width, height] = size;
+    ensure!(
+        (1..=1920).contains(&width) && (1..=1080).contains(&height),
+        "模型输入尺寸无效"
+    );
+    let plane = (width * height) as usize;
     ensure!(
         bgr.len() == plane * 3,
-        "原始闪光张量须来自 640×640 BGR 图像"
+        "原始张量须来自模型输入尺寸的 BGR 图像"
     );
     let mut tensor = vec![0f32; plane * 3];
     for (position, pixel) in bgr.chunks_exact(3).enumerate() {
@@ -140,38 +153,47 @@ pub(crate) struct RawClassifier {
     device: InferenceDevice,
 }
 
-fn tensor_shape(ty: &ValueType, expected: &[i64]) -> bool {
+pub(crate) fn tensor_shape(ty: &ValueType, expected: &[i64]) -> bool {
     matches!(ty,ValueType::Tensor { ty:TensorElementType::Float32, shape,.. } if &**shape==expected)
+}
+
+pub(crate) fn create_raw_session(
+    path: &Path,
+    device: InferenceDevice,
+    max_bytes: u64,
+) -> Result<(Session, RawRuntimeInfo, String)> {
+    let runtime = raw_runtime_info()?;
+    ensure!(
+        (1..=max_bytes).contains(&std::fs::metadata(path)?.len()),
+        "原始模型大小无效"
+    );
+    let bytes = std::fs::read(path)?;
+    let sha256 = hex::encode(Sha256::digest(&bytes));
+    let mut builder = Session::builder()?
+        .with_parallel_execution(false)?
+        .with_intra_threads(1)?
+        .with_inter_threads(1)?
+        .with_config_entry("session.intra_op.allow_spinning", "0")?
+        .with_config_entry("session.inter_op.allow_spinning", "0")?;
+    if let InferenceDevice::DirectMl(id) = device {
+        ensure!(id >= 0, "DirectML 设备编号必须非负");
+        builder = builder
+            .with_memory_pattern(false)?
+            .with_execution_providers([DirectMLExecutionProvider::default()
+                .with_device_id(id)
+                .build()
+                .error_on_failure()])?;
+    }
+    let session = builder
+        .commit_from_memory(&bytes)
+        .context("SDK 原始推理会话创建失败")?;
+    crate::sdk::verify_loaded_modules()?;
+    Ok((session, runtime, sha256))
 }
 
 impl RawClassifier {
     fn new(path: &Path, device: InferenceDevice) -> Result<Self> {
-        let runtime = raw_runtime_info()?;
-        let metadata = std::fs::metadata(path)?;
-        ensure!(
-            (1..=16 * 1024 * 1024).contains(&metadata.len()),
-            "原始闪光模型大小无效"
-        );
-        let bytes = std::fs::read(path)?;
-        let sha256 = hex::encode(Sha256::digest(&bytes));
-        let mut builder = Session::builder()?
-            .with_parallel_execution(false)?
-            .with_intra_threads(1)?
-            .with_inter_threads(1)?
-            .with_config_entry("session.intra_op.allow_spinning", "0")?
-            .with_config_entry("session.inter_op.allow_spinning", "0")?;
-        if let InferenceDevice::DirectMl(id) = device {
-            ensure!(id >= 0, "DirectML 设备编号必须非负");
-            builder = builder
-                .with_memory_pattern(false)?
-                .with_execution_providers([DirectMLExecutionProvider::default()
-                    .with_device_id(id)
-                    .build()
-                    .error_on_failure()])?;
-        }
-        let session = builder
-            .commit_from_memory(&bytes)
-            .context("SDK 原始闪光会话创建失败")?;
+        let (session, runtime, sha256) = create_raw_session(path, device, 16 * 1024 * 1024)?;
         ensure!(
             session.inputs.len() == 1
                 && session.inputs[0].name == "images"

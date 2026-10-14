@@ -154,13 +154,27 @@ pub struct FlashImage {
 }
 
 pub fn prepare_flash_bgr(bgr: &[u8], width: i32, height: i32) -> Result<FlashImage> {
+    prepare_letterbox_bgr(bgr, width, height, [FLASH_SIZE, FLASH_SIZE])
+}
+
+pub(crate) fn prepare_letterbox_bgr(
+    bgr: &[u8],
+    width: i32,
+    height: i32,
+    target: [i32; 2],
+) -> Result<FlashImage> {
     ensure!(
         (1..=1920).contains(&width)
             && (1..=1080).contains(&height)
             && bgr.len() == (width * height * 3) as usize,
         "闪光输入须为连续的 8 位 BGR 图像"
     );
-    let scale = (FLASH_SIZE as f64 / width as f64).min(FLASH_SIZE as f64 / height as f64);
+    let [target_width, target_height] = target;
+    ensure!(
+        (1..=1920).contains(&target_width) && (1..=1080).contains(&target_height),
+        "模型输入尺寸无效"
+    );
+    let scale = (target_width as f64 / width as f64).min(target_height as f64 / height as f64);
     // Python round 使用偶数舍入，不能使用 Rust round 的远离零舍入。
     let scaled_width = (width as f64 * scale).round_ties_even() as i32;
     let scaled_height = (height as f64 * scale).round_ties_even() as i32;
@@ -171,11 +185,15 @@ pub fn prepare_flash_bgr(bgr: &[u8], width: i32, height: i32) -> Result<FlashIma
     let api = cv_api()?;
     let source = Header::new(api, width, height)?;
     let destination = Header::new(api, scaled_width, scaled_height)?;
-    let mut pixels = vec![114; (FLASH_SIZE * FLASH_SIZE * 3) as usize];
+    let mut pixels = vec![114; (target_width * target_height * 3) as usize];
     // cvResize 只读来源像素；图像头分别使用真实行跨度，释放头不会释放 Rust 数据。
     unsafe {
         (api.set)(source.raw, bgr.as_ptr() as *mut c_void, width * 3);
-        (api.set)(destination.raw, pixels.as_mut_ptr().cast(), FLASH_SIZE * 3);
+        (api.set)(
+            destination.raw,
+            pixels.as_mut_ptr().cast(),
+            target_width * 3,
+        );
         (api.resize)(source.raw, destination.raw, 1); // CV_INTER_LINEAR
     }
     Ok(FlashImage {

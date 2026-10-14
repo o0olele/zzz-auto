@@ -4,6 +4,7 @@ mod inference;
 mod input;
 pub mod raw_inference;
 mod sdk;
+pub mod yolo;
 pub use inference::{GpuLease, RecognitionImage, RecognitionMeasurement, RecognitionTiming};
 pub use maa_framework::common::ControllerFeature;
 pub use maa_framework::custom_controller::CustomControllerCallback;
@@ -26,7 +27,7 @@ use od_core::{BASE_HEIGHT, BASE_WIDTH, Screenshot, ScreenshotQuality, WindowInfo
 use od_platform::GameLease;
 use serde::Serialize;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -91,6 +92,7 @@ pub struct ProbeResult {
 pub struct NativeSession {
     tasker: Tasker,
     raw_flash: Mutex<Option<raw_inference::RawClassifier>>,
+    raw_detectors: Mutex<BTreeMap<String, yolo::RawDetector>>,
     inference_gate: Mutex<()>,
     resource_root: PathBuf,
     inference_device: InferenceDevice,
@@ -213,6 +215,7 @@ impl NativeSession {
         Ok(Self {
             tasker,
             raw_flash: Mutex::new(None),
+            raw_detectors: Mutex::new(BTreeMap::new()),
             inference_gate: Mutex::new(()),
             resource_root: path,
             inference_device: device,
@@ -370,6 +373,9 @@ impl NativeSession {
         }
         if kind == "LegacyFlashRaw" {
             return self.recognize_raw_flash(image, params);
+        }
+        if kind == "LegacyYoloDetect" {
+            return self.recognize_yolo(image, params);
         }
         self.recognize_maa_prepared(image, kind, params)
     }

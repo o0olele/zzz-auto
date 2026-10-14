@@ -9,6 +9,10 @@ use std::{
     time::Instant,
 };
 
+fn is_raw_kind(kind: &str) -> bool {
+    matches!(kind, "LegacyFlashRaw" | "LegacyYoloDetect")
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FixtureFile {
     pub path: String,
@@ -202,6 +206,7 @@ pub fn load_cases(path: &Path, fixture_root: &Path) -> Result<CaseManifest> {
                 "NeuralNetworkClassify",
                 "LegacyFlashClassify",
                 "LegacyFlashRaw",
+                "LegacyYoloDetect",
                 "NeuralNetworkDetect"
             ]
             .contains(&case.kind.as_str()),
@@ -310,7 +315,7 @@ pub fn validate_model_requests(
         let role = match case.kind.as_str() {
             "OCR" => "ocr",
             "NeuralNetworkClassify" | "LegacyFlashClassify" | "LegacyFlashRaw" => "classify",
-            "NeuralNetworkDetect" => "detect",
+            "NeuralNetworkDetect" | "LegacyYoloDetect" => "detect",
             _ => continue,
         };
         let requested = case.params["model"]
@@ -318,6 +323,9 @@ pub fn validate_model_requests(
             .context("模型诊断须显式指定锁定模型名称")?;
         if case.kind == "LegacyFlashRaw" {
             maa_adapter::flash::FlashConfig::parse_raw(&case.params)?;
+        }
+        if case.kind == "LegacyYoloDetect" {
+            maa_adapter::yolo::YoloConfig::parse(&case.params)?;
         }
         if case.kind == "LegacyFlashClassify" {
             maa_adapter::flash::FlashConfig::parse(&case.params)?;
@@ -396,6 +404,12 @@ pub fn normalize(detail: &serde_json::Value) -> Result<Observation> {
     ensure!(!hit || !items.is_empty(), "原生命中但没有可比较结果");
     let classification_candidate = detail
         .get("adaptation")
+        .filter(|adaptation| {
+            matches!(
+                adaptation["kind"].as_str(),
+                Some("LegacyFlashClassify" | "LegacyFlashRaw")
+            )
+        })
         .map(|adaptation| {
             let candidate = adaptation
                 .get("candidate")
@@ -559,7 +573,7 @@ fn check_case(
     let mut report = CaseReport {
         id: case.id.clone(),
         kind: case.kind.clone(),
-        execution_path: if case.kind == "LegacyFlashRaw" {
+        execution_path: if is_raw_kind(&case.kind) {
             "sdk_onnxruntime_direct"
         } else {
             "maa_tasker"
@@ -583,20 +597,22 @@ fn check_case(
         let image = maa_adapter::RecognitionImage::load(&image)?;
         report.fixture_prepare_us = Some(image.prepare_us);
         let first = native.recognize_prepared(&image, &case.kind, &case.params)?;
-        if case.kind == "LegacyFlashRaw" {
+        if is_raw_kind(&case.kind) {
+            let role = if case.kind == "LegacyYoloDetect" {
+                "detect"
+            } else {
+                "classify"
+            };
+            let model = case.params["model"]
+                .as_str()
+                .context("原始推理缺少模型名称")?;
             let expected = models
                 .as_array()
                 .context("缺少固定模型目录")?
                 .iter()
                 .flat_map(|model| model["files"].as_array().into_iter().flatten())
-                .find(|file| {
-                    file["bundle_path"]
-                        == format!(
-                            "model/classify/{}",
-                            maa_adapter::raw_inference::RAW_FLASH_MODEL
-                        )
-                })
-                .context("缺少原始闪光模型哈希")?;
+                .find(|file| file["bundle_path"] == format!("model/{role}/{model}"))
+                .context("缺少原始推理模型哈希")?;
             ensure!(
                 first.detail["adaptation"]["model_sha256"] == expected["sha256"],
                 "原始推理实际模型与固定清单不符"
@@ -726,6 +742,7 @@ pub fn run(
             "NeuralNetworkClassify",
             "LegacyFlashClassify",
             "LegacyFlashRaw",
+            "LegacyYoloDetect",
             "NeuralNetworkDetect",
         ]
         .contains(&case.kind.as_str())
@@ -743,10 +760,7 @@ pub fn run(
         ["OCR", "NeuralNetworkClassify", "NeuralNetworkDetect"].contains(&case.kind.as_str())
             || case.kind == "LegacyFlashClassify"
     });
-    let raw_needed = manifest
-        .cases
-        .iter()
-        .any(|case| case.kind == "LegacyFlashRaw");
+    let raw_needed = manifest.cases.iter().any(|case| is_raw_kind(&case.kind));
     let mut devices = Vec::new();
     for device in
         std::iter::once(InferenceDevice::Cpu).chain(directml.map(InferenceDevice::DirectMl))
@@ -800,17 +814,17 @@ pub fn run(
                 report
                     .cases
                     .iter()
-                    .filter(|case| case.kind == "LegacyFlashRaw")
+                    .filter(|case| is_raw_kind(&case.kind))
                     .count()
                     == manifest
                         .cases
                         .iter()
-                        .filter(|case| case.kind == "LegacyFlashRaw")
+                        .filter(|case| is_raw_kind(&case.kind))
                         .count()
                     && report
                         .cases
                         .iter()
-                        .filter(|case| case.kind == "LegacyFlashRaw")
+                        .filter(|case| is_raw_kind(&case.kind))
                         .all(|case| {
                             case.errors.is_empty()
                                 && case.adaptation.as_ref().is_some_and(|adaptation| {

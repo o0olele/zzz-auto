@@ -91,6 +91,15 @@ cargo run -p zzz-engine --locked -- --resources resources/generated/recognition 
 
 原始入口使用固定原模型名称 `yolov8n-640-flash-20250921.onnx`，原标签顺序及 ROI / 阈值参数与前一入口相同。按参考 NumPy 2 规则在 float32 下比较阈值，支持相等边界；报告保留三类概率、实际阈值、原生库与模型哈希。`session_setup` 只记录首次模型加载，`enqueue` 为 0，正式 `total` 包括预处理与同步推理，不能直接混入 Maa 队列时延。DirectML 注册失败会报错。未新增、替换或下载原生 DLL，旧 Maa 精度错误入口继续保留；语料和停止能力的验收边界见[原始浮点输出方案](docs/develop/recognition-validation.md#原始浮点输出方案)。
 
+YOLO 适配入口 `LegacyYoloDetect` 使用固定原模型和 SDK 原始张量，补上旧版的右下补边、INTER_LINEAR、类别过滤、严格置信度、按类别 NMS、越界框及迷失之地头像遮罩。先重新生成资源，新增的两份标签 CSV 也需要哈希校验，再运行原生 / 适配对照：
+
+```powershell
+cargo run -p od-tools --locked -- models
+cargo run -p zzz-engine --locked -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/yolo-cases.json --fixture-root zzz-od-test --output artifacts/yolo-report.json --directml 0
+```
+
+参数为固定 `model`、默认 `threshold=0.6`、`iou=0.5` 与可选 `label_list` / `category_list`；标签顺序从已校验 CSV 读取，当前只接收完整 1080p 帧。空洞模型实际输入为 736×416，迷失之地为 736×736。分数保留原始 float32，框同时包含旧版 xyxy 和对照用 xywh。相同类别、相同分数的重叠框返回排序歧义错误。此入口仍用于离线诊断，同机旧输出、性能及在途取消待验收，详见 [YOLO 适配方案](docs/develop/recognition-validation.md#yolo-适配方案)。现有便携包未更新。
+
 ## 工程与数据
 
 六个 Rust crate 分别负责通用核心、协议、平台、Maa 适配、引擎与迁移工具；桌面位于 `apps/desktop/`。详见 [首轮实现说明](docs/develop/implementation.md)。

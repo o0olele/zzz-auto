@@ -37,9 +37,9 @@
       "sha256": "c5eac21a5a8810025c8595b3366a2c3f94e9bad4d50efa5d567ecc7564d6813c",
       "files": [
         { "path": "model.onnx", "bytes": 39619200, "sha256": "94b97aecf52cacf388da3bc9d3585b8d00d9f8f367514ef7cda28f72bba525f2", "bundle_path": "model/detect/yolov8s-736-hollow-zero-event-0126.onnx" },
-        { "path": "labels.csv", "bytes": 1844, "sha256": "8e1e068adf27c1485be0bfdbd840c3232833c84e280da3d7520cb9bfaa2cf186", "bundle_path": null }
+        { "path": "labels.csv", "bytes": 1844, "sha256": "8e1e068adf27c1485be0bfdbd840c3232833c84e280da3d7520cb9bfaa2cf186", "bundle_path": "model/detect/yolov8s-736-hollow-zero-event-0126.labels.csv" }
       ],
-      "known_differences": ["旧版保持比例在右下补 114；Maa 检测在四周居中补边，round / floor 和插值也不同", "Maa 原始候选分数下限固定为 0.3，分类选择、框裁剪及 NMS 仍需对照旧输出"]
+      "known_differences": ["Maa 原生使用居中补边与 INTER_AREA；LegacyYoloDetect 复用 SDK 原始张量并使用旧版右下补边与 INTER_LINEAR", "适配使用类别过滤、单类别 argmax、严格阈值、不裁剪框及按类别 NMS；同分重叠排序和同机旧输出仍待验收"]
     },
     {
       "id": "yolov26n-736-lost-void-det-20260630", "role": "detect", "archive": "yolov26n-736-lost-void-det-20260630.zip", "bytes": 8521510,
@@ -47,9 +47,9 @@
       "sha256": "08170eb2ac3e167578c01700d9952c82f2b808f85e423bd1e4a3139a40c626b0",
       "files": [
         { "path": "model.onnx", "bytes": 9834993, "sha256": "153be1261e757c17afd194c195fa209505044188873a46444700be1293de445c", "bundle_path": "model/detect/yolov26n-736-lost-void-det-20260630.onnx" },
-        { "path": "labels.csv", "bytes": 341, "sha256": "49ca0d3564ca74cd472160814b8e44499ba189a6fdb357d2e0612ba0f157caae", "bundle_path": null }
+        { "path": "labels.csv", "bytes": 341, "sha256": "49ca0d3564ca74cd472160814b8e44499ba189a6fdb357d2e0612ba0f157caae", "bundle_path": "model/detect/yolov26n-736-lost-void-det-20260630.labels.csv" }
       ],
-      "known_differences": ["继承旧 YOLO 预处理与 Maa 的补边差异，不能因能推理就声明迁移兼容", "旧迷失之地还遮盖头像区域 [104,40,844,110]，原生全帧结果仅作能力诊断"]
+      "known_differences": ["LegacyYoloDetect 继承旧版缩放、补边、类别过滤与 NMS；同机旧输出与真实正例仍待验收", "适配在缩放前遮盖头像区域 [104,40,844,110]，包含右下端点；Maa 原生全帧入口仍作能力诊断"]
     }
   ]
 }

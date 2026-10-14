@@ -83,6 +83,14 @@ cargo run -p zzz-engine --locked -- --resources resources/generated/recognition 
 
 生成的 logits 模型与原模型分别校验，资源清单升级为 v2；旧生成目录需要重新转换。正式采样中的 `prepare` 包括每轮缩放、补边与 Maa 图像缓存，`total` 包括适配和推理；固定图解码仍单列。Maa 分数的六位小数会使约 0.8999998 变为 0.9，适配入口对距阈值不超过 0.000001 的值返回精度错误。真实红光 / 黄光、旧版实际输出和该精度边界仍未验收，详见[闪光适配方案](docs/develop/recognition-validation.md#闪光分类适配方案)。当前便携包不包含本轮新增实现。
 
+新增 `LegacyFlashRaw` 通过 SDK 内已有 ONNX Runtime 直接读取 float32 概率，补上 JSON 分数舍入缺口。原模型、Maa logits 和原始分数三条路径可用同一批图对照：
+
+```powershell
+cargo run -p zzz-engine --locked -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/raw-flash-cases.json --fixture-root zzz-od-test --output artifacts/raw-flash-report.json --directml 0
+```
+
+原始入口使用固定原模型名称 `yolov8n-640-flash-20250921.onnx`，原标签顺序及 ROI / 阈值参数与前一入口相同。按参考 NumPy 2 规则在 float32 下比较阈值，支持相等边界；报告保留三类概率、实际阈值、原生库与模型哈希。`session_setup` 只记录首次模型加载，`enqueue` 为 0，正式 `total` 包括预处理与同步推理，不能直接混入 Maa 队列时延。DirectML 注册失败会报错。未新增、替换或下载原生 DLL，旧 Maa 精度错误入口继续保留；语料和停止能力的验收边界见[原始浮点输出方案](docs/develop/recognition-validation.md#原始浮点输出方案)。
+
 ## 工程与数据
 
 六个 Rust crate 分别负责通用核心、协议、平台、Maa 适配、引擎与迁移工具；桌面位于 `apps/desktop/`。详见 [首轮实现说明](docs/develop/implementation.md)。

@@ -89,12 +89,16 @@ pub fn load_sdk(directory: &Path, log_directory: &Path) -> Result<SdkStatus> {
     })
 }
 
-pub(crate) fn verify_loaded_modules() -> Result<()> {
-    let directory = LOADED_PATH
+pub(crate) fn sdk_directory() -> Result<PathBuf> {
+    LOADED_PATH
         .lock()
         .map_err(|_| anyhow::anyhow!("SDK 初始化锁失效"))?
         .clone()
-        .context("SDK 尚未加载")?;
+        .context("SDK 尚未加载")
+}
+
+pub(crate) fn verify_loaded_modules() -> Result<()> {
+    let directory = sdk_directory()?;
     let manifest: Manifest =
         serde_json::from_str(include_str!("../../../resources/sdk-manifest.json"))?;
     for binary in manifest.binaries {

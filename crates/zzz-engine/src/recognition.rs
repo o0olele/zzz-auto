@@ -64,6 +64,8 @@ pub struct Observation {
     pub items: Vec<Item>,
     #[serde(default)]
     pub classification_candidate: Option<Item>,
+    #[serde(default)]
+    pub raw_scores: Option<Vec<f64>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,6 +81,7 @@ pub struct Quantiles {
 pub struct CaseReport {
     pub id: String,
     pub kind: String,
+    pub execution_path: String,
     pub image_sha256: String,
     pub legacy_evidence: String,
     pub expectation_passed: Option<bool>,
@@ -98,6 +101,7 @@ pub struct DeviceReport {
     pub device: String,
     pub session_creation_us: u64,
     pub nn_dml_configuration_confirmed: Option<bool>,
+    pub raw_directml_configuration_confirmed: Option<bool>,
     pub provider_note: String,
     pub cases: Vec<CaseReport>,
     pub error: Option<String>,
@@ -135,6 +139,7 @@ impl CheckReport {
                 device.error.is_none()
                     && !device.cases.is_empty()
                     && device.nn_dml_configuration_confirmed != Some(false)
+                    && device.raw_directml_configuration_confirmed != Some(false)
                     && device.cases.iter().all(|case| {
                         case.errors.is_empty()
                             && case.stable
@@ -196,6 +201,7 @@ pub fn load_cases(path: &Path, fixture_root: &Path) -> Result<CaseManifest> {
                 "ColorMatch",
                 "NeuralNetworkClassify",
                 "LegacyFlashClassify",
+                "LegacyFlashRaw",
                 "NeuralNetworkDetect"
             ]
             .contains(&case.kind.as_str()),
@@ -303,13 +309,16 @@ pub fn validate_model_requests(
     for case in cases {
         let role = match case.kind.as_str() {
             "OCR" => "ocr",
-            "NeuralNetworkClassify" | "LegacyFlashClassify" => "classify",
+            "NeuralNetworkClassify" | "LegacyFlashClassify" | "LegacyFlashRaw" => "classify",
             "NeuralNetworkDetect" => "detect",
             _ => continue,
         };
         let requested = case.params["model"]
             .as_str()
             .context("模型诊断须显式指定锁定模型名称")?;
+        if case.kind == "LegacyFlashRaw" {
+            maa_adapter::flash::FlashConfig::parse_raw(&case.params)?;
+        }
         if case.kind == "LegacyFlashClassify" {
             maa_adapter::flash::FlashConfig::parse(&case.params)?;
             ensure!(
@@ -396,10 +405,23 @@ pub fn normalize(detail: &serde_json::Value) -> Result<Observation> {
             Ok::<_, anyhow::Error>(normalized.items.into_iter().next().unwrap())
         })
         .transpose()?;
+    let raw_scores: Option<Vec<f64>> = detail
+        .get("adaptation")
+        .and_then(|adaptation| adaptation.get("raw_scores"))
+        .map(|scores| serde_json::from_value(scores.clone()))
+        .transpose()?;
+    ensure!(
+        raw_scores.as_ref().is_none_or(|scores| scores.len() == 3
+            && scores
+                .iter()
+                .all(|score| score.is_finite() && (0.0..=1.0).contains(score))),
+        "原始分类分数格式无效"
+    );
     Ok(Observation {
         hit,
         items,
         classification_candidate,
+        raw_scores,
     })
 }
 
@@ -449,6 +471,18 @@ pub fn compare(left: &Observation, right: &Observation, tolerance: Tolerance) ->
         return false;
     }
     if left.hit != right.hit || left.items.len() != right.items.len() || left.items.len() > 512 {
+        return false;
+    }
+    if !match (&left.raw_scores, &right.raw_scores) {
+        (Some(a), Some(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|(a, b)| (a - b).abs() <= tolerance.score_abs)
+        }
+        (None, None) => true,
+        _ => false,
+    } {
         return false;
     }
     if !match (
@@ -520,10 +554,17 @@ fn check_case(
     root: &Path,
     warmup: usize,
     samples: usize,
+    models: &serde_json::Value,
 ) -> CaseReport {
     let mut report = CaseReport {
         id: case.id.clone(),
         kind: case.kind.clone(),
+        execution_path: if case.kind == "LegacyFlashRaw" {
+            "sdk_onnxruntime_direct"
+        } else {
+            "maa_tasker"
+        }
+        .into(),
         image_sha256: case.image.sha256.clone(),
         legacy_evidence: case.legacy_evidence.clone(),
         expectation_passed: None,
@@ -542,6 +583,25 @@ fn check_case(
         let image = maa_adapter::RecognitionImage::load(&image)?;
         report.fixture_prepare_us = Some(image.prepare_us);
         let first = native.recognize_prepared(&image, &case.kind, &case.params)?;
+        if case.kind == "LegacyFlashRaw" {
+            let expected = models
+                .as_array()
+                .context("缺少固定模型目录")?
+                .iter()
+                .flat_map(|model| model["files"].as_array().into_iter().flatten())
+                .find(|file| {
+                    file["bundle_path"]
+                        == format!(
+                            "model/classify/{}",
+                            maa_adapter::raw_inference::RAW_FLASH_MODEL
+                        )
+                })
+                .context("缺少原始闪光模型哈希")?;
+            ensure!(
+                first.detail["adaptation"]["model_sha256"] == expected["sha256"],
+                "原始推理实际模型与固定清单不符"
+            );
+        }
         let reference = normalize(&first.detail)?;
         report.adaptation = first.detail.get("adaptation").cloned();
         report.first_call = Some(first.timing);
@@ -570,6 +630,7 @@ fn check_case(
                 "prepare",
                 (|t: &RecognitionTiming| t.prepare_us) as fn(&RecognitionTiming) -> u64,
             ),
+            ("session_setup", |t: &RecognitionTiming| t.session_setup_us),
             ("enqueue", |t: &RecognitionTiming| t.enqueue_us),
             ("completion", |t: &RecognitionTiming| t.completion_us),
             ("details", |t: &RecognitionTiming| t.details_us),
@@ -664,6 +725,7 @@ pub fn run(
             "OCR",
             "NeuralNetworkClassify",
             "LegacyFlashClassify",
+            "LegacyFlashRaw",
             "NeuralNetworkDetect",
         ]
         .contains(&case.kind.as_str())
@@ -677,6 +739,14 @@ pub fn run(
         validate_model_requests(&manifest.cases, &differences)?;
     }
     let first_image = relative_file(fixture_root, &manifest.cases[0].image.path)?;
+    let maa_models_needed = manifest.cases.iter().any(|case| {
+        ["OCR", "NeuralNetworkClassify", "NeuralNetworkDetect"].contains(&case.kind.as_str())
+            || case.kind == "LegacyFlashClassify"
+    });
+    let raw_needed = manifest
+        .cases
+        .iter()
+        .any(|case| case.kind == "LegacyFlashRaw");
     let mut devices = Vec::new();
     for device in
         std::iter::once(InferenceDevice::Cpu).chain(directml.map(InferenceDevice::DirectMl))
@@ -687,6 +757,7 @@ pub fn run(
             device: format!("{device:?}"),
             session_creation_us: 0,
             nn_dml_configuration_confirmed: None,
+            raw_directml_configuration_confirmed: None,
             provider_note: "设备选项已请求；SDK 不公开逐算子的实际执行位置".into(),
             cases: Vec::new(),
             error: None,
@@ -694,26 +765,60 @@ pub fn run(
         match NativeSession::for_fixture(&first_image, resources, device) {
             Ok(native) => {
                 report.session_creation_us = created.elapsed().as_micros() as u64;
-                if let InferenceDevice::DirectMl(id) = device {
+                if let InferenceDevice::DirectMl(id) = device
+                    && maa_models_needed
+                {
                     // 先保留配置证据，避免样本日志把它移出日志尾部。
                     report.nn_dml_configuration_confirmed =
                         Some(nn_dml_log_confirmed(logs, id, &checkpoint));
                 }
                 for case in &manifest.cases {
-                    report
-                        .cases
-                        .push(check_case(&native, case, fixture_root, warmup, samples));
+                    report.cases.push(check_case(
+                        &native,
+                        case,
+                        fixture_root,
+                        warmup,
+                        samples,
+                        &differences,
+                    ));
                 }
                 // 此作用域结束并完成析构后，才创建下一种设备的原生会话。
             }
             Err(error) => report.error = Some(format!("{error:#}")),
         }
-        if let InferenceDevice::DirectMl(id) = device {
+        if let InferenceDevice::DirectMl(id) = device
+            && maa_models_needed
+        {
             report.nn_dml_configuration_confirmed = Some(
                 report.nn_dml_configuration_confirmed.unwrap_or(false)
                     || nn_dml_log_confirmed(logs, id, &checkpoint),
             );
             report.provider_note = "原生成功日志只确认 NN 会话配置了 DirectML；OCR 和每个算子的执行位置未由 SDK 公开，未确认时不得当作 DirectML 性能通过".into();
+        }
+        if matches!(device, InferenceDevice::DirectMl(_)) && raw_needed {
+            report.raw_directml_configuration_confirmed = Some(
+                report
+                    .cases
+                    .iter()
+                    .filter(|case| case.kind == "LegacyFlashRaw")
+                    .count()
+                    == manifest
+                        .cases
+                        .iter()
+                        .filter(|case| case.kind == "LegacyFlashRaw")
+                        .count()
+                    && report
+                        .cases
+                        .iter()
+                        .filter(|case| case.kind == "LegacyFlashRaw")
+                        .all(|case| {
+                            case.errors.is_empty()
+                                && case.adaptation.as_ref().is_some_and(|adaptation| {
+                                    adaptation["directml_registration_confirmed"] == true
+                                })
+                        }),
+            );
+            report.provider_note = "原生 API 成功确认 SDK ORT 注册了 DirectML；与 Maa 日志证据分别记录，不证明每个算子的实际执行位置".into();
         }
         devices.push(report);
     }

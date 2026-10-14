@@ -2,6 +2,7 @@ mod fixture;
 pub mod flash;
 mod inference;
 mod input;
+pub mod raw_inference;
 mod sdk;
 pub use inference::{GpuLease, RecognitionImage, RecognitionMeasurement, RecognitionTiming};
 pub use maa_framework::common::ControllerFeature;
@@ -26,9 +27,9 @@ use od_platform::GameLease;
 use serde::Serialize;
 use std::{
     collections::BTreeSet,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -86,9 +87,13 @@ pub struct ProbeResult {
     pub native_status: String,
 }
 
-// 字段按 Tasker、Controller、Resource、控制权依次销毁。
+// Tasker、原始推理会话、Controller、Resource、控制权和 GPU 使用权按声明顺序销毁。
 pub struct NativeSession {
     tasker: Tasker,
+    raw_flash: Mutex<Option<raw_inference::RawClassifier>>,
+    inference_gate: Mutex<()>,
+    resource_root: PathBuf,
+    inference_device: InferenceDevice,
     controller: fixture::NativeController,
     _resource: Resource,
     input_mode: Option<InputMode>,
@@ -207,6 +212,10 @@ impl NativeSession {
         sdk::verify_loaded_modules()?;
         Ok(Self {
             tasker,
+            raw_flash: Mutex::new(None),
+            inference_gate: Mutex::new(()),
+            resource_root: path,
+            inference_device: device,
             controller,
             _resource: resource,
             input_mode,
@@ -351,11 +360,27 @@ impl NativeSession {
         kind: &str,
         params: &serde_json::Value,
     ) -> Result<RecognitionMeasurement> {
-        let started = Instant::now();
+        let _guard = self
+            .inference_gate
+            .try_lock()
+            .map_err(|_| anyhow::anyhow!("本会话已有识别调用，请等待完成"))?;
         ensure!(!self.tasker.running(), "Maa Tasker 正在执行其他任务");
         if kind == "LegacyFlashClassify" {
             return self.recognize_flash(image, params);
         }
+        if kind == "LegacyFlashRaw" {
+            return self.recognize_raw_flash(image, params);
+        }
+        self.recognize_maa_prepared(image, kind, params)
+    }
+
+    pub(crate) fn recognize_maa_prepared(
+        &self,
+        image: &RecognitionImage,
+        kind: &str,
+        params: &serde_json::Value,
+    ) -> Result<RecognitionMeasurement> {
+        let started = Instant::now();
         ensure!(
             [
                 "OCR",
@@ -402,6 +427,7 @@ impl NativeSession {
             detail: serde_json::to_value(detail)?,
             native_status: status.to_string(),
             timing: RecognitionTiming {
+                session_setup_us: 0,
                 prepare_us: 0,
                 enqueue_us,
                 completion_us,

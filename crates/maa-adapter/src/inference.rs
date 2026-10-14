@@ -46,6 +46,7 @@ impl GpuLease {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RecognitionTiming {
+    pub session_setup_us: u64,
     pub prepare_us: u64,
     pub enqueue_us: u64,
     pub completion_us: u64,

@@ -30,6 +30,17 @@ pub struct FlashConfig {
 }
 
 impl FlashConfig {
+    pub fn parse_raw(params: &Value) -> Result<Self> {
+        ensure!(
+            params["model"] == crate::raw_inference::RAW_FLASH_MODEL,
+            "原始闪光推理须使用固定原模型"
+        );
+        let mut adapted = params.clone();
+        adapted["model"] = json!(FLASH_MODEL);
+        let mut config = Self::parse(&adapted)?;
+        config.model = crate::raw_inference::RAW_FLASH_MODEL.into();
+        Ok(config)
+    }
     pub fn parse(params: &Value) -> Result<Self> {
         let config: Self = serde_json::from_value(params.clone())?;
         ensure!(
@@ -223,24 +234,11 @@ impl NativeSession {
     ) -> Result<RecognitionMeasurement> {
         let started = Instant::now();
         let config = FlashConfig::parse(params)?;
-        ensure!(
-            image.buffer.width() == 1920
-                && image.buffer.height() == 1080
-                && image.buffer.image_type() == 16,
-            "闪光适配要求原始 1920×1080 BGR 图像"
-        );
-        let [x, y, w, h] = config.roi;
-        let source = image.buffer.raw_data().context("闪光图像像素为空")?;
-        let mut crop = Vec::with_capacity((w * h * 3) as usize);
-        for row in y..y + h {
-            let offset = ((row * 1920 + x) * 3) as usize;
-            crop.extend_from_slice(&source[offset..offset + (w * 3) as usize]);
-        }
-        let prepared = prepare_flash_bgr(&crop, w, h)?;
+        let prepared = prepare_flash_image(image, config.roi)?;
         let mut buffer = MaaImageBuffer::new()?;
         buffer.set_raw_data(&prepared.bgr, FLASH_SIZE, FLASH_SIZE, 16)?;
         let prepare_us = started.elapsed().as_micros() as u64;
-        let mut measured = self.recognize_prepared(
+        let mut measured = self.recognize_maa_prepared(
             &RecognitionImage {
                 buffer,
                 prepare_us: 0,
@@ -254,4 +252,21 @@ impl NativeSession {
         measured.timing.total_us = started.elapsed().as_micros() as u64;
         Ok(measured)
     }
+}
+
+pub(crate) fn prepare_flash_image(image: &RecognitionImage, roi: [i32; 4]) -> Result<FlashImage> {
+    ensure!(
+        image.buffer.width() == 1920
+            && image.buffer.height() == 1080
+            && image.buffer.image_type() == 16,
+        "闪光适配要求原始 1920×1080 BGR 图像"
+    );
+    let [x, y, w, h] = roi;
+    let source = image.buffer.raw_data().context("闪光图像像素为空")?;
+    let mut crop = Vec::with_capacity((w * h * 3) as usize);
+    for row in y..y + h {
+        let offset = ((row * 1920 + x) * 3) as usize;
+        crop.extend_from_slice(&source[offset..offset + (w * 3) as usize]);
+    }
+    prepare_flash_bgr(&crop, w, h)
 }

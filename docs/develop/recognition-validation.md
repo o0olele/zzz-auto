@@ -28,6 +28,20 @@ Rust 适配入口 `LegacyFlashClassify` 接收原图 ROI，在 SDK 自带的 `op
 
 验证包括结构错误和生成物篡改拒绝、固定色序 / 补边 / 插值案例、已知 logits 的真实 Maa 推理、0.9 阈值两侧及舍入边界拒绝，以及固定战斗截图的 CPU / DirectML 对照。算法结构验证不代替同机旧实现输出：真实红光、黄光和阈值附近标注样本、旧版输出与性能基线未补齐之前，整体兼容性和 M1 继续待验收。
 
+## 原始浮点输出方案
+
+已增加 `LegacyFlashRaw`，通过 Rust `ort` / `ort-sys` 2.0.0-rc.10 动态绑定调用已经固定、校验并加载的 `onnxruntime_maa.dll`，读取原始分类模型的 float32 概率。DLL 实际版本为 1.29.0，绑定请求 API 22；先检查版本及 API 指针，再初始化，并确认 Rust 获得的 API 与 SDK 完全相同。SDK 文件哈希保持不变，绑定关闭原生库下载 / 复制，加载路径不取自环境变量或系统 PATH。此补充只解决 Maa 未公开原始张量和 JSON 六位小数的问题，不新增原生 DLL，不修改来源模型。原来的 Maa 原生分类、logits 适配与精度错误保留，便于同图对照。
+
+原始输出使用同一份 SDK OpenCV 缩放与补边数据，再按旧版 RGB / NCHW / 除以 255 后转 float32 的顺序构造张量。CPU / DirectML 会话在所属 Maa 会话内缓存，使用相同设备；DirectML 注册失败必须报错，不能静默回退。原生推理结束并销毁会话后才释放统一 GPU 使用权，不与该会话的 Maa 任务并行执行。结果先校验输入输出名称、形状、类型与概率范围，再按最大值和阈值判断，直接序列化原始浮点数，不经过 Maa 分数 JSON。
+
+参考仓锁定 NumPy 2.4.6，旧代码将 float32 模型分数与 Python float 阈值比较。按 [NumPy 2 标量类型提升规则](https://numpy.org/doc/2.2/numpy_2_0_migration_guide.html#changes-to-numpy-data-type-promotion)，本入口先把阈值转成 float32，再执行包含相等边界的比较；默认有效阈值为 0.8999999761581421。并列最大值取第一个索引，低于阈值保留候选与全部概率并返回 `class_index=-1`。这与先把分数提升到 float64 后直接比较 0.9 的行为不同，已用前后相邻 float32 值独立验证。
+
+模型按校验过的内存内容创建会话，报告记录实际加载 SHA-256；正式固定图检查会核对它与模型锁文件一致。CPU / DirectML 对照比较三类原始概率、候选和命中结果。每个会话内增加识别调用互斥，Maa / logits / 原始推理不能并行使用同一会话；GPU 会话销毁时先销毁补充会话和 Maa 资源，再释放原有 GPU 使用权。
+
+首次模型校验 / 会话创建由 `session_setup_us` 单列，正式采样区分预处理、同步推理和结果读取；补充路径没有 Maa 队列，报告的 `execution_path` 为 `sdk_onnxruntime_direct`，`enqueue` 为 0。DirectML 配置证据分为 Maa 日志与原始 SDK 注册成功，不能解释为全部算子都在 GPU 执行。注册时关闭内存模式和并行执行，遵循 [ONNX Runtime DirectML 约定](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html)。
+
+阈值附近的已知概率、RGB / NCHW、CPU / DirectML、错误模型和设备失败已通过本轮回归；真实游戏正例、同机旧实现输出及完整性能基线仍待补齐。补充路径目前同步等待推理完成，没有对在途推理接入停止 / 取消；不把此诊断入口当成已具备自动战斗停止能力。SDK 与旧版 ORT / OpenCV 的计算差异仍需真实语料对照，原始分数可读不等于已经验收全部旧行为。
+
 Maa 依据固定版本的[识别协议](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/docs/en_us/3.1-PipelineProtocol.md)、[分类源码](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Vision/NeuralNetworkClassifier.cpp)、[检测源码](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Vision/NeuralNetworkDetector.cpp)和[OCR 资源约定](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Resource/OCRResMgr.h)。旧实现的具体版本与结果在独立测试仓案例和验收记录中维护。
 
 运行入口见根 README。案例清单位于独立测试仓 `test/zzz_auto/fixtures/recognition/cases.json`，每例登记路径、SHA-256、参数、期望来源和设备比较容差。本轮包含四个邮件 OCR 锚点及一个未命中分支、两张战斗分类画面、两种检测模型的能力调用。空洞模型当前使用非地图画面，仅证明调用和结果格式；缺少正例，不能验收空洞检测。闪光尚缺红光 / 黄光及阈值附近的已标注样本。

@@ -9,4 +9,4 @@
 
 Rust 与前端精确依赖分别保存在 `Cargo.lock` 和 `apps/desktop/package-lock.json`。SDK 中的 Node 包装器、CLI、示例插件和 AgentBinary 不列入本项目运行包；只打包固定运行 DLL。
 
-M1 离线模型缓存来自参考项目配置使用的 [OneDragon-Env PP-OCRv5 发布](https://github.com/OneDragon-Anything/OneDragon-Env/releases/tag/ppocrv5)和 [OneDragon-YOLO 模型发布](https://github.com/OneDragon-Anything/OneDragon-YOLO/releases/tag/zzz_model)。发布包和使用文件的 SHA-256 在 `models.lock.json` 固定，来源不变，字典和标签保留。缓存与转换结果不作为源码提交，也未加入当前便携包；正式模型分发的许可与来源清单继续按 M7 核对。
+M1 离线模型缓存来自参考项目配置使用的 [OneDragon-Env PP-OCRv5 发布](https://github.com/OneDragon-Anything/OneDragon-Env/releases/tag/ppocrv5)和 [OneDragon-YOLO 模型发布](https://github.com/OneDragon-Anything/OneDragon-YOLO/releases/tag/zzz_model)。发布包和使用文件的 SHA-256 在 `models.lock.json` 固定，来源不变，字典和标签保留。缓存与转换结果不作为源码提交。2026 年 10 月 16 日起，M2 测试包附带邮件所需 PP-OCRv5 `det.onnx`、`rec.onnx` 和字典，原始字节与固定清单一致，位置为 `resources/generated/mail/model/ocr/ppocrv5/`；邮件资源清单记录来源与文件哈希，发布清单另行登记整个包。闪光 / YOLO 模型不随当前便携包分发；正式模型分发的完整来源与许可核对仍属 M7。

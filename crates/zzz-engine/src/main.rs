@@ -121,6 +121,8 @@ enum Action {
         raw_cpu_threads: Option<u16>,
     },
     Doctor,
+    // 只校验资源，不加载 SDK、连接游戏或创建用户数据；供发布前及测试机检查。
+    MailBundleCheck,
     Applications,
     Windows,
     Serve {
@@ -262,6 +264,13 @@ async fn main() -> Result<()> {
                 output.display()
             );
             return Ok(());
+        }
+        Action::MailBundleCheck => {
+            let bundle =
+                maa_adapter::validate_mail_bundle(&paths.resources.join("generated/mail"))?;
+            return print(
+                serde_json::json!({"valid":true,"bundle":bundle,"sdk_version":maa_adapter::SDK_VERSION,"engine_version":env!("CARGO_PKG_VERSION"),"protocol_version":od_protocol::PROTOCOL_VERSION}),
+            );
         }
         Action::Applications => return print(od_core::applications()?),
         Action::Windows => return print(od_platform::game_windows()?),

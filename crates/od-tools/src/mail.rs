@@ -208,7 +208,7 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
             files.insert(destination.clone(), bytes);
         }
     }
-    let manifest = json!({"schema_version":1,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"color_method":"RGB (Maa method=4)","pipeline_source_sha256":hex::encode(Sha256::digest(include_bytes!("../../../resources/mail/pipeline.json"))),"sources":sources,"areas":conversions,"files":files.iter().map(|(path,bytes)|json!({"path":path,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>(),"accepted":false,"limitations":["精确正则替代 LCS，仅限已验证文字","RGB 黄色与灰色按钮条件需实机验收","确定弹窗变体暂无真实截图","仅提供离线流程入口，尚未接入桌面运行槽与崩溃监督"]});
+    let manifest = json!({"schema_version":1,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"color_method":"RGB (Maa method=4)","pipeline_source_sha256":hex::encode(Sha256::digest(include_bytes!("../../../resources/mail/pipeline.json"))),"sources":sources,"areas":conversions,"files":files.iter().map(|(path,bytes)|json!({"path":path,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>(),"accepted":false,"limitations":["精确正则替代 LCS，仅限已验证文字","RGB 黄色与灰色按钮条件需实机验收","确定弹窗变体暂无真实截图","桌面前台键鼠试运行已接入，真实游戏验收待完成"]});
     files.insert(
         "mail-manifest.json".into(),
         serde_json::to_vec_pretty(&manifest)?,

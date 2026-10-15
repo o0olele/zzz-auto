@@ -12,7 +12,18 @@ const cargo = (args) => {
 };
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'types']);
 if (process.argv.includes('--types-only')) process.exit(0);
+if (release) {
+  // 发布目录必须自带邮件资源；只在构建机读取参考仓和模型缓存。
+  cargo(['run', '--locked', '-p', 'od-tools', '--', 'mail-bundle', '--reference',
+    process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+}
 cargo(['build', '--locked', '-p', 'zzz-engine', ...(release ? ['--release'] : [])]);
+if (release) {
+  const check = spawnSync(path.join(root, 'target/release/zzz-engine.exe'),
+    ['--root', root, 'mail-bundle-check'], { cwd: root, stdio: 'inherit', shell: false });
+  if (check.error) throw check.error;
+  if (check.status !== 0) process.exit(check.status ?? 1);
+}
 const destination = path.join(root, 'apps/desktop/src-tauri/binaries');
 mkdirSync(destination, { recursive: true });
 copyFileSync(path.join(root, `target/${release ? 'release' : 'debug'}/zzz-engine.exe`), path.join(destination, 'zzz-auto-engine-x86_64-pc-windows-msvc.exe'));

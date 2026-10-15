@@ -259,16 +259,31 @@ impl MailRun {
                 self.interrupt();
                 return Ok(());
             }
+            let last_node = last.as_deref().unwrap_or("尚无完成节点");
+            let claim_note = if self.claim_attempted {
+                "未重放可能已生效的领取"
+            } else {
+                "未执行领取"
+            };
             match end {
                 PipelineEnd::TimedOut => {
                     self.terminal(
                         MailState::TimedOut,
-                        "邮件步骤超时；未重放可能已生效的领取，输入已释放",
+                        &format!(
+                            "邮件步骤超时（{}；最后完成节点：{last_node}）；{claim_note}，输入已释放",
+                            step.entry()
+                        ),
                     );
                     return Ok(());
                 }
                 PipelineEnd::Failed => {
-                    self.terminal(MailState::Failed, "邮件 Pipeline 执行失败，输入已释放");
+                    self.terminal(
+                        MailState::Failed,
+                        &format!(
+                            "邮件 Pipeline 执行失败（{}；最后完成节点：{last_node}），输入已释放",
+                            step.entry()
+                        ),
+                    );
                     return Ok(());
                 }
                 PipelineEnd::Cancelled => {

@@ -80,13 +80,29 @@ pub struct InputRecoveryPlan {
     pub game: ProcessStamp,
     pub window: WindowInfo,
     pub config: InputProbeConfig,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub additional_inputs: Vec<InputProbeConfig>,
     pub engine_integrity: u32,
     pub run_id: Option<String>,
 }
 
 impl InputRecoveryPlan {
     pub fn validate(&self) -> Result<()> {
-        ensure!(self.version == 1, "输入恢复记录版本不支持");
+        ensure!(
+            self.version == 1 || self.version == 2,
+            "输入恢复记录版本不支持"
+        );
+        if self.version == 1 {
+            ensure!(self.additional_inputs.is_empty(), "v1 恢复记录不能增加输入");
+        } else {
+            let expected = od_core::mail::MailConfig::recovery_inputs();
+            ensure!(
+                self.additional_inputs.len() == 1
+                    && self.config == expected[0]
+                    && self.additional_inputs[0] == expected[1],
+                "v2 邮件恢复仅允许释放 Alt 和鼠标左键"
+            );
+        }
         self.config.validate().map_err(anyhow::Error::msg)?;
         ensure!(
             self.engine.pid > 0
@@ -197,6 +213,22 @@ fn recovery_windows(pid: u32) -> Result<Vec<usize>> {
 
 pub fn recover_input(plan: &InputRecoveryPlan) -> Result<String> {
     plan.validate()?;
+    if plan.version == 2 {
+        let mut errors = Vec::new();
+        for config in std::iter::once(plan.config).chain(plan.additional_inputs.iter().copied()) {
+            let mut single = plan.clone();
+            single.version = 1;
+            single.config = config;
+            single.additional_inputs.clear();
+            if let Err(error) = recover_input(&single) {
+                errors.push(format!("{error:#}"));
+            }
+        }
+        ensure!(errors.is_empty(), "{}", errors.join("；"));
+        return Ok(
+            "已释放邮件记录中的 Alt 和鼠标左键；请确认游戏状态再重连，不会续跑或重复领取".into(),
+        );
+    }
     ensure!(plan.engine.exited()?, "旧引擎仍在运行，不能发送恢复输入");
     let release = input_release(plan.config)?;
     if release == InputRelease::GamepadOwnerExit {

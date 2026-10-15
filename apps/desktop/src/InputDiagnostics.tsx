@@ -39,7 +39,7 @@ export function InputDiagnostics({ snapshot, connected, busy, onStart, onStop }:
   const [execution, setExecution] = useState('direct');
   const [timeout, setTimeout] = useState('5000');
   const pipeline = execution === 'pipeline';
-  const active = !!snapshot?.run && ['running', 'stopping'].includes(snapshot.run.state);
+  const active = !!snapshot?.run && ['running', 'pausing', 'paused', 'stopping'].includes(snapshot.run.state);
   const inputRun = snapshot?.run && ['prototype.input_probe', 'prototype.input_pipeline'].includes(snapshot.run.app_id) ? snapshot.run : null;
   const result = inputRun?.input_probe;
   const pipelineResult = inputRun?.input_pipeline;

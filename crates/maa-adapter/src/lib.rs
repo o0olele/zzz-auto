@@ -3,6 +3,8 @@ mod fixture;
 pub mod flash;
 mod inference;
 mod input;
+mod mail_bundle;
+pub use mail_bundle::validate_mail_bundle;
 pub mod ocr;
 mod pipeline;
 mod raw_control;

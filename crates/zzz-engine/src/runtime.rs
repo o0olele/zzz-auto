@@ -1,8 +1,10 @@
+use crate::mail::{MailRun, MailState};
 use chrono::Utc;
 use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, NativeSession};
 use od_core::{
     InputProbeConfig, RunEvent, RunRecord, RunSlot, RunState, SdkStatus, Snapshot, WindowInfo,
 };
+use od_core::{mail::MailConfig, pipeline::PipelineRequest};
 use od_protocol::{ApiError, Command, Payload};
 use std::{
     collections::VecDeque,
@@ -32,6 +34,7 @@ struct State {
     slot: RunSlot,
     native_pending: bool,
     cancel: Option<Arc<AtomicBool>>,
+    mail_control: Option<PipelineRequest>,
     events: VecDeque<RunEvent>,
     sequence: u64,
     dropped: u64,
@@ -69,6 +72,8 @@ impl State {
 }
 
 enum Work {
+    Mail(MailWork),
+    MailControl(Uuid, bool),
     Attach(
         String,
         CaptureMethod,
@@ -87,6 +92,16 @@ enum Work {
     Shutdown(oneshot::Sender<()>),
 }
 
+struct MailWork {
+    fixture: bool,
+    run: Box<MailRun>,
+    window: WindowInfo,
+    capture: CaptureMethod,
+    prepared: bool,
+    events: Option<maa_adapter::PipelineEvents>,
+    dropped: u64,
+}
+
 enum InputOutcome {
     Direct(od_core::InputProbeResult),
     Pipeline(od_core::InputPipelineResult),
@@ -96,6 +111,7 @@ enum InputOutcome {
 pub struct Engine {
     state: Arc<Mutex<State>>,
     sender: mpsc::SyncSender<Work>,
+    fixture: bool,
 }
 
 fn native_error(error: anyhow::Error) -> ApiError {
@@ -104,6 +120,28 @@ fn native_error(error: anyhow::Error) -> ApiError {
 
 impl Engine {
     pub fn new(paths: EnginePaths) -> anyhow::Result<Self> {
+        Self::with_factory(paths, None)
+    }
+
+    // 独立测试仓的会反应控制器入口，不通过 CLI / IPC 暴露，也不创建游戏控制器。
+    pub fn for_mail_fixture(
+        paths: EnginePaths,
+        callback: impl maa_adapter::CustomControllerCallback + 'static,
+    ) -> anyhow::Result<Self> {
+        let resources = paths.resources.clone();
+        Self::with_factory(
+            paths,
+            Some(Box::new(move || {
+                NativeSession::for_custom_controller(callback, &resources, InputMode::Foreground)
+            })),
+        )
+    }
+
+    fn with_factory(
+        paths: EnginePaths,
+        factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
+    ) -> anyhow::Result<Self> {
+        let fixture = factory.is_some();
         std::fs::create_dir_all(paths.data.join("runs"))?;
         let state = Arc::new(Mutex::new(State {
             sdk: SdkStatus {
@@ -119,6 +157,7 @@ impl Engine {
             slot: RunSlot::default(),
             native_pending: false,
             cancel: None,
+            mail_control: None,
             events: VecDeque::new(),
             sequence: 0,
             dropped: 0,
@@ -128,8 +167,12 @@ impl Engine {
         let worker_state = state.clone();
         std::thread::Builder::new()
             .name("maa-worker".into())
-            .spawn(move || worker(paths, worker_state, receiver))?;
-        Ok(Self { state, sender })
+            .spawn(move || worker(paths, worker_state, receiver, factory))?;
+        Ok(Self {
+            state,
+            sender,
+            fixture,
+        })
     }
 
     pub fn snapshot(&self) -> Snapshot {
@@ -141,13 +184,23 @@ impl Engine {
         if let Some(cancel) = &state.cancel {
             cancel.store(true, Ordering::Release);
         }
+        if let Some(control) = &state.mail_control {
+            control.stop();
+        }
         if let Some(id) = state
             .slot
             .current()
             .filter(|run| !run.state.is_terminal())
             .map(|run| run.id)
         {
+            let was_stopping = state
+                .slot
+                .current()
+                .is_some_and(|run| run.state == RunState::Stopping);
             let _ = state.slot.request_stop(id);
+            if state.mail_control.is_some() && !was_stopping {
+                let _ = self.sender.try_send(Work::MailControl(id, false));
+            }
         }
     }
 
@@ -163,6 +216,48 @@ impl Engine {
 
     pub async fn execute(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
+            Command::StartMail {
+                config,
+                allow_input,
+            } => self.start_mail(config, allow_input),
+            Command::Pause { run_id } => {
+                let mut state = self.state.lock().expect("运行状态锁失效");
+                let record = state
+                    .slot
+                    .request_pause(run_id)
+                    .map_err(|error| ApiError::new("invalid_run_state", error))?;
+                if let Some(control) = &state.mail_control {
+                    control.pause();
+                }
+                Ok(Payload::Run(record))
+            }
+            Command::Resume { run_id } => {
+                let mut state = self.state.lock().expect("运行状态锁失效");
+                let current = state
+                    .slot
+                    .current()
+                    .filter(|run| {
+                        run.id == run_id && run.state == RunState::Paused && run.mail.is_some()
+                    })
+                    .ok_or_else(|| {
+                        ApiError::new("invalid_run_state", "只有已确认暂停的邮件任务可以继续")
+                    })?;
+                if self
+                    .sender
+                    .try_send(Work::MailControl(current.id, true))
+                    .is_err()
+                {
+                    return Err(ApiError::new(
+                        "worker_unavailable",
+                        "工作线程无法接收继续请求",
+                    ));
+                }
+                let record = state
+                    .slot
+                    .request_resume(run_id)
+                    .map_err(|error| ApiError::new("invalid_run_state", error))?;
+                Ok(Payload::Run(record))
+            }
             Command::Snapshot => Ok(Payload::Snapshot(Box::new(self.snapshot()))),
             Command::Applications => od_core::applications()
                 .map(Payload::Applications)
@@ -236,12 +331,22 @@ impl Engine {
             } => self.start_input(config.input, allow_input, Some(config.timeout_ms)),
             Command::Stop { run_id } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
+                let was_stopping = state
+                    .slot
+                    .current()
+                    .is_some_and(|run| run.state == RunState::Stopping);
                 let record = state
                     .slot
                     .request_stop(run_id)
                     .map_err(|e| ApiError::new("stale_run", e))?;
                 if let Some(cancel) = &state.cancel {
                     cancel.store(true, Ordering::Release);
+                }
+                if let Some(control) = &state.mail_control {
+                    control.stop();
+                    if !was_stopping {
+                        let _ = self.sender.try_send(Work::MailControl(run_id, false));
+                    }
                 }
                 Ok(Payload::Run(record))
             }
@@ -255,6 +360,60 @@ impl Engine {
                 Ok(Payload::Ack)
             }
         }
+    }
+
+    fn start_mail(&self, config: MailConfig, allow_input: bool) -> Result<Payload, ApiError> {
+        if !allow_input {
+            return Err(ApiError::new(
+                "input_not_confirmed",
+                "邮件流程会操作游戏，请先确认允许真实输入",
+            ));
+        }
+        config
+            .validate()
+            .map_err(|error| ApiError::new("invalid_input", error))?;
+        let mut state = self.state.lock().expect("运行状态锁失效");
+        if !state.sdk.ready {
+            return Err(ApiError::new("sdk_not_ready", state.sdk.message.clone()));
+        }
+        let window = state
+            .window
+            .clone()
+            .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
+        if state.native_pending {
+            return Err(ApiError::new("busy", "截图或连接操作尚未完成"));
+        }
+        let record = state
+            .slot
+            .begin_mail(config)
+            .map_err(|error| ApiError::new("busy", error))?;
+        let run = MailRun::with_id(record.id, config).map_err(native_error)?;
+        let control = run.control();
+        let work = MailWork {
+            fixture: self.fixture,
+            run: Box::new(run),
+            window,
+            capture: state.capture_method.unwrap_or_default(),
+            prepared: false,
+            events: None,
+            dropped: 0,
+        };
+        if self.sender.try_send(Work::Mail(work)).is_err() {
+            let _ = state
+                .slot
+                .finish(record.id, RunState::Failed, "工作线程不可用".into());
+            return Err(ApiError::new(
+                "worker_unavailable",
+                "工作线程无法接收邮件任务",
+            ));
+        }
+        state.mail_control = Some(control);
+        state.event(
+            Some(record.id),
+            "info",
+            "开始邮件试运行；只使用前台键鼠，暂停期间继续占用运行槽".into(),
+        );
+        Ok(Payload::Run(record))
     }
 
     fn start_input(
@@ -361,7 +520,12 @@ impl Engine {
     }
 }
 
-fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver<Work>) {
+fn worker(
+    paths: EnginePaths,
+    state: Arc<Mutex<State>>,
+    receiver: mpsc::Receiver<Work>,
+    factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
+) {
     {
         let result = maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"));
         let mut state = state.lock().expect("运行状态锁失效");
@@ -378,8 +542,53 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
         }
     }
     let mut native: Option<NativeSession> = None;
+    if let Some(factory) = factory {
+        match factory() {
+            Ok(session) => {
+                native = Some(session);
+                state.lock().expect("运行状态锁失效").window = Some(WindowInfo {
+                    hwnd: "fixture".into(),
+                    pid: std::process::id(),
+                    title: "离线流程".into(),
+                    executable: "Fixture".into(),
+                    width: 1920,
+                    height: 1080,
+                    keyboard_permission: None,
+                });
+            }
+            Err(error) => {
+                let mut state = state.lock().expect("运行状态锁失效");
+                state.sdk.ready = false;
+                state.sdk.message = format!("{error:#}");
+            }
+        }
+    }
+    let mut paused_mail: Option<MailWork> = None;
     for command in receiver {
         match command {
+            Work::Mail(work) => {
+                paused_mail = run_mail_work(work, &paths, &state, &mut native);
+            }
+            Work::MailControl(id, resume) => {
+                if paused_mail.as_ref().is_some_and(|work| work.run.id == id) {
+                    let mut work = paused_mail.take().expect("已有暂停任务");
+                    if resume
+                        && work.run.interrupt_requested()
+                            != Some(od_core::pipeline::Interrupt::Stop)
+                    {
+                        if let Err(error) = work.run.resume()
+                            && work.run.interrupt_requested()
+                                != Some(od_core::pipeline::Interrupt::Stop)
+                        {
+                            work.run.state = MailState::Failed;
+                            work.run.message = format!("{error:#}");
+                        }
+                    } else {
+                        work.run.control().stop();
+                    }
+                    paused_mail = run_mail_work(work, &paths, &state, &mut native);
+                }
+            }
             Work::Attach(hwnd, capture_method, reply) => {
                 let result = (|| -> anyhow::Result<Payload> {
                     let window = od_platform::parse_game_window(&hwnd)?;
@@ -664,11 +873,145 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
                 state.cancel = None;
             }
             Work::Shutdown(reply) => {
+                if let Some(work) = paused_mail.take() {
+                    work.run.control().stop();
+                    let _ = run_mail_work(work, &paths, &state, &mut native);
+                }
                 native.take();
                 let _ = reply.send(());
                 return;
             }
         }
+    }
+    if let Some(work) = paused_mail.take() {
+        work.run.control().stop();
+        let _ = run_mail_work(work, &paths, &state, &mut native);
+    }
+}
+
+fn drain_mail_events(work: &MailWork, state: &mut State) {
+    if let Some(events) = &work.events {
+        for event in events.receiver.try_iter() {
+            state.event(
+                Some(work.run.id),
+                "debug",
+                format!("{} {}", event.message, event.node.as_deref().unwrap_or("")),
+            );
+        }
+    }
+}
+
+fn run_mail_work(
+    mut work: MailWork,
+    paths: &EnginePaths,
+    shared: &Arc<Mutex<State>>,
+    native: &mut Option<NativeSession>,
+) -> Option<MailWork> {
+    let result = (|| -> anyhow::Result<()> {
+        if work.run.state.is_terminal() {
+            return Ok(());
+        }
+        if !work.prepared && work.fixture {
+            work.events = Some(
+                native
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("离线控制器未准备"))?
+                    .pipeline_events(EVENT_CAPACITY)?,
+            );
+            work.prepared = true;
+        }
+        if !work.prepared {
+            if work.run.interrupt_requested().is_some() {
+                if let Some(controller) = native.as_mut() {
+                    controller.release_inputs()?;
+                }
+                work.run.acknowledge_idle();
+                return Ok(());
+            }
+            let bundle =
+                maa_adapter::validate_mail_bundle(&paths.resources.join("generated/mail"))?;
+            if let Some(controller) = native.as_mut() {
+                controller.release_inputs()?;
+            }
+            native.take();
+            let current = od_platform::parse_game_window(&work.window.hwnd)?;
+            anyhow::ensure!(
+                current.pid == work.window.pid && current.width == 1920 && current.height == 1080,
+                "游戏窗口身份或尺寸已变化，请重连"
+            );
+            let mut controller = NativeSession::for_game(
+                &current,
+                &paths.resources,
+                work.capture,
+                InputMode::Foreground,
+                InferenceDevice::Cpu,
+            )?;
+            controller.load_mail_bundle(&bundle)?;
+            work.events = Some(controller.pipeline_events(EVENT_CAPACITY)?);
+            *native = Some(controller);
+            work.prepared = true;
+        }
+        let controller = native
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("邮件控制器未连接"))?;
+        let events = work.events.as_ref();
+        let id = work.run.id;
+        let publish = |progress| {
+            let mut state = shared.lock().expect("运行状态锁失效");
+            if let Some(events) = events {
+                for event in events.receiver.try_iter() {
+                    state.event(
+                        Some(id),
+                        "debug",
+                        format!("{} {}", event.message, event.node.as_deref().unwrap_or("")),
+                    );
+                }
+            }
+            let _ = state
+                .slot
+                .update_mail(id, progress, "邮件流程运行中".into());
+        };
+        if work.fixture {
+            work.run.execute_fixture(controller, publish)
+        } else {
+            work.run.execute_game(controller, publish)
+        }
+    })();
+    if let Err(error) = result {
+        work.run.state = MailState::Failed;
+        work.run.message = format!("邮件流程失败：{error:#}");
+        work.run.inputs_released = native
+            .as_mut()
+            .is_none_or(|controller| controller.release_inputs().is_ok());
+    }
+    let mut state = shared.lock().expect("运行状态锁失效");
+    drain_mail_events(&work, &mut state);
+    if let Some(events) = &work.events {
+        let dropped = events.dropped();
+        state.dropped += dropped.saturating_sub(work.dropped);
+        work.dropped = dropped;
+    }
+    if let Ok(record) =
+        state
+            .slot
+            .update_mail(work.run.id, work.run.progress(), work.run.message.clone())
+    {
+        save_run(paths, &mut state, &record);
+        state.event(
+            Some(record.id),
+            if record.state == RunState::Failed {
+                "error"
+            } else {
+                "info"
+            },
+            record.message,
+        );
+    }
+    if work.run.state == MailState::Paused {
+        Some(work)
+    } else {
+        state.mail_control = None;
+        None
     }
 }
 

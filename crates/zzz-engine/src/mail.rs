@@ -1,41 +1,12 @@
-//! M2 离线邮件业务原型。真实游戏运行槽、持久化与桌面恢复监督尚未接入。
+//! 邮件业务检查点；原生输入、停止与释放由适配层统一处理。
 use anyhow::{Result, ensure};
 use maa_adapter::{MailStep, NativeSession, PipelineEnd, PipelineExecution};
+use od_core::mail::{MailConfig, MailProgress};
+pub use od_core::mail::{MailPhase, MailState};
 use od_core::pipeline::{Interrupt, PipelineControl, PipelineRequest};
 use serde::Serialize;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MailState {
-    Running,
-    Paused,
-    Succeeded,
-    Failed,
-    Stopped,
-    TimedOut,
-}
-
-impl MailState {
-    pub fn is_terminal(self) -> bool {
-        !matches!(self, Self::Running | Self::Paused)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MailPhase {
-    Navigate,
-    Inspect,
-    Claim,
-    AfterClaim,
-    Confirm,
-    AfterConfirm,
-    ReturnList,
-    ReturnWorld,
-    Done,
-}
 
 #[derive(Serialize)]
 pub struct MailRun {
@@ -50,6 +21,7 @@ pub struct MailRun {
     pub message: String,
     pub executions: Vec<PipelineExecution>,
     timeout_ms: u64,
+    config: MailConfig,
     #[serde(skip)]
     control: PipelineControl,
 }
@@ -60,8 +32,19 @@ impl MailRun {
             timeout >= Duration::from_millis(1) && timeout <= Duration::from_secs(60),
             "邮件超时须为 1ms..60s"
         );
+        Self::with_id(
+            Uuid::new_v4(),
+            MailConfig {
+                timeout_ms: timeout.as_millis() as u32,
+                start_delay_ms: 0,
+            },
+        )
+    }
+
+    pub fn with_id(id: Uuid, config: MailConfig) -> Result<Self> {
+        config.validate().map_err(anyhow::Error::msg)?;
         Ok(Self {
-            id: Uuid::new_v4(),
+            id,
             state: MailState::Running,
             phase: MailPhase::Navigate,
             claim_attempted: false,
@@ -69,8 +52,9 @@ impl MailRun {
             returning: false,
             inputs_released: true,
             active_ms: 0,
-            timeout_ms: timeout.as_millis().max(1) as u64,
-            message: "邮件离线流程已创建".into(),
+            timeout_ms: config.timeout_ms.into(),
+            config,
+            message: "邮件流程已创建".into(),
             executions: Vec::new(),
             control: PipelineControl::default(),
         })
@@ -78,6 +62,15 @@ impl MailRun {
 
     pub fn control(&self) -> PipelineRequest {
         self.control.requester()
+    }
+
+    pub fn interrupt_requested(&self) -> Option<Interrupt> {
+        self.control.requested()
+    }
+    // 仅供工作线程在确认控制器已释放后，处理投递前的暂停 / 停止。
+    pub fn acknowledge_idle(&mut self) -> bool {
+        self.inputs_released = true;
+        self.interrupt()
     }
 
     pub fn resume(&mut self) -> Result<()> {
@@ -94,17 +87,59 @@ impl MailRun {
     }
 
     pub fn execute(&mut self, session: &mut NativeSession) -> Result<()> {
+        self.execute_observed(session, false, |_| {})
+    }
+
+    pub fn execute_fixture(
+        &mut self,
+        session: &mut NativeSession,
+        progress: impl FnMut(MailProgress),
+    ) -> Result<()> {
+        self.execute_observed(session, false, progress)
+    }
+
+    pub fn progress(&self) -> MailProgress {
+        MailProgress {
+            config: self.config,
+            state: self.state,
+            phase: self.phase,
+            claim_attempted: self.claim_attempted,
+            reward_observed: self.reward_observed,
+            inputs_released: self.inputs_released,
+            active_ms: self.active_ms,
+        }
+    }
+
+    pub fn execute_game(
+        &mut self,
+        session: &mut NativeSession,
+        progress: impl FnMut(MailProgress),
+    ) -> Result<()> {
+        self.execute_observed(session, true, progress)
+    }
+
+    fn execute_observed(
+        &mut self,
+        session: &mut NativeSession,
+        game: bool,
+        mut progress: impl FnMut(MailProgress),
+    ) -> Result<()> {
         ensure!(
             self.state == MailState::Running
                 || (self.state == MailState::Paused
                     && self.control.requested() == Some(Interrupt::Stop)),
             "任务已暂停或结束，不能直接重跑"
         );
-        let started = Instant::now();
         self.inputs_released = false;
-        let result = session.prepare_fixture_mail().and_then(|()| {
+        let preparation = if game {
+            session.prepare_game_mail(self.control.cancellation(), self.config.start_delay_ms)
+        } else {
+            session.prepare_fixture_mail()
+        };
+        let started = Instant::now();
+        let result = preparation.and_then(|()| {
             self.inputs_released = true;
-            self.execute_inner(session, started)
+            self.execute_inner(session, started, game, &mut progress)
         });
         self.active_ms = self
             .active_ms
@@ -149,7 +184,13 @@ impl MailRun {
         }
     }
 
-    fn execute_inner(&mut self, session: &mut NativeSession, started: Instant) -> Result<()> {
+    fn execute_inner(
+        &mut self,
+        session: &mut NativeSession,
+        started: Instant,
+        game: bool,
+        progress: &mut impl FnMut(MailProgress),
+    ) -> Result<()> {
         loop {
             if self.interrupt() {
                 return Ok(());
@@ -184,11 +225,22 @@ impl MailRun {
                 self.returning = true;
             }
             self.inputs_released = false;
-            let execution = session.fixture_mail_step(
-                step,
-                self.control.cancellation(),
-                Duration::from_millis(self.timeout_ms - used),
-            )?;
+            let mut current = self.progress();
+            current.active_ms = used;
+            progress(current);
+            let execution = if game {
+                session.game_mail_step(
+                    step,
+                    self.control.cancellation(),
+                    Duration::from_millis(self.timeout_ms - used),
+                )?
+            } else {
+                session.fixture_mail_step(
+                    step,
+                    self.control.cancellation(),
+                    Duration::from_millis(self.timeout_ms - used),
+                )?
+            };
             self.inputs_released = execution.report.released;
             if was_claim && execution.task_id.is_none() {
                 self.claim_attempted = false;

@@ -116,9 +116,9 @@ impl NativeSession {
             .report)
     }
 
-    // 业务原型目前只使用离线控制器。接入真实游戏前须接入共享运行槽与桌面恢复登记。
+    // 固定图入口与游戏入口分开校验，避免离线测试误用真实游戏控制器。
     fn validate_mail_fixture(&self) -> Result<()> {
-        ensure!(self.game_window.is_none(), "邮件原型尚未开放真实游戏输入");
+        ensure!(self.game_window.is_none(), "邮件固定图入口不接受游戏控制器");
         ensure!(
             self.input_mode == Some(crate::InputMode::Foreground),
             "邮件原型使用前台键鼠语义"
@@ -129,6 +129,44 @@ impl NativeSession {
     pub fn prepare_fixture_mail(&mut self) -> Result<()> {
         self.validate_mail_fixture()?;
         self.release_inputs()
+    }
+
+    pub fn prepare_game_mail(&mut self, cancel: Arc<AtomicBool>, delay_ms: u32) -> Result<()> {
+        ensure!(self.game_window.is_some(), "邮件实机入口需要游戏控制器");
+        ensure!(
+            self.input_mode == Some(crate::InputMode::Foreground),
+            "邮件首版只支持前台键鼠"
+        );
+        ensure!(delay_ms <= 10_000, "邮件延时超出限制");
+        self.release_inputs()?;
+        crate::input::wait_delay(Duration::from_millis(delay_ms.into()), &cancel, &mut None);
+        Ok(())
+    }
+
+    pub fn game_mail_step(
+        &mut self,
+        step: MailStep,
+        cancel: Arc<AtomicBool>,
+        timeout: Duration,
+    ) -> Result<PipelineExecution> {
+        ensure!(self.game_window.is_some(), "邮件实机入口需要游戏控制器");
+        ensure!(
+            self.input_mode == Some(crate::InputMode::Foreground),
+            "邮件首版只支持前台键鼠"
+        );
+        let config = od_core::mail::MailConfig::recovery_inputs()[1];
+        self.prepare_input_target(config, &cancel, &mut None)?;
+        self.run_pipeline_detailed(
+            step.entry(),
+            &PipelineInputPlan {
+                keys: [18].into(),
+                contacts: [0].into(),
+            },
+            cancel,
+            timeout,
+            "{}",
+            true,
+        )
     }
 
     pub fn fixture_mail_step(

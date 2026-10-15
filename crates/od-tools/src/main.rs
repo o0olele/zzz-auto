@@ -98,6 +98,10 @@ fn main() -> Result<()> {
             let declarations = [
                 od_core::AppDefinition::decl(),
                 od_core::RunState::decl(),
+                od_core::mail::MailConfig::decl(),
+                od_core::mail::MailState::decl(),
+                od_core::mail::MailPhase::decl(),
+                od_core::mail::MailProgress::decl(),
                 od_core::InputMode::decl(),
                 od_core::InputSide::decl(),
                 od_core::MouseButton::decl(),

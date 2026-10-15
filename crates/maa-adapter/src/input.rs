@@ -53,6 +53,27 @@ fn touch_args(action: InputProbeAction) -> Option<(i32, i32, i32, i32)> {
 }
 
 impl NativeSession {
+    fn cleanup_job(
+        &mut self,
+        post: impl Fn(&crate::fixture::NativeController) -> Result<i64>,
+        cancel: &AtomicBool,
+        stopped_at: &mut Option<Instant>,
+    ) -> Result<MaaStatus> {
+        let id = loop {
+            observe_cancel(cancel, stopped_at);
+            let id = post(&self.controller)?;
+            if id > 0 || !self.pipeline_controller_pending {
+                break id;
+            }
+            // Tasker 停止任务可能先于控制器的长按 / 阻塞回调结束。
+            // 固定 SDK 在此期间拒绝新请求；等待队列重新接受清理，不能跳过释放。
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let status = self.wait_input_job(id, cancel, stopped_at)?;
+        self.pipeline_controller_pending = false;
+        Ok(status)
+    }
+
     pub(crate) fn wait_input_job(
         &self,
         id: i64,
@@ -79,10 +100,8 @@ impl NativeSession {
         self.input_cleanup_pending = true;
         let mut errors = Vec::new();
         for key in self.held_keys.clone() {
-            let result = self
-                .controller
-                .post_key_up(key)
-                .and_then(|id| self.wait_input_job(id, cancel, stopped_at));
+            let result =
+                self.cleanup_job(|controller| controller.post_key_up(key), cancel, stopped_at);
             match result {
                 Ok(status) if status.is_success() => {
                     self.held_keys.remove(&key);
@@ -91,10 +110,11 @@ impl NativeSession {
             }
         }
         for contact in self.held_contacts.clone() {
-            let result = self
-                .controller
-                .post_touch_up(contact)
-                .and_then(|id| self.wait_input_job(id, cancel, stopped_at));
+            let result = self.cleanup_job(
+                |controller| controller.post_touch_up(contact),
+                cancel,
+                stopped_at,
+            );
             match result {
                 Ok(status) if status.is_success() => {
                     self.held_contacts.remove(&contact);
@@ -103,10 +123,11 @@ impl NativeSession {
             }
         }
         // 恢复放在队列末端，并等完成；任何失败都保留，不能交出成功终态。
-        let result = self
-            .controller
-            .post_inactive()
-            .and_then(|id| self.wait_input_job(id, cancel, stopped_at));
+        let result = self.cleanup_job(
+            crate::fixture::NativeController::post_inactive,
+            cancel,
+            stopped_at,
+        );
         if !matches!(result, Ok(status) if status.is_success()) {
             errors.push("控制器恢复输入失败".into());
         }

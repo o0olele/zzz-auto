@@ -12,7 +12,7 @@ CPU / DirectML 对照忽略原生请求 ID 和结果顺序，逐项比较文字�
 
 - 闪光：旧版保持比例、以 `INTER_LINEAR` 缩放并在右下补 114，直接读取模型输出并使用 0.9 阈值；Maa 分类使用 `INTER_AREA` 拉伸 ROI 并再次 softmax，原生分数不能代替旧置信度。需补充适配或自定义识别后再验收闪避行为。
 - YOLO：Maa 居中补边，旧版在右下补边；尺寸取整、插值、候选过滤、框裁剪和 NMS 还需对照。迷失之地旧实现另遮盖头像区域，本轮全帧调用用于识别能力诊断。
-- OCR：Maa 使用 FastDeploy PPOCR 路径，旧版最长边限制、识别高度、框扩张和 LCS 语义仍需逐项对照。字典相同不代表所有预处理相同。
+- OCR：Maa 使用 FastDeploy PPOCR 路径，检测与识别预处理仍有差异。`OcrText` 已补文字匹配、置信度过滤和全图坐标，适用范围见[OCR 业务调用适配](#ocr-业务调用适配)；字典相同不代表算法输出相同。
 
 ## YOLO 适配方案
 
@@ -160,3 +160,38 @@ target/release/zzz-engine.exe recognition-compare --cases zzz-od-test/test/zzz_a
 比较器对统一计时要求双方至少预热 5 次、至少 30 个正式样本，并验证边界、release、样本数量和输出；不合条件时不将旧阶段计时当成可比性能。可比较时逐案给出 `performance`、P95 比例与 110% 结果，汇总为 `all_performance_targets_passed`。任何输出差异、错误、不稳定、缺失样本或超出目标均不能通过；旧版误检的人工预期失败仍单列。没有旧统一计时的历史报告继续只比较输出，性能状态为未提供。
 
 2026 年 10 月 15 日在本机完成五组 30 次正式样本实验，ORT 默认与固定 8 线程的 7 案均达到离线 P95 目标；默认改为 0，避免将本机核心数量写死为所有机器的设置。用默认入口再做每边 60 次正式样本确认，7 / 7 项输出及离线 P95 目标均通过。对照、确认、闪光复验及 SHA-256 索引存放在测试仓 `fixtures/recognition/yolo-threading-20261015/`，具体数据见[验收记录](../migration/acceptance.md#2026-年-10-月-15-日原始-yolo-cpu-线程与统一计时)。`legacy_performance_available=true` 只说明该比较报告具备本范围的同机旧计时，不表示全部 M1 性能通过。
+
+## OCR 业务调用适配
+
+`OcrText` 用于 Rust 业务需要的文字匹配，底层继续调用固定 Maa OCR，不增加推理库或重写通用 Pipeline。Maa 原生 `OCR` 仍用于严格的新旧算法对照，原案例、2px 容差和失败报告保持原样。`OcrText` 的 `legacy_algorithm_compatible=false` 明确表示它没有恢复旧检测和识别算法。
+
+核对参考提交 `b15662f7ce61bcfdeaad6b401695e5dcb0af8f42` 后，调用要求如下：
+
+| 旧入口 | 迁移时的处理 |
+| --- | --- |
+| `screen_utils.find_area_in_screen` / `find_and_click_area` | 对翻译后的目标做 LCS 匹配，按目标 Unicode 字符数计算比例；结果与点击中心为全图坐标 |
+| `match_words` 的精确 / 包含调用 | 显式选择 `exact` / `contains`，目标按字面文字处理，调用方先完成翻译 |
+| `run_ocr_single_line(strict_one_line=True)` | `only_rec=true`，使用 Maa 公开的仅识别路径，ROI 必须已包含单行文字；框表示整个 ROI，不能当作检测器定位结果 |
+| 检测并识别的置信度 | 旧 TextSystem 先应用 `drop_score=0.5`，再应用调用方阈值；适配器使用 `max(0.5, threshold)` |
+| 单行直识别的置信度 | 不经过检测路径的 `drop_score`，直接应用调用方阈值，默认 0 |
+| 行合并、颜色过滤、全图识别后按重叠率筛选、相似度排名、识别缓存 | 本轮不支持；未知参数立即报错，不静默忽略 |
+
+LCS 由 `od-core::ocr` 实现，按 Unicode 字符计算最长公共子序列，比较 `LCS长度 >= 原目标字符数 × lcs_percent`，不按 UTF-8 字节数、不要求连续。`ignore_case` 默认 true，精确和包含模式同样显式控制大小写，不去除空白。该接口对应显式文字匹配规则；旧 `match_words` 的 LCS 分支会再次调用默认忽略大小写的 `find_by_lcs`，即便其外层设置 `ignore_case=False`，也不能据此声称整个旧包装器逐参数等价。
+
+固定 [Maa 5.14.3 OCR 源码](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Vision/OCRer.cpp)显示，`all` 保存原始文字，`filtered` 会先 trim 再进行正则过滤。适配器读取 `all`，在 Rust 中执行文字和分数过滤，同时保存 `native_detail`；命中项补充整数点击中心 `[x+w/2,y+h/2]`，不再次加 ROI 偏移。固定 [OCR 协议](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/docs/en_us/3.1-PipelineProtocol.md#ocr)提供 `only_rec`，不需要额外 OCR 推理路径。SDK JSON 分数仍只有六位小数，距离有效阈值不超过 0.000001 时返回精度错误，不能将其记作普通未命中或阈值边界通过；原始 OCR 浮点阈值验收继续待补。
+
+同一源码还包含检测无框、但识别返回单个文字时使用全 ROI 框的分支，但本批「400」不属于该证据：检测并识别返回框 `[508,302,57,24]`，与 ROI `[500,301,85,43]` 不同。旧版检测器没有框，新版实际取得了定位框；具体差异还未定位到某个预处理或检测后处理步骤，不能仅凭源码存在回退就归因。本轮没有为取得相同结果而丢弃新版正确识别。单行 `only_rec` 的框则按协议等于整个 ROI，另案记录，不能与检测结果混淆。标题的检测框差异同样保留 3px。存档旧 / 新标题的中心分别为 `[521,280]` / `[520,279]`，都位于旧配置 `[417,250,646,320]` 内，且 LCS 分支一致；这只说明固定截图上的候选点击位置，没有证明实机点击已被游戏接受。
+
+参数例子如下，`roi` 使用 Maa 的 `[x,y,width,height]`，与旧 `[x1,y1,x2,y2]` 区别明确：
+
+```json
+{"model":"ppocrv5","roi":[417,250,229,70],"words":["今日最大活跃度"],"match_mode":"lcs","lcs_percent":0.5,"ignore_case":true}
+```
+
+`recognize --kind OcrText --params <JSON文件>` 和 `recognition-check` 均可调用。独立测试仓 `ocr-text-cases.json` 复用原 8 个 OCR 案例的图片与人工期望，新增旧 screen_info 标题 ROI 与单行「400」共 10 案。新清单单独维护，不替换原始 OCR 对照。正式采样命令：
+
+```powershell
+cargo run -p zzz-engine --release --locked -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/ocr-text-cases.json --fixture-root zzz-od-test --output artifacts/ocr-text-release-20261015.json --directml 0
+```
+
+`recognition-compare` 继续拒绝 `OcrText`，避免将业务规则验收混入旧算法输出兼容结论。后续仍需补单行旧版实际输出、真实阈值边界、复杂文字顺序及完整业务链；特别是 `活跃度奖励` 实际使用模板 `活跃度奖励-4` 判断是否已满，存档「400」是识别诊断案例，不能直接据此迁移该业务分支。

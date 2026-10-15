@@ -1,6 +1,6 @@
 # 绝区零一条龙 · Rust 原型
 
-按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。当前交付为 M0 清单与 M1 集成原型：能加载真实 SDK、运行离线原生 Pipeline、连接游戏窗口、截图、查看诊断，并通过独立测试仓验证协议与资源转换。30 个游戏应用仍显示“待迁移”，尚不能代替旧一条龙。
+按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，当前推进 M1 集成原型：能加载真实 SDK、运行离线原生 Pipeline、连接游戏窗口、截图、查看诊断，并通过独立测试仓验证协议与资源转换。30 个游戏应用仍显示“待迁移”，尚不能代替旧一条龙。
 
 界面采用 React、TypeScript、Vite 与 Fluent UI React v9；自动化运行在独立 Rust 进程中。运行程序不启动 Python 或 Node 服务。前端构建需要 Node，Rust 和 MSVC 用于开发；正式发行的完整验收属于 M7。
 
@@ -33,7 +33,7 @@ cargo run -p zzz-engine -- probe --fixture zzz-od-test/screens/邮件/列表.web
 cargo run -p zzz-engine -- probe --fixture zzz-od-test/screens/邮件/列表.webp --cancel-after-ms 100
 ```
 
-`capture --hwnd <十六进制句柄> --output <PNG>` 获取游戏截图，默认 `frame-pool`，`--method` 可选择 `gdi`、`print-window`、`frame-pool`、`dxgi`、`screen-dc`，结果包含实际方式和黑帧诊断。`recognize` 接收 `--fixture`、`--image`、`--kind` 和 `--params <JSON>`，调用 Maa 独立识别；默认 CPU，`--directml <设备编号>` 仅供受控模型验证。资源包可通过全局 `--resources <绝对目录>` 指定。CLI 文件入口只用于开发者显式调用，桌面不开放任意文件和 Pipeline 执行。
+`capture --hwnd <十六进制句柄> --output <PNG>` 获取游戏截图，默认 `frame-pool`，`--method` 可选择 `gdi`、`print-window`、`frame-pool`、`dxgi`、`screen-dc`，结果包含实际方式和黑帧诊断。`recognize` 接收 `--fixture`、`--image`、`--kind` 和 `--params <JSON>`，调用 Maa 独立识别；默认 CPU，`--directml <设备编号>` 仅供受控模型验证。`--kind OcrText` 提供精确 / 包含 / LCS 文字匹配、单行识别与全图坐标，参数及兼容范围见 [OCR 业务调用适配](docs/develop/recognition-validation.md#ocr-业务调用适配)。资源包可通过全局 `--resources <绝对目录>` 指定。CLI 文件入口只用于开发者显式调用，桌面不开放任意文件和 Pipeline 执行。
 
 桌面“原生诊断 → 真实输入诊断”提供前台 / 后台键鼠、Xbox / DS4 数字按键、左右摇杆和左右扳机。连接游戏后选择输入方式与动作，填写参数、按住时间和启动延时，勾选真实输入确认，再点击“开始输入诊断”。鼠标被游戏锁定时，可先按 Win 或 Alt+Tab 回到工具；启动后在延时期间切回游戏。修改参数、启动、错误或失联后需重新确认；停止按钮等待原生队列与输入释放、摇杆回中或扳机归零后显示终态。默认延时三秒，按住最长两秒。
 
@@ -128,6 +128,8 @@ cargo run -p od-tools -- types
 ```
 
 区域转换保留 1080p 坐标、识别节点与导航元信息，报告 OCR LCS、模板掩码和颜色过滤差异。生成文件不手改，尚未验收的节点不能直接用于领取流程。原生新 Pipeline 放在 `resources/pipeline/`。
+
+带输入 Pipeline 的停止验证使用离线控制器与真实 Maa 队列，覆盖阻塞动作、取消、超时和释放失败重试；探针不连接游戏。输入清单与安全暂停边界见[实现说明](docs/develop/implementation.md#m1-带输入-pipeline-停止验证)。
 
 测试代码在独立 `zzz-od-test/test/zzz_auto/`，主工程不含测试模块。当前本机已有配套 Rust 与前端测试；新环境需要获取包含这些改动的配套测试分支，不能仅克隆旧测试仓主分支就假定新测试存在。
 

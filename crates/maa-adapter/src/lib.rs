@@ -2,6 +2,8 @@ mod fixture;
 pub mod flash;
 mod inference;
 mod input;
+pub mod ocr;
+mod pipeline;
 mod raw_control;
 pub mod raw_inference;
 mod sdk;
@@ -10,6 +12,7 @@ pub use inference::{GpuLease, RecognitionImage, RecognitionMeasurement, Recognit
 pub use maa_framework::common::ControllerFeature;
 pub use maa_framework::custom_controller::CustomControllerCallback;
 pub use od_core::{CaptureMethod, InputMode, InputProbeAction, InputProbeConfig, InputProbeResult};
+pub use pipeline::{PipelineEnd, PipelineInputPlan, PipelineProbeResult};
 pub use raw_control::{
     RawRecognitionCancelled, RawRecognitionControl, RawRecognitionPhase, RawRecognitionStatus,
 };
@@ -33,10 +36,7 @@ use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, atomic::AtomicBool},
     time::{Duration, Instant},
 };
 
@@ -109,6 +109,7 @@ pub struct NativeSession {
     held_keys: BTreeSet<i32>,
     held_contacts: BTreeSet<i32>,
     input_cleanup_pending: bool,
+    pipeline_controller_pending: bool,
     _lease: Option<GameLease>,
     _gpu_lease: Option<GpuLease>,
 }
@@ -245,6 +246,7 @@ impl NativeSession {
             held_keys: BTreeSet::new(),
             held_contacts: BTreeSet::new(),
             input_cleanup_pending: false,
+            pipeline_controller_pending: false,
             _lease: lease,
             _gpu_lease: gpu_lease,
         })
@@ -296,59 +298,27 @@ impl NativeSession {
         cancel: Arc<AtomicBool>,
         timeout: Duration,
     ) -> Result<ProbeResult> {
-        let started = Instant::now();
-        if self.input_cleanup_pending {
-            self.release_inputs()?;
-        }
-        if cancel.load(Ordering::Acquire) {
-            self.release_inputs()?;
-            return Ok(ProbeResult {
-                sdk_version: SDK_VERSION.into(),
-                stopped: true,
-                elapsed_ms: started.elapsed().as_millis() as u64,
-                enqueue_us: 0,
-                stop_ms: Some(0),
-                native_status: "NotStarted".into(),
-            });
-        }
-        let job = self.tasker.post_task("Prototype.HealthCheck", "{}")?;
-        let enqueue_us = started.elapsed().as_micros() as u64;
-        let mut stop_started = None;
-        let mut timed_out = false;
-        loop {
-            let status = job.status();
-            if status.done() {
-                break;
-            }
-            ensure!(status != MaaStatus::INVALID, "Maa 返回无效任务 ID");
-            if stop_started.is_none()
-                && (cancel.load(Ordering::Acquire) || started.elapsed() >= timeout)
-            {
-                timed_out = started.elapsed() >= timeout;
-                stop_started = Some(Instant::now());
-                let stop_id = self.tasker.post_stop()?;
-                // 收到停止响应后仍等待原生任务完成；不能提前交还控制权。
-                Job::for_tasker(&self.tasker, stop_id).wait();
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        let status = job.wait();
-        drop(job);
-        self.release_inputs()?;
-        if timed_out {
+        let report = self.run_pipeline(
+            "Prototype.HealthCheck",
+            &PipelineInputPlan::default(),
+            cancel,
+            timeout,
+        )?;
+        if report.end == PipelineEnd::TimedOut {
             bail!("健康检查超时，原生队列已停止并完成输入释放");
         }
         ensure!(
-            status.is_success() || stop_started.is_some(),
-            "Maa 健康检查失败：{status}"
+            report.end != PipelineEnd::Failed,
+            "Maa 健康检查失败：{}",
+            report.native_status
         );
         Ok(ProbeResult {
             sdk_version: SDK_VERSION.into(),
-            stopped: stop_started.is_some(),
-            enqueue_us,
-            elapsed_ms: started.elapsed().as_millis() as u64,
-            stop_ms: stop_started.map(|at| at.elapsed().as_millis() as u64),
-            native_status: status.to_string(),
+            stopped: report.end == PipelineEnd::Cancelled,
+            enqueue_us: report.enqueue_us,
+            elapsed_ms: report.elapsed_ms,
+            stop_ms: report.stop_ms,
+            native_status: report.native_status,
         })
     }
 
@@ -396,6 +366,9 @@ impl NativeSession {
         ensure!(!self.tasker.running(), "Maa Tasker 正在执行其他任务");
         if kind == "LegacyFlashClassify" {
             return self.recognize_flash(image, params);
+        }
+        if kind == "OcrText" {
+            return self.recognize_ocr_text(image, params);
         }
         self.recognize_maa_prepared(image, kind, params)
     }

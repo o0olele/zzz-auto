@@ -2,7 +2,7 @@
 
 路线图以 [docs/ROADMAP.md](../ROADMAP.md) 为唯一来源。参考源码固定到 `b15662f7ce61bcfdeaad6b401695e5dcb0af8f42`，不修改参考项目。
 
-先实现 M0 清单和 M1 的可运行工程。原型提供真实 Maa SDK 加载、窗口发现、1080p 截图、原生健康检查 Pipeline、受控输入探针及离线识别入口。全部游戏应用在通过各自验收前显示“待迁移”，不返回虚构的成功结果。M1 的 CPU / DirectML、游戏前后台输入、手柄、模型和暂停兼容结论依靠固定语料与实机记录，不能由编译成功替代。
+M0 清单与现有基线已按路线图关闭，当前推进 M1 的可运行工程。原型提供真实 Maa SDK 加载、窗口发现、1080p 截图、原生健康检查 Pipeline、受控输入探针及离线识别入口。全部游戏应用在通过各自验收前显示“待迁移”，不返回虚构的成功结果。M1 的 CPU / DirectML、游戏前后台输入、手柄、模型适配和暂停兼容结论依靠固定语料与实机记录，不能由编译成功替代。
 
 ## 实现边界
 
@@ -43,3 +43,27 @@
 ## M1 模型对照入口
 
 新增固定模型获取、资源转换及 `recognition-check` CLI，具体设计见[模型对照说明](recognition-validation.md)。Maa 适配器提供可复用的固定图缓存、识别计时及 GPU 会话独占规则；CPU 会话销毁后才创建 DirectML 会话。该规则限制本进程，离线 CLI 与其他引擎 / 旧版程序的同机 GPU 测量须分开运行。该入口不开放桌面任意文件调用，不启动游戏任务，也不将模型能加载记为业务迁移通过。
+
+## M1 带输入 Pipeline 停止验证
+
+健康检查与离线 Pipeline 探针共用停止、等待及输入收尾实现。离线探针只接受固定图或自定义控制器，不能用于已连接的游戏控制器，也不新增桌面或 IPC 命令。测试仓提供原生 Pipeline 和可记录输入、延迟完成、注入失败的控制器，验证真实 Maa 队列；输入清单必须列出该 Pipeline 全部分支可能使用的按键和鼠标 / 手柄通道。
+
+投递前把输入清单记入待释放状态，即使按下回调报告失败，也不能假定没有产生输入。停止或超时后请求 `post_stop`，等待原任务、停止任务和 Tasker 收尾，再在同一控制器队列显式释放清单中的输入，最后等待 `inactive`。控制器的长按 / 阻塞回调可能晚于 Tasker 结束；固定 SDK 在仍停止时会返回无效投递 ID，适配层继续等待清理请求被队列接受并执行，不以 Tasker 终态代替控制器完成。正常完成和失败也执行相同清理。原生 `auto_up` 作为补充，不能代替可检查结果的释放；重复释放在队列结束后执行，可能包括尚未走到的分支所声明的输入。清理失败保留待释放状态，下次工作须先重试，失败时禁止启动新任务。
+
+探针分别报告成功、失败、主动停止和超时；SDK 接口错误及输入清理失败返回错误，不能写成成功或已安全停止。停止耗时从工作线程发现取消开始，包含原生停止调用、阻塞回调和显式输入释放，不包含 IPC 和轮询发现取消前的时间。阻塞回调结束前持续等待，不以 250ms 目标作为强制交还控制权的超时。
+
+固定 SDK 的 `pre_delay`、`post_delay` 和单次 `repeat_delay` 使用阻塞休眠，不能用长等待实现及时停止。健康检查把原两秒 `post_delay` 改为 81 次无输入动作、每次间隔 25ms，等待总量仍约两秒，循环之间由 Maa 检查停止。测试仓保留三秒长等待和 25ms 短间隔的对照；长按动作及无法取消的回调仍需等待，不能把这类结果算入正常动作的 250ms 目标通过项。后续业务不得用重复执行领取 / 提交的方式拆等待，应使用无输入等待或重新识别画面的步骤。
+
+M2 的安全暂停采用“停止投递、等待在途动作、释放输入、保存业务步骤”，继续前重新识别并从可恢复步骤执行；不将 `post_stop` 或从入口重跑当作原位暂停。不可重复的领取 / 提交先查询是否已生效。此轮只验证停止所需的原生队列与输入清理，不宣称业务步骤保存、恢复或游戏实机验收已完成。
+
+行为依据为固定 SDK 的 [Tasker 停止实现](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Tasker/Tasker.cpp#L150)与 [Controller 的停止、投递检查和自动释放](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Controller/ControllerAgent.cpp)。`auto_up` 的自动释放路径不检查底层释放的返回值；控制器仍停止时拒绝新投递。Rust 适配层据此保留自己的清理状态，并由真实 SDK 回归验证，不能用可丢弃的展示回调判断是否已释放。
+
+长等待的限制见同版本 [TaskBase::sleep](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Task/TaskBase.cpp#L199)；短间隔方案只限定每次不可中断的休眠长度，不能证明截图、识别、输入和 IPC 的完整停止链均满足目标。
+
+单独复跑：
+
+```powershell
+cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --locked --test pipeline_stop -- --test-threads=1
+```
+
+添加 `--nocapture` 可输出 `PIPELINE_OBSERVATION` JSON，记录取消、超时、阻塞回调和等待方式对照的诊断耗时。它们使用 debug 构建，没有正式预热或足够的同类性能样本，不能作为完整游戏链路 P95 验收。首轮原始观察和输入索引保存在测试仓 `fixtures/pipeline/observations-20261015.json` 与 `manifest-20261015.json`，结论见[验收记录](../migration/acceptance.md#2026-年-10-月-15-日带输入-pipeline-停止与等待方案)。

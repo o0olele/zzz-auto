@@ -3,7 +3,10 @@
   "Prototype.HealthCheck": {
     "recognition": "DirectHit",
     "action": "DoNothing",
-    "post_delay": 2000,
+    "pre_delay": 0,
+    "post_delay": 0,
+    "repeat": 81,
+    "repeat_delay": 25,
     "next": ["Prototype.HealthCheckDone"]
   },
   "Prototype.HealthCheckDone": {

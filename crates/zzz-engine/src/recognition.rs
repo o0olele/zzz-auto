@@ -209,6 +209,7 @@ pub fn load_cases(path: &Path, fixture_root: &Path) -> Result<CaseManifest> {
         ensure!(
             [
                 "OCR",
+                "OcrText",
                 "TemplateMatch",
                 "FeatureMatch",
                 "ColorMatch",
@@ -322,7 +323,7 @@ pub fn validate_model_requests(
 ) -> Result<()> {
     for case in cases {
         let role = match case.kind.as_str() {
-            "OCR" => "ocr",
+            "OCR" | "OcrText" => "ocr",
             "NeuralNetworkClassify" | "LegacyFlashClassify" | "LegacyFlashRaw" => "classify",
             "NeuralNetworkDetect" | "LegacyYoloDetect" => "detect",
             _ => continue,
@@ -335,6 +336,9 @@ pub fn validate_model_requests(
         }
         if case.kind == "LegacyYoloDetect" {
             maa_adapter::yolo::YoloConfig::parse(&case.params)?;
+        }
+        if case.kind == "OcrText" {
+            maa_adapter::ocr::OcrTextConfig::parse(&case.params)?;
         }
         if case.kind == "LegacyFlashClassify" {
             maa_adapter::flash::FlashConfig::parse(&case.params)?;
@@ -638,7 +642,7 @@ fn check_case(
             );
         }
         let reference = normalize(&first.detail)?;
-        let unfiltered = (case.kind == "OCR")
+        let unfiltered = (matches!(case.kind.as_str(), "OCR" | "OcrText"))
             .then(|| unfiltered_ocr(&first.detail))
             .transpose()?;
         report.unfiltered_observation = unfiltered.clone();
@@ -654,7 +658,7 @@ fn check_case(
             let boundary_started = Instant::now();
             let result = native.recognize_prepared(&image, &case.kind, &case.params)?;
             let observed = normalize(&result.detail)?;
-            let current_unfiltered = (case.kind == "OCR")
+            let current_unfiltered = (matches!(case.kind.as_str(), "OCR" | "OcrText"))
                 .then(|| unfiltered_ocr(&result.detail))
                 .transpose()?;
             let boundary_us = boundary_started.elapsed().as_micros() as u64;
@@ -813,6 +817,7 @@ pub fn run_with_options(
     let models_needed = manifest.cases.iter().any(|case| {
         [
             "OCR",
+            "OcrText",
             "NeuralNetworkClassify",
             "LegacyFlashClassify",
             "LegacyFlashRaw",
@@ -831,7 +836,13 @@ pub fn run_with_options(
     }
     let first_image = relative_file(fixture_root, &manifest.cases[0].image.path)?;
     let maa_models_needed = manifest.cases.iter().any(|case| {
-        ["OCR", "NeuralNetworkClassify", "NeuralNetworkDetect"].contains(&case.kind.as_str())
+        [
+            "OCR",
+            "OcrText",
+            "NeuralNetworkClassify",
+            "NeuralNetworkDetect",
+        ]
+        .contains(&case.kind.as_str())
             || case.kind == "LegacyFlashClassify"
     });
     let raw_needed = manifest.cases.iter().any(|case| is_raw_kind(&case.kind));

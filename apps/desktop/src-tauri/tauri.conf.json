@@ -21,6 +21,7 @@
     "resources": {
       "../../../resources/pipeline/": "resources/pipeline/",
       "../../../resources/catalog/": "resources/catalog/",
+      "../../../resources/generated/mail/": "resources/generated/mail/",
       "../../../resources/sdk-manifest.json": "resources/sdk-manifest.json",
       "../../../resources/licenses/": "licenses/",
       "../../../LICENSE": "licenses/project.LICENSE",

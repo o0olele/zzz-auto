@@ -9,10 +9,13 @@ use std::{
 pub fn validate_mail_bundle(root: &Path) -> Result<PathBuf> {
     let root = root
         .canonicalize()
-        .context("邮件资源包缺失，请先运行 od-tools mail-bundle")?;
+        .context("邮件资源包缺失或无法读取，请重新完整解压包含邮件资源的客户端包，保留 resources/generated/mail 目录")?;
     let manifest_path = root.join("mail-manifest.json");
     ensure!(
-        std::fs::metadata(&manifest_path)?.len() <= 1024 * 1024,
+        std::fs::metadata(&manifest_path)
+            .context("邮件资源清单缺失或无法读取，请重新完整解压客户端包")?
+            .len()
+            <= 1024 * 1024,
         "邮件清单过大"
     );
     let manifest: Value = serde_json::from_slice(&std::fs::read(manifest_path)?)?;

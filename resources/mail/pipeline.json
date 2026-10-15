@@ -1,5 +1,5 @@
 {
-  "$description": "M2 邮件流程源定义。配合 od-tools mail-bundle 生成 1080p 区域与固定 OCR 后载入；当前通过离线自定义控制器验证。",
+  "$description": "M2 邮件试运行流程。配合 od-tools mail-bundle 生成 1080p 区域与固定 OCR 后载入；真实游戏分支逐项验收。",
   "Mail.Navigate": { "next": ["Mail.List", "Mail.OpenMail", "Mail.OpenMenu"] },
   "Mail.List": { "recognition": "And", "all_of": ["Mail.Area.Title", "Mail.Area.ClaimText"] },
   "Mail.Menu": { "recognition": "And", "all_of": ["Mail.Area.MenuBack", "Mail.Area.MenuWallpaper"] },
@@ -10,8 +10,9 @@
   },
   "Mail.OpenMenu": {
     "recognition": "And", "all_of": ["Mail.World"], "action": "KeyDown", "key": 18, "auto_up": true,
-    "next": ["Mail.ClickMenu"]
+    "next": ["Mail.WaitAlt"]
   },
+  "Mail.WaitAlt": { "repeat": 9, "repeat_delay": 25, "next": ["Mail.ClickMenu"] },
   "Mail.ClickMenu": {
     "action": "LongPress", "target": "Mail.Area.WorldMenu", "duration": 100, "next": ["Mail.ReleaseAlt"]
   },

@@ -150,9 +150,9 @@ npm test
 
 ## 构建
 
-跨电脑测试包执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1`。脚本构建 release 桌面与引擎，校验并复制 Maa DLL、VC++ x64 运行库、微软签名的 WebView2 联网安装器、资源与许可证，生成 `artifacts/` 下的 ZIP、文件清单和 SHA-256。`-SkipBuild` 仅用于已经完成同一份源码 release 构建的打包步骤。
+跨电脑测试包执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1`。脚本构建 release 桌面与引擎，生成并校验邮件资源，复制 Maa DLL、VC++ x64 运行库、微软签名的 WebView2 联网安装器、资源与许可证，生成 `artifacts/` 下的完整客户端 ZIP、邮件资源补丁、文件清单和 SHA-256。构建机须已准备参考仓及固定模型缓存；参考仓不在相邻目录时设置 `ZZZ_AUTO_REFERENCE`。`-SkipBuild` 仅用于已经完成同一份源码 release 构建的打包步骤，仍执行邮件资源校验。
 
-解压整个包后运行 `zzz-desktop.exe`。包内 `portable.flag` 使程序从自身目录定位引擎和资源，数据保存在包内 `data/`，不依赖启动时的工作目录。WebView2 缺失时可手动运行包内安装器；测试包不含模型和开发环境，也不带本机用户数据。
+解压整个包后运行 `zzz-desktop.exe`。包内 `portable.flag` 使程序从自身目录定位引擎和资源，数据保存在包内 `data/`，不依赖启动时的工作目录。WebView2 缺失时可手动运行包内安装器；测试包包含邮件必需的 PP-OCRv5 检测、识别模型及字典，不含闪光 / YOLO 模型、开发环境或本机用户数据。已有邮件客户端报资源缺失时，可将 `mail-resources` 补丁直接解压到 exe 所在目录，详见[跨电脑邮件试运行](docs/develop/mail-pipeline.md#桌面试运行)。
 
 在 `apps/desktop/` 执行 `npm run tauri build`，配置会构建 release 引擎、生成协议、构建 Web 资源，再打包 NSIS。`npm run tauri build -- --debug --no-bundle` 用于本机桌面原型构建；普通 debug 版本的引擎与资源定位到当前工程，不能作为发行包。当前已提供便携测试 ZIP；更新签名、模型完整包、便携版自动更新、资源回滚与干净系统验收尚未实现。
 

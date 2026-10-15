@@ -10,6 +10,11 @@ try {
     $config = Get-Content -Raw -Encoding UTF8 -LiteralPath apps/desktop/src-tauri/tauri.conf.json | ConvertFrom-Json
     $sdkLock = Get-Content -Raw -Encoding UTF8 -LiteralPath sdk.lock.json | ConvertFrom-Json
     $sdkManifest = Get-Content -Raw -Encoding UTF8 -LiteralPath resources/sdk-manifest.json | ConvertFrom-Json
+    # SkipBuild 也必须校验当前引擎和资源，避免生成缺模型或流程版本不匹配的包。
+    $mailCheckOutput = & ./target/release/zzz-engine.exe --root $projectRoot mail-bundle-check
+    if ($LASTEXITCODE -ne 0) { throw '邮件资源校验失败，请先完成当前源码的 release 构建及 mail-bundle 生成。' }
+    $mailCheck = ($mailCheckOutput -join "`n") | ConvertFrom-Json
+    if (-not $mailCheck.valid -or $mailCheck.engine_version -ne $config.version) { throw '发布引擎版本或邮件资源无效，请重新构建。' }
     $packageName = "zzz-auto-$($config.version)-windows-x64-prototype"
     $stagingParent = Join-Path $projectRoot ("target/portable-" + [guid]::NewGuid().ToString('N'))
     $staging = Join-Path $stagingParent $packageName
@@ -20,7 +25,7 @@ try {
     Copy-Item -LiteralPath target/release/zzz-engine.exe -Destination (Join-Path $staging 'zzz-auto-engine.exe')
     Copy-Item -LiteralPath resources/sdk-manifest.json -Destination (Join-Path $staging 'resources/sdk-manifest.json')
     Copy-Item -LiteralPath sdk.lock.json -Destination (Join-Path $staging 'sdk.lock.json')
-    foreach ($resourceFolder in @('resources/pipeline', 'resources/catalog')) {
+    foreach ($resourceFolder in @('resources/pipeline', 'resources/catalog', 'resources/generated/mail')) {
         $sourceFolder = Join-Path $projectRoot $resourceFolder
         foreach ($file in (Get-ChildItem -LiteralPath $sourceFolder -File -Recurse)) {
             $relative = $file.FullName.Substring($sourceFolder.Length + 1)
@@ -37,6 +42,8 @@ try {
     Copy-Item -LiteralPath scripts/portable-launch.cmd -Destination (Join-Path $staging 'launch.cmd')
     Copy-Item -LiteralPath scripts/portable-check.cmd -Destination (Join-Path $staging 'check-environment.cmd')
     [IO.File]::WriteAllText((Join-Path $staging 'portable.flag'), 'portable-v1', [Text.UTF8Encoding]::new($false))
+    & (Join-Path $staging 'zzz-auto-engine.exe') --root $staging mail-bundle-check
+    if ($LASTEXITCODE -ne 0) { throw '复制后的邮件资源包校验失败，已停止打包。' }
     foreach ($binary in $sdkManifest.binaries) {
         $path = Join-Path (Join-Path $projectRoot 'sdk/maa/bin') $binary.path
         if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $binary.sha256) { throw "SDK 文件校验失败：$($binary.path)" }
@@ -77,7 +84,10 @@ try {
         sdk_version = $sdkLock.sdk_version; binding_version = $sdkLock.binding_version
         created_at_utc = [DateTime]::UtcNow.ToString('o'); vc_runtime = $runtimeVersions
         webview2 = 'Evergreen bootstrapper included; internet needed only if runtime is missing'
-        includes_user_data = $false; includes_models = $false; files = $manifestFiles
+        includes_user_data = $false; includes_models = $true; included_models = @('ppocrv5')
+        protocol_version = $mailCheck.protocol_version
+        mail_resources = [ordered]@{ path = 'resources/generated/mail'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/mail/mail-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
+        files = $manifestFiles
     }
     [IO.File]::WriteAllText((Join-Path $staging 'release-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
     $outputDirectory = Join-Path $projectRoot 'artifacts'
@@ -86,22 +96,28 @@ try {
     $zipPath = Join-Path $outputDirectory "$packageName-$clientTimestamp.zip"
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zipStream = [IO.File]::Open($zipPath, [IO.FileMode]::CreateNew)
-    $archive = [IO.Compression.ZipArchive]::new($zipStream, [IO.Compression.ZipArchiveMode]::Create, $false)
-    try {
-        foreach ($file in (Get-ChildItem -LiteralPath $staging -Recurse -File | Sort-Object FullName)) {
-            # .NET Framework 的 CreateFromDirectory 在旧 PowerShell 中使用反斜杠；显式使用 ZIP 标准分隔符。
-            $entryName = $file.FullName.Substring($stagingParent.Length + 1).Replace('\', '/')
-            $entry = $archive.CreateEntry($entryName, [IO.Compression.CompressionLevel]::Optimal)
-            $sourceStream = [IO.File]::OpenRead($file.FullName)
-            $destinationStream = $entry.Open()
-            try { $sourceStream.CopyTo($destinationStream) }
-            finally { $destinationStream.Dispose(); $sourceStream.Dispose() }
+    function Write-PortableArchive($path, $base, $files) {
+        $zipStream = [IO.File]::Open($path, [IO.FileMode]::CreateNew)
+        $archive = [IO.Compression.ZipArchive]::new($zipStream, [IO.Compression.ZipArchiveMode]::Create, $false)
+        try {
+            foreach ($file in $files) {
+                # 显式使用 ZIP 标准分隔符，资源补丁直接按客户端根目录布局。
+                $entryName = $file.FullName.Substring($base.Length + 1).Replace('\', '/')
+                $entry = $archive.CreateEntry($entryName, [IO.Compression.CompressionLevel]::Optimal)
+                $sourceStream = [IO.File]::OpenRead($file.FullName)
+                $destinationStream = $entry.Open()
+                try { $sourceStream.CopyTo($destinationStream) }
+                finally { $destinationStream.Dispose(); $sourceStream.Dispose() }
+            }
         }
+        finally { $archive.Dispose(); $zipStream.Dispose() }
+        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        [IO.File]::WriteAllText("$path.sha256", "$hash  $(Split-Path -Leaf $path)`r`n", [Text.UTF8Encoding]::new($false))
+        return $hash
     }
-    finally { $archive.Dispose(); $zipStream.Dispose() }
-    $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    [IO.File]::WriteAllText("$zipPath.sha256", "$hash  $(Split-Path -Leaf $zipPath)`r`n", [Text.UTF8Encoding]::new($false))
-    [ordered]@{ zip = $zipPath; sha256 = $hash; bytes = (Get-Item -LiteralPath $zipPath).Length; staging = $staging; files = $manifestFiles.Count } | ConvertTo-Json
+    $hash = Write-PortableArchive $zipPath $stagingParent (Get-ChildItem -LiteralPath $staging -Recurse -File | Sort-Object FullName)
+    $mailPatchPath = Join-Path $outputDirectory "zzz-auto-$($config.version)-mail-resources-$clientTimestamp.zip"
+    $mailPatchHash = Write-PortableArchive $mailPatchPath $staging (Get-ChildItem -LiteralPath (Join-Path $staging 'resources/generated/mail') -Recurse -File | Sort-Object FullName)
+    [ordered]@{ zip = $zipPath; sha256 = $hash; bytes = (Get-Item -LiteralPath $zipPath).Length; staging = $staging; files = $manifestFiles.Count; mail_patch = $mailPatchPath; mail_patch_sha256 = $mailPatchHash } | ConvertTo-Json
 }
 finally { Pop-Location }

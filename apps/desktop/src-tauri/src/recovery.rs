@@ -51,6 +51,27 @@ impl RecoveryJournal {
         }
     }
 
+    pub fn require_mail_run(&self, run_id: uuid::Uuid) -> Result<(), ApiError> {
+        let expected = self
+            .plan
+            .as_ref()
+            .filter(|plan| {
+                plan.version == 2 && plan.run_id.as_deref() == Some(run_id.to_string().as_str())
+            })
+            .ok_or_else(|| recovery_error("邮件恢复登记与当前运行不符"))?;
+        let disk = Self::open(self.path.parent().expect("恢复记录有父目录"))?;
+        let actual = disk
+            .plan
+            .as_ref()
+            .ok_or_else(|| recovery_error("邮件恢复登记已丢失"))?;
+        if serde_json::to_value(expected).map_err(recovery_error)?
+            != serde_json::to_value(actual).map_err(recovery_error)?
+        {
+            return Err(recovery_error("邮件恢复登记已改变"));
+        }
+        Ok(())
+    }
+
     pub fn arm(&mut self, plan: InputRecoveryPlan) -> Result<(), ApiError> {
         self.require_clean()?;
         plan.validate().map_err(recovery_error)?;
@@ -114,14 +135,21 @@ impl RecoveryJournal {
         if let (Some(plan), Some(run)) = (&self.plan, run)
             && plan.run_id.as_deref() == Some(run.id.to_string().as_str())
             && run.state.is_terminal()
-            && (run
-                .input_probe
-                .as_ref()
-                .is_some_and(|result| result.released)
-                || run
-                    .input_pipeline
+            && (if plan.version == 2 {
+                run.app_id == "email"
+                    && run
+                        .mail
+                        .as_ref()
+                        .is_some_and(|result| result.inputs_released)
+            } else {
+                run.input_probe
                     .as_ref()
-                    .is_some_and(|result| result.pipeline.released))
+                    .is_some_and(|result| result.released)
+                    || run
+                        .input_pipeline
+                        .as_ref()
+                        .is_some_and(|result| result.pipeline.released)
+            })
         {
             self.clear()?;
         }

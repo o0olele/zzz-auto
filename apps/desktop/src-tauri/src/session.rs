@@ -171,11 +171,27 @@ impl EngineSession {
     }
 
     pub async fn request(&mut self, command: Command) -> Result<Payload, ApiError> {
+        let mail_start = matches!(
+            command,
+            Command::StartMail {
+                allow_input: true,
+                ..
+            }
+        );
         let input = match &command {
+            Command::StartMail {
+                config,
+                allow_input: true,
+            } => {
+                config
+                    .validate()
+                    .map_err(|error| ApiError::new("invalid_input", error))?;
+                Some(od_core::mail::MailConfig::recovery_inputs().to_vec())
+            }
             Command::StartInputProbe {
                 config,
                 allow_input: true,
-            } => Some(*config),
+            } => Some(vec![*config]),
             Command::StartInputPipeline {
                 config,
                 allow_input: true,
@@ -183,14 +199,16 @@ impl EngineSession {
                 config
                     .validate()
                     .map_err(|error| ApiError::new("invalid_input", error))?;
-                Some(config.input)
+                Some(vec![config.input])
             }
             _ => None,
         };
-        if let Some(config) = input {
-            config
-                .validate()
-                .map_err(|error| ApiError::new("invalid_input", error))?;
+        if let Some(configs) = &input {
+            for config in configs {
+                config
+                    .validate()
+                    .map_err(|error| ApiError::new("invalid_input", error))?;
+            }
             let snapshot = self.request_raw(Command::Snapshot).await?;
             require_idle(snapshot.clone())?;
             if let Some(journal) = &mut self.journal {
@@ -204,21 +222,48 @@ impl EngineSession {
                 .window
                 .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
             let plan = od_platform::InputRecoveryPlan {
-                version: 1,
+                version: if mail_start { 2 } else { 1 },
                 engine: od_platform::ProcessStamp::read(self.process.id())
                     .map_err(recovery_error)?,
                 game: od_platform::ProcessStamp::read(window.pid).map_err(recovery_error)?,
                 window,
-                config,
+                config: configs[0],
+                additional_inputs: configs.iter().skip(1).copied().collect(),
                 engine_integrity: self.privilege.engine_integrity,
                 run_id: None,
             };
             if let Some(journal) = &mut self.journal {
                 journal.arm(plan)?;
             }
+        } else if let Command::Resume { run_id } = command {
+            let snapshot = self.request_raw(Command::Snapshot).await?;
+            let Payload::Snapshot(snapshot) = snapshot else {
+                return Err(offline("无法确认暂停状态"));
+            };
+            if !snapshot.run.as_ref().is_some_and(|run| {
+                run.id == run_id && run.state == od_core::RunState::Paused && run.mail.is_some()
+            }) {
+                return Err(ApiError::new(
+                    "invalid_run_state",
+                    "邮件任务尚未确认暂停或运行 ID 已过期",
+                ));
+            }
+            let valid = self
+                .journal
+                .as_ref()
+                .ok_or_else(|| recovery_error("缺少邮件恢复登记"))
+                .and_then(|journal| journal.require_mail_run(run_id));
+            if let Err(error) = valid {
+                self.disconnect();
+                return Err(error);
+            }
         } else if !matches!(
             command,
-            Command::Snapshot | Command::Stop { .. } | Command::Events { .. } | Command::Shutdown
+            Command::Snapshot
+                | Command::Stop { .. }
+                | Command::Pause { .. }
+                | Command::Events { .. }
+                | Command::Shutdown
         ) && let Some(journal) = &self.journal
         {
             journal.require_clean()?;

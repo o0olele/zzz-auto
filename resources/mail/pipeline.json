@@ -1,0 +1,43 @@
+{
+  "$description": "M2 邮件流程源定义。配合 od-tools mail-bundle 生成 1080p 区域与固定 OCR 后载入；当前通过离线自定义控制器验证。",
+  "Mail.Navigate": { "next": ["Mail.List", "Mail.OpenMail", "Mail.OpenMenu"] },
+  "Mail.List": { "recognition": "And", "all_of": ["Mail.Area.Title", "Mail.Area.ClaimText"] },
+  "Mail.Menu": { "recognition": "And", "all_of": ["Mail.Area.MenuBack", "Mail.Area.MenuWallpaper"] },
+  "Mail.World": { "recognition": "And", "all_of": ["Mail.Area.WorldFunction", "Mail.Area.WorldPreset"] },
+  "Mail.OpenMail": {
+    "recognition": "And", "all_of": ["Mail.Menu", "Mail.Area.MenuMail"], "box_index": 1,
+    "action": "LongPress", "duration": 100, "next": ["Mail.List"]
+  },
+  "Mail.OpenMenu": {
+    "recognition": "And", "all_of": ["Mail.World"], "action": "KeyDown", "key": 18, "auto_up": true,
+    "next": ["Mail.ClickMenu"]
+  },
+  "Mail.ClickMenu": {
+    "action": "LongPress", "target": "Mail.Area.WorldMenu", "duration": 100, "next": ["Mail.ReleaseAlt"]
+  },
+  "Mail.ReleaseAlt": { "action": "KeyUp", "key": 18, "next": ["Mail.OpenMail"] },
+  "Mail.Inspect": { "next": ["Mail.Dialog", "Mail.Available", "Mail.Empty", "Mail.Menu", "Mail.World"] },
+  "Mail.ActiveColor": {
+    "recognition": "ColorMatch", "roi": "Mail.Area.ClaimText", "method": 4,
+    "lower": [150, 140, 0], "upper": [255, 255, 100], "count": 150, "connected": false
+  },
+  "Mail.InactiveColor": {
+    "recognition": "ColorMatch", "roi": [154, 1012, 107, 32], "method": 4,
+    "lower": [80, 80, 80], "upper": [190, 190, 190], "count": 150, "connected": false
+  },
+  "Mail.Available": { "recognition": "And", "all_of": ["Mail.List", "Mail.ActiveColor"] },
+  "Mail.Empty": { "recognition": "And", "all_of": ["Mail.List", "Mail.InactiveColor"] },
+  "Mail.RewardTitle": { "recognition": "OCR", "roi": [880, 380, 160, 80], "model": "ppocrv5", "expected": ["^获得$"], "threshold": 0.6 },
+  "Mail.ConfirmButton": { "recognition": "OCR", "roi": "Mail.Area.ConfirmText", "model": "ppocrv5", "expected": ["^确认$", "^确定$"], "order_by": "Expected", "threshold": 0.6 },
+  "Mail.Dialog": { "recognition": "And", "all_of": ["Mail.RewardTitle", "Mail.ConfirmButton"], "box_index": 1 },
+  "Mail.Claim": { "next": ["Mail.ClickClaim"] },
+  "Mail.ClickClaim": { "recognition": "And", "all_of": ["Mail.Available", "Mail.Area.ClaimText"], "box_index": 1, "action": "LongPress", "duration": 100 },
+  "Mail.AfterClaim": { "next": ["Mail.Dialog", "Mail.Empty"] },
+  "Mail.Confirm": { "next": ["Mail.ClickConfirm"] },
+  "Mail.ClickConfirm": { "recognition": "And", "all_of": ["Mail.Dialog"], "action": "LongPress", "duration": 100 },
+  "Mail.AfterConfirm": { "next": ["Mail.Empty"] },
+  "Mail.ReturnList": { "next": ["Mail.CloseList"] },
+  "Mail.CloseList": { "recognition": "And", "all_of": ["Mail.Empty"], "action": "LongPress", "target": "Mail.Area.Back", "duration": 100, "next": ["Mail.Menu"] },
+  "Mail.ReturnWorld": { "next": ["Mail.CloseMenu"] },
+  "Mail.CloseMenu": { "recognition": "And", "all_of": ["Mail.Menu"], "action": "LongPress", "target": "Mail.Area.MenuBack", "duration": 100, "next": ["Mail.World"] }
+}

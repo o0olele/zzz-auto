@@ -1,4 +1,6 @@
+pub mod mail;
 pub mod ocr;
+pub mod pipeline;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -32,6 +34,8 @@ pub fn applications() -> Result<Vec<AppDefinition>, serde_json::Error> {
 #[serde(rename_all = "snake_case")]
 pub enum RunState {
     Running,
+    Pausing,
+    Paused,
     Stopping,
     Succeeded,
     Failed,
@@ -58,6 +62,8 @@ pub struct RunRecord {
     pub input_probe: Option<InputProbeResult>,
     #[serde(default)]
     pub input_pipeline: Option<Box<InputPipelineResult>>,
+    #[serde(default)]
+    pub mail: Option<mail::MailProgress>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -104,7 +110,7 @@ pub enum InputProbeAction {
     Trigger { trigger: InputSide, value: i32 },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 pub struct InputProbeConfig {
     pub mode: InputMode,
     pub action: InputProbeAction,
@@ -291,6 +297,77 @@ pub struct RunSlot {
 }
 
 impl RunSlot {
+    pub fn begin_mail(&mut self, config: mail::MailConfig) -> Result<RunRecord, &'static str> {
+        config.validate()?;
+        self.begin("email")?;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        run.mail = Some(mail::MailProgress::new(config));
+        Ok(run.clone())
+    }
+
+    pub fn request_pause(&mut self, id: Uuid) -> Result<RunRecord, &'static str> {
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        if run.id != id || run.mail.is_none() {
+            return Err("邮件运行 ID 已过期");
+        }
+        if !matches!(run.state, RunState::Running | RunState::Pausing) {
+            return Err("当前状态不能暂停");
+        }
+        run.state = RunState::Pausing;
+        run.message = "已请求暂停，正在等待队列静止与输入释放".into();
+        Ok(run.clone())
+    }
+
+    pub fn request_resume(&mut self, id: Uuid) -> Result<RunRecord, &'static str> {
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        if run.id != id || run.mail.is_none() {
+            return Err("邮件运行 ID 已过期");
+        }
+        if run.state != RunState::Paused {
+            return Err("只有确认暂停的任务可以继续");
+        }
+        run.state = RunState::Running;
+        if let Some(progress) = &mut run.mail {
+            progress.inputs_released = false;
+            progress.state = mail::MailState::Running;
+        }
+        run.message = "准备继续邮件流程，延时后重新识别画面".into();
+        Ok(run.clone())
+    }
+
+    pub fn update_mail(
+        &mut self,
+        id: Uuid,
+        mut progress: mail::MailProgress,
+        message: String,
+    ) -> Result<RunRecord, &'static str> {
+        use mail::MailState;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        if run.id != id || run.mail.is_none() || run.state.is_terminal() {
+            return Err("邮件运行 ID 已过期或已结束");
+        }
+        if progress.state == MailState::Paused && !progress.inputs_released {
+            return Err("输入尚未释放，不能确认暂停");
+        }
+        if run.state == RunState::Stopping && progress.state == MailState::Succeeded {
+            progress.state = MailState::Stopped;
+        }
+        let next = match progress.state {
+            MailState::Running => run.state,
+            MailState::Paused if run.state == RunState::Stopping => RunState::Stopping,
+            MailState::Paused => RunState::Paused,
+            MailState::Succeeded => RunState::Succeeded,
+            MailState::Failed | MailState::TimedOut => RunState::Failed,
+            MailState::Stopped => RunState::Stopped,
+        };
+        run.state = next;
+        run.mail = Some(progress);
+        run.message = message;
+        if next.is_terminal() {
+            run.finished_at = Some(Utc::now());
+        }
+        Ok(run.clone())
+    }
     pub fn current(&self) -> Option<&RunRecord> {
         self.current.as_ref()
     }
@@ -314,6 +391,7 @@ impl RunSlot {
             message: "任务已启动".into(),
             input_probe: None,
             input_pipeline: None,
+            mail: None,
         };
         self.current = Some(run.clone());
         Ok(run)

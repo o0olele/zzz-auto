@@ -18,3 +18,4 @@ hex.workspace = true
 regex.workspace = true
 walkdir.workspace = true
 ts-rs.workspace = true
+image = { version = "0.25", default-features = false, features = ["png"] }

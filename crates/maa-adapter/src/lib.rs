@@ -1,13 +1,17 @@
+mod events;
 mod fixture;
 pub mod flash;
 mod inference;
 mod input;
+mod mail_bundle;
+pub use mail_bundle::validate_mail_bundle;
 pub mod ocr;
 mod pipeline;
 mod raw_control;
 pub mod raw_inference;
 mod sdk;
 pub mod yolo;
+pub use events::{PipelineEvent, PipelineEvents};
 pub use inference::{GpuLease, RecognitionImage, RecognitionMeasurement, RecognitionTiming};
 pub use maa_framework::common::ControllerFeature;
 pub use maa_framework::custom_controller::CustomControllerCallback;
@@ -15,7 +19,9 @@ pub use od_core::{
     CaptureMethod, InputMode, InputPipelineConfig, InputPipelineResult, InputProbeAction,
     InputProbeConfig, InputProbeResult, PipelineEnd, PipelineProbeResult,
 };
-pub use pipeline::{INPUT_PIPELINE_ENTRY, PipelineInputPlan};
+pub use pipeline::{
+    INPUT_PIPELINE_ENTRY, MailStep, PipelineExecution, PipelineInputPlan, PipelineNodeResult,
+};
 pub use raw_control::{
     RawRecognitionCancelled, RawRecognitionControl, RawRecognitionPhase, RawRecognitionStatus,
 };
@@ -95,8 +101,9 @@ pub struct ProbeResult {
     pub native_status: String,
 }
 
-// Tasker、原始推理会话、Controller、Resource、控制权和 GPU 使用权按声明顺序销毁。
+// 回调订阅、Tasker、原始推理会话、Controller、Resource、控制权和 GPU 使用权按声明顺序销毁。
 pub struct NativeSession {
+    pipeline_subscriptions: Vec<events::PipelineSubscription>,
     tasker: Tasker,
     raw_flash: Mutex<Option<raw_inference::RawClassifier>>,
     raw_detectors: Mutex<BTreeMap<String, yolo::RawDetector>>,
@@ -234,6 +241,7 @@ impl NativeSession {
         ensure!(tasker.inited(), "Maa Tasker 初始化失败");
         sdk::verify_loaded_modules()?;
         Ok(Self {
+            pipeline_subscriptions: Vec::new(),
             tasker,
             raw_flash: Mutex::new(None),
             raw_detectors: Mutex::new(BTreeMap::new()),
@@ -528,6 +536,7 @@ impl Drop for NativeSession {
             Job::for_tasker(&self.tasker, id).wait();
         }
         let _ = self.release_inputs();
+        self.pipeline_subscriptions.clear();
         self.tasker.clear_sinks();
     }
 }

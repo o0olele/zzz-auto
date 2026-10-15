@@ -1,6 +1,6 @@
 # 绝区零一条龙 · Rust 原型
 
-按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，当前推进 M1 集成原型：能加载真实 SDK、运行离线原生 Pipeline、连接游戏窗口、截图、查看诊断，并通过独立测试仓验证协议与资源转换。30 个游戏应用仍显示“待迁移”，尚不能代替旧一条龙。
+按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，M1 集成原型待验证，M2 进行中：邮件 Pipeline 已接入桌面试运行、共享运行槽、暂停继续及持久输入恢复登记，详见[邮件试运行说明](docs/develop/mail-pipeline.md)。真实游戏行为仍待验收，30 个游戏应用仍显示“待迁移”，尚不能代替旧一条龙。
 
 界面采用 React、TypeScript、Vite 与 Fluent UI React v9；自动化运行在独立 Rust 进程中。运行程序不启动 Python 或 Node 服务。前端构建需要 Node，Rust 和 MSVC 用于开发；正式发行的完整验收属于 M7。
 
@@ -57,7 +57,7 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode xbox -
 cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --action trigger --side right --value 128 --hold-ms 500 --allow-input
 ```
 
-当前协议为 v7，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权和受控输入 Pipeline。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
+当前协议为 v8，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline 和邮件试运行的暂停 / 继续。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
 
 桌面在发送真实输入探针或输入 Pipeline 前，把恢复计划写入数据目录的 `input-recovery.json`。引擎崩溃、应答丢失或收尾未确认时会阻止重连，请点击“恢复遗留输入”：确认旧进程退出后，由独立进程只发送对应释放；原管理员引擎可能需要再次授权 Windows。恢复后先确认游戏状态，再手动重连，不自动重放任务。桌面重启也保留拦截；失败或取消授权不会清除记录。当前覆盖桌面托管的单次输入与受控 Pipeline，CLI 和未来业务 Pipeline 须单独接入。真实游戏、跨权限释放与 ViGEm 卸载仍需实机验收，见[实现说明](docs/develop/implementation.md#m1-崩溃后的独立输入恢复)。
 

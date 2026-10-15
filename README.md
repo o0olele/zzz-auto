@@ -1,6 +1,6 @@
 # 绝区零一条龙 · Rust 原型
 
-按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，当前推进 M1 集成原型：能加载真实 SDK、运行离线原生 Pipeline、连接游戏窗口、截图、查看诊断，并通过独立测试仓验证协议与资源转换。30 个游戏应用仍显示“待迁移”，尚不能代替旧一条龙。
+按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，M1 集成原型待验证，当前开始 M2：能加载真实 SDK、连接游戏窗口、截图和运行诊断，新增邮件 Pipeline 的离线完整流程、资源包生成及暂停恢复，详见[邮件原型说明](docs/develop/mail-pipeline.md)。邮件尚未接入桌面运行槽与实机入口，30 个游戏应用仍显示“待迁移”，尚不能代替旧一条龙。
 
 界面采用 React、TypeScript、Vite 与 Fluent UI React v9；自动化运行在独立 Rust 进程中。运行程序不启动 Python 或 Node 服务。前端构建需要 Node，Rust 和 MSVC 用于开发；正式发行的完整验收属于 M7。
 

@@ -2375,6 +2375,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
+ "image",
  "od-core",
  "od-platform",
  "od-protocol",

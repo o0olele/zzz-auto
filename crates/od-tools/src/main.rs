@@ -12,6 +12,14 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    MailBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/mail")]
+        output: PathBuf,
+    },
     Models {
         #[arg(long, default_value = "sdk/models")]
         source: PathBuf,
@@ -52,6 +60,19 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::MailBundle {
+            reference,
+            models,
+            output,
+        } => {
+            let manifest = od_tools::mail::build_bundle(&reference, &models, &output)?;
+            println!(
+                "邮件资源包已生成：{}（{} 个文件，待实机验收）",
+                output.display(),
+                manifest["files"].as_array().map_or(0, Vec::len)
+            );
+            Ok(())
+        }
         Tool::Models { source, output } => {
             let manifest = od_tools::models::convert(&source, &output)?;
             println!(

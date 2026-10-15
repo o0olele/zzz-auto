@@ -2,6 +2,7 @@ use crate::{InputPipelineConfig, InputPipelineResult, NativeSession, SDK_VERSION
 use anyhow::{Result, ensure};
 use maa_framework::{MaaStatus, job::Job};
 pub use od_core::{PipelineEnd, PipelineProbeResult};
+use serde::Serialize;
 use std::{
     collections::BTreeSet,
     sync::{
@@ -19,6 +20,46 @@ pub struct PipelineInputPlan {
 }
 
 pub const INPUT_PIPELINE_ENTRY: &str = "Prototype.Input.Down";
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PipelineNodeResult {
+    pub name: String,
+    pub completed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PipelineExecution {
+    pub report: PipelineProbeResult,
+    pub task_id: Option<i64>,
+    pub nodes: Vec<PipelineNodeResult>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MailStep {
+    Navigate,
+    Inspect,
+    Claim,
+    AfterClaim,
+    Confirm,
+    AfterConfirm,
+    ReturnList,
+    ReturnWorld,
+}
+
+impl MailStep {
+    pub fn entry(self) -> &'static str {
+        match self {
+            Self::Navigate => "Mail.Navigate",
+            Self::Inspect => "Mail.Inspect",
+            Self::Claim => "Mail.Claim",
+            Self::AfterClaim => "Mail.AfterClaim",
+            Self::Confirm => "Mail.Confirm",
+            Self::AfterConfirm => "Mail.AfterConfirm",
+            Self::ReturnList => "Mail.ReturnList",
+            Self::ReturnWorld => "Mail.ReturnWorld",
+        }
+    }
+}
 
 impl NativeSession {
     // 任意入口只供离线验证；游戏仅开放由受限配置生成的诊断流程。
@@ -70,6 +111,55 @@ impl NativeSession {
         timeout: Duration,
         pipeline: &str,
     ) -> Result<PipelineProbeResult> {
+        Ok(self
+            .run_pipeline_detailed(entry, inputs, cancel, timeout, pipeline, false)?
+            .report)
+    }
+
+    // 业务原型目前只使用离线控制器。接入真实游戏前须接入共享运行槽与桌面恢复登记。
+    fn validate_mail_fixture(&self) -> Result<()> {
+        ensure!(self.game_window.is_none(), "邮件原型尚未开放真实游戏输入");
+        ensure!(
+            self.input_mode == Some(crate::InputMode::Foreground),
+            "邮件原型使用前台键鼠语义"
+        );
+        Ok(())
+    }
+
+    pub fn prepare_fixture_mail(&mut self) -> Result<()> {
+        self.validate_mail_fixture()?;
+        self.release_inputs()
+    }
+
+    pub fn fixture_mail_step(
+        &mut self,
+        step: MailStep,
+        cancel: Arc<AtomicBool>,
+        timeout: Duration,
+    ) -> Result<PipelineExecution> {
+        self.validate_mail_fixture()?;
+        self.run_pipeline_detailed(
+            step.entry(),
+            &PipelineInputPlan {
+                keys: [18].into(),
+                contacts: [0].into(),
+            },
+            cancel,
+            timeout,
+            "{}",
+            true,
+        )
+    }
+
+    fn run_pipeline_detailed(
+        &mut self,
+        entry: &str,
+        inputs: &PipelineInputPlan,
+        cancel: Arc<AtomicBool>,
+        timeout: Duration,
+        pipeline: &str,
+        collect_nodes: bool,
+    ) -> Result<PipelineExecution> {
         ensure!(!entry.is_empty(), "Pipeline 入口不能为空");
         ensure!(!timeout.is_zero(), "Pipeline 超时必须大于零");
         ensure!(
@@ -89,6 +179,7 @@ impl NativeSession {
         }
         let started = Instant::now();
         let mut stopped_at = None;
+        let mut task_id = None;
         let mut report = PipelineProbeResult {
             sdk_version: SDK_VERSION.into(),
             entry: entry.into(),
@@ -114,6 +205,7 @@ impl NativeSession {
             self.pipeline_controller_pending = true;
             let enqueue_at = Instant::now();
             let job = self.tasker.post_task(entry, pipeline)?;
+            task_id = Some(job.id);
             report.enqueue_us = enqueue_at.elapsed().as_micros() as u64;
             ensure!(job.id > 0, "Maa 拒绝 Pipeline 启动请求");
             loop {
@@ -177,7 +269,26 @@ impl NativeSession {
         }
         ensure!(errors.is_empty(), "{}", errors.join("；"));
         report.released = true;
-        Ok(report)
+        // 终态与检查点读取 SDK 保存的任务详情，不依赖可能丢弃的展示回调。
+        let mut nodes = Vec::new();
+        if let Some(id) = task_id.filter(|_| collect_nodes) {
+            let detail = self
+                .tasker
+                .get_task_detail(id)?
+                .ok_or_else(|| anyhow::anyhow!("Maa 未保存任务详情"))?;
+            for node in detail.nodes {
+                let node = node.ok_or_else(|| anyhow::anyhow!("Maa 未保存节点详情"))?;
+                nodes.push(PipelineNodeResult {
+                    name: node.node_name,
+                    completed: node.completed,
+                });
+            }
+        }
+        Ok(PipelineExecution {
+            report,
+            task_id,
+            nodes,
+        })
     }
 
     pub fn input_pipeline(

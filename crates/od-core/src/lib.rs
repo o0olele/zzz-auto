@@ -1,4 +1,5 @@
 pub mod ocr;
+pub mod pipeline;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

@@ -90,6 +90,20 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    RecognitionCompare {
+        #[arg(long)]
+        cases: PathBuf,
+        #[arg(long)]
+        fixture_root: PathBuf,
+        #[arg(long)]
+        runtime_lock: PathBuf,
+        #[arg(long)]
+        legacy: PathBuf,
+        #[arg(long)]
+        current: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
     RecognitionCheck {
         #[arg(long)]
         cases: PathBuf,
@@ -103,6 +117,8 @@ enum Action {
         warmup: usize,
         #[arg(long, default_value_t = 30)]
         samples: usize,
+        #[arg(long, value_parser = clap::value_parser!(u16).range(0..=64))]
+        raw_cpu_threads: Option<u16>,
     },
     Doctor,
     Applications,
@@ -197,6 +213,43 @@ async fn main() -> Result<()> {
         data: args.data.unwrap_or_else(|| root.join("data")),
     };
     match args.command {
+        Action::RecognitionCompare {
+            cases,
+            fixture_root,
+            runtime_lock,
+            legacy,
+            current,
+            output,
+        } => {
+            let report = zzz_engine::legacy_comparison::run(
+                &cases,
+                &fixture_root,
+                &runtime_lock,
+                &legacy,
+                &current,
+            )?;
+            if let Some(parent) = output
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&output, serde_json::to_vec_pretty(&report)?)?;
+            print(
+                serde_json::json!({"report": output, "comparisons": report.comparisons.len(), "equal": report.comparisons.iter().filter(|case| case.equal_within_tolerance).count(), "all_outputs_equal": report.all_outputs_equal, "all_human_expectations_passed": report.all_human_expectations_passed, "all_performance_targets_passed":report.all_performance_targets_passed,"acceptance": report.acceptance}),
+            )?;
+            ensure!(
+                report.all_outputs_equal,
+                "旧版输出比较未通过，请查看 {}",
+                output.display()
+            );
+            ensure!(
+                report.all_performance_targets_passed != Some(false),
+                "离线识别 P95 目标未通过，请查看 {}",
+                output.display()
+            );
+            return Ok(());
+        }
         Action::Applications => return print(od_core::applications()?),
         Action::Windows => return print(od_platform::game_windows()?),
         Action::Serve { pipe, parent_pid } => {
@@ -222,15 +275,19 @@ async fn main() -> Result<()> {
             directml,
             warmup,
             samples,
+            raw_cpu_threads,
         } => {
-            let report = zzz_engine::recognition::run(
+            let report = zzz_engine::recognition::run_with_options(
                 &paths.resources,
                 &fixture_root,
                 &cases,
                 &paths.data.join("maa-log"),
-                directml,
-                warmup,
-                samples,
+                zzz_engine::recognition::CheckOptions {
+                    directml,
+                    warmup,
+                    samples,
+                    raw_cpu_threads: raw_cpu_threads.map(usize::from),
+                },
             )?;
             if let Some(parent) = output
                 .parent()

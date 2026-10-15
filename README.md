@@ -72,6 +72,8 @@ cargo run -p zzz-engine -- --resources resources/generated/recognition recogniti
 
 验证仅进行离线识别，先 CPU 后 DirectML，每案默认预热 5 次、正式测量 30 次。省略 `--directml` 时只跑 CPU；`--warmup` 和 `--samples` 可调整轮数。图像准备、首次识别与正式样本分别记录，正式样本使用同一份已解码帧。JSON 报告包含文字 / 类别 / 框 / 分数、预期检查、结果稳定性和 P50 / P95；原生未命中保留为未命中，错误单独记录。能力调用、预期、稳定性、设备对照或 DirectML 配置证据未通过时，报告仍写出，命令以失败状态退出；已登记的旧版兼容性缺口继续标记 pending。
 
+原始闪光 / YOLO 的 CPU 推理默认由 ORT 选择线程数，并保持关闭自旋；DirectML 继续使用原设置。离线诊断可用 `--raw-cpu-threads 0..64` 对照，0 表示 ORT 默认，1 用于复现之前的单线程。新增完整 BGR 帧到标准结果的统一计时；7 个 YOLO 案例的同机 release CPU P95 已在此范围内达标，完整游戏链路仍待验收。命令与范围见[CPU 线程与统一计时说明](docs/develop/recognition-validation.md#原始推理-cpu-线程与统一计时)。
+
 当前对照不代表旧版完全兼容：Maa 闪光分类再次 softmax，YOLO 的补边和插值与旧版不同；旧版实际输出、正样本和同机性能基线还需补齐。报告明确区分设备请求与可取得的 DirectML 配置日志证据。具体约定见[模型对照说明](docs/develop/recognition-validation.md)，阶段结论以[验收记录](docs/migration/acceptance.md)为准。
 
 闪光适配入口 `LegacyFlashClassify` 已补旧版的等比缩放、右下补边和概率判定，继续由 Maa 推理。先重新生成模型资源，再运行原生 / 适配路径的固定图对照：
@@ -107,6 +109,8 @@ cargo run -p zzz-engine --locked -- --resources resources/generated/recognition 
 ```
 
 ## 工程与数据
+
+已增加旧版闪光、OCR 和 YOLO 实际输出采样及纯 Rust 的 `recognition-compare` 命令，支持核对同一批固定图的概率、候选、文字、框与分数；OCR 同时比较过滤前结果。旧版采样环境单独放在忽略的 SDK 缓存中，仅用于迁移取证；新程序和正式回归不依赖 Python。命令见[闪光旧版输出说明](docs/develop/recognition-validation.md#旧版实际输出与自动比较)及 [OCR / YOLO 对照说明](docs/develop/recognition-validation.md#ocr-与-yolo-旧版对照)。比较结果与人工标注分别报告，不能把新旧共有的漏检当成人工预期通过。
 
 六个 Rust crate 分别负责通用核心、协议、平台、Maa 适配、引擎与迁移工具；桌面位于 `apps/desktop/`。详见 [首轮实现说明](docs/develop/implementation.md)。
 

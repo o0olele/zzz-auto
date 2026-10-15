@@ -330,7 +330,12 @@ fn labels_file(root: &Path, model: &str) -> Result<(Vec<String>, String)> {
 }
 
 impl RawDetector {
-    fn new(root: &Path, config: &YoloConfig, device: InferenceDevice) -> Result<Self> {
+    fn new(
+        root: &Path,
+        config: &YoloConfig,
+        device: InferenceDevice,
+        cpu_threads: usize,
+    ) -> Result<Self> {
         let (labels, labels_sha256) = labels_file(root, &config.model)?;
         ensure!(
             config
@@ -344,7 +349,8 @@ impl RawDetector {
             .join(&config.model)
             .canonicalize()?;
         ensure!(path.starts_with(root), "检测模型指向资源之外");
-        let (session, runtime, sha256) = create_raw_session(&path, device, 64 * 1024 * 1024)?;
+        let (session, runtime, sha256) =
+            create_raw_session(&path, device, cpu_threads, 64 * 1024 * 1024)?;
         ensure!(
             session.inputs.len() == 1
                 && session.inputs[0].name == "images"
@@ -392,7 +398,12 @@ impl NativeSession {
         let session_setup_us = if !cached.contains_key(&config.model) {
             cached.insert(
                 config.model.clone(),
-                RawDetector::new(&self.resource_root, &config, self.inference_device)?,
+                RawDetector::new(
+                    &self.resource_root,
+                    &config,
+                    self.inference_device,
+                    self.raw_cpu_threads,
+                )?,
             );
             setup_at.elapsed().as_micros() as u64
         } else {
@@ -448,6 +459,7 @@ impl NativeSession {
         let detail = json!({"hit":!detections.is_empty(), "detail":{"all":detections,"filtered":detections,"best":detections.first()},
             "adaptation":{"kind":"LegacyYoloDetect","model":config.model,"model_sha256":detector.sha256,"labels_sha256":detector.labels_sha256,
                 "runtime":detector.runtime,"device":format!("{:?}",self.inference_device),
+                "threading":crate::raw_inference::raw_threading(self.inference_device, self.raw_cpu_threads)?,
                 "directml_registration_confirmed":match self.inference_device { InferenceDevice::Cpu => Value::Null, InferenceDevice::DirectMl(_) => json!(true) },
                 "output_shape":&**shape,"input_size":config.input_size(),"scaled_size":prepared.scaled_size,"detections":detections,"threshold":config.threshold,"effective_threshold_f32":config.threshold as f32,
                 "iou":config.iou,"effective_iou_f32":config.iou as f32,"label_list":config.label_list,"category_list":config.category_list,

@@ -100,6 +100,7 @@ pub struct NativeSession {
     inference_gate: Mutex<()>,
     resource_root: PathBuf,
     inference_device: InferenceDevice,
+    raw_cpu_threads: usize,
     controller: fixture::NativeController,
     _resource: Resource,
     input_mode: Option<InputMode>,
@@ -159,6 +160,18 @@ impl NativeSession {
     pub fn for_fixture(images: &Path, resources: &Path, device: InferenceDevice) -> Result<Self> {
         let controller = fixture::NativeController::from_image(images)?;
         Self::bind(controller, resources, device, None, None, None)
+    }
+
+    pub fn for_fixture_with_cpu_threads(
+        images: &Path,
+        resources: &Path,
+        device: InferenceDevice,
+        cpu_threads: usize,
+    ) -> Result<Self> {
+        raw_inference::raw_threading(device, cpu_threads)?;
+        let mut session = Self::for_fixture(images, resources, device)?;
+        session.raw_cpu_threads = cpu_threads;
+        Ok(session)
     }
 
     // 离线验证入口：回调由测试仓提供，使用真实 Maa 队列，不取得游戏控制权。
@@ -223,6 +236,7 @@ impl NativeSession {
             inference_gate: Mutex::new(()),
             resource_root: path,
             inference_device: device,
+            raw_cpu_threads: raw_inference::DEFAULT_RAW_CPU_THREADS,
             controller,
             _resource: resource,
             input_mode,

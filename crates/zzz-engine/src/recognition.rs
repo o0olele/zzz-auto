@@ -13,6 +13,8 @@ fn is_raw_kind(kind: &str) -> bool {
     matches!(kind, "LegacyFlashRaw" | "LegacyYoloDetect")
 }
 
+pub const BOUNDARY_TIMING_SCOPE: &str = "bgr1080_to_normalized_observation_v1";
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FixtureFile {
     pub path: String,
@@ -90,11 +92,14 @@ pub struct CaseReport {
     pub legacy_evidence: String,
     pub expectation_passed: Option<bool>,
     pub observation: Option<Observation>,
+    pub unfiltered_observation: Option<Observation>,
     pub adaptation: Option<serde_json::Value>,
     pub native_status: Option<String>,
     pub first_call: Option<RecognitionTiming>,
     pub fixture_prepare_us: Option<u64>,
     pub measurements: Vec<RecognitionTiming>,
+    pub boundary_measurements_us: Vec<u64>,
+    pub boundary_timing: Option<Quantiles>,
     pub timing: BTreeMap<String, Quantiles>,
     pub stable: bool,
     pub errors: Vec<String>,
@@ -121,6 +126,7 @@ pub struct DeviceComparison {
 #[derive(Debug, Serialize)]
 pub struct CheckReport {
     pub schema_version: u32,
+    pub build_profile: String,
     pub engine_version: String,
     pub sdk_version: String,
     pub binding_version: String,
@@ -128,6 +134,9 @@ pub struct CheckReport {
     pub warmup: usize,
     pub requested_samples: usize,
     pub model_lock_sha256: String,
+    pub case_manifest_sha256: String,
+    pub boundary_timing_scope: String,
+    pub raw_cpu_threads: usize,
     pub known_differences: serde_json::Value,
     pub devices: Vec<DeviceReport>,
     pub comparisons: Vec<DeviceComparison>,
@@ -439,6 +448,13 @@ pub fn normalize(detail: &serde_json::Value) -> Result<Observation> {
     })
 }
 
+pub fn unfiltered_ocr(detail: &serde_json::Value) -> Result<Observation> {
+    let all = detail["detail"]["all"]
+        .as_array()
+        .context("OCR 详情缺少 all")?;
+    normalize(&serde_json::json!({"hit":!all.is_empty(),"detail":{"filtered":all}}))
+}
+
 fn item_equal(left: &Item, right: &Item, tolerance: Tolerance) -> bool {
     left.text == right.text
         && left.class_index == right.class_index
@@ -583,11 +599,14 @@ fn check_case(
         legacy_evidence: case.legacy_evidence.clone(),
         expectation_passed: None,
         observation: None,
+        unfiltered_observation: None,
         adaptation: None,
         native_status: None,
         first_call: None,
         fixture_prepare_us: None,
         measurements: Vec::new(),
+        boundary_measurements_us: Vec::new(),
+        boundary_timing: None,
         timing: BTreeMap::new(),
         stable: true,
         errors: Vec::new(),
@@ -619,6 +638,10 @@ fn check_case(
             );
         }
         let reference = normalize(&first.detail)?;
+        let unfiltered = (case.kind == "OCR")
+            .then(|| unfiltered_ocr(&first.detail))
+            .transpose()?;
+        report.unfiltered_observation = unfiltered.clone();
         report.adaptation = first.detail.get("adaptation").cloned();
         report.first_call = Some(first.timing);
         report.native_status = Some(first.native_status);
@@ -628,10 +651,23 @@ fn check_case(
             .as_ref()
             .map(|expected| matches_expectation(&reference, expected));
         for sample in 0..warmup + samples {
+            let boundary_started = Instant::now();
             let result = native.recognize_prepared(&image, &case.kind, &case.params)?;
             let observed = normalize(&result.detail)?;
+            let current_unfiltered = (case.kind == "OCR")
+                .then(|| unfiltered_ocr(&result.detail))
+                .transpose()?;
+            let boundary_us = boundary_started.elapsed().as_micros() as u64;
             if sample >= warmup {
+                report.boundary_measurements_us.push(boundary_us);
                 report.stable &= compare(&reference, &observed, case.tolerance);
+                if let Some(unfiltered) = &unfiltered {
+                    report.stable &= compare(
+                        unfiltered,
+                        current_unfiltered.as_ref().unwrap(),
+                        case.tolerance,
+                    );
+                }
                 if let Some(expected) = &case.expectation {
                     report.expectation_passed = Some(
                         report.expectation_passed.unwrap_or(true)
@@ -641,6 +677,7 @@ fn check_case(
                 report.measurements.push(result.timing);
             }
         }
+        report.boundary_timing = Some(quantiles(&report.boundary_measurements_us)?);
         for (name, select) in [
             (
                 "prepare",
@@ -727,6 +764,43 @@ pub fn run(
     warmup: usize,
     samples: usize,
 ) -> Result<CheckReport> {
+    run_with_options(
+        resources,
+        fixture_root,
+        cases_path,
+        logs,
+        CheckOptions {
+            directml,
+            warmup,
+            samples,
+            raw_cpu_threads: None,
+        },
+    )
+}
+
+pub struct CheckOptions {
+    pub directml: Option<i32>,
+    pub warmup: usize,
+    pub samples: usize,
+    pub raw_cpu_threads: Option<usize>,
+}
+
+pub fn run_with_options(
+    resources: &Path,
+    fixture_root: &Path,
+    cases_path: &Path,
+    logs: &Path,
+    options: CheckOptions,
+) -> Result<CheckReport> {
+    let CheckOptions {
+        directml,
+        warmup,
+        samples,
+        raw_cpu_threads,
+    } = options;
+    let raw_cpu_threads =
+        raw_cpu_threads.unwrap_or(maa_adapter::raw_inference::DEFAULT_RAW_CPU_THREADS);
+    maa_adapter::raw_inference::raw_threading(InferenceDevice::Cpu, raw_cpu_threads)?;
     ensure!(
         warmup <= 100 && (1..=200).contains(&samples),
         "预热须为 0..100 次，正式样本须为 1..200 次"
@@ -776,7 +850,12 @@ pub fn run(
             cases: Vec::new(),
             error: None,
         };
-        match NativeSession::for_fixture(&first_image, resources, device) {
+        match NativeSession::for_fixture_with_cpu_threads(
+            &first_image,
+            resources,
+            device,
+            raw_cpu_threads,
+        ) {
             Ok(native) => {
                 report.session_creation_us = created.elapsed().as_micros() as u64;
                 if let InferenceDevice::DirectMl(id) = device
@@ -865,6 +944,12 @@ pub fn run(
     }
     Ok(CheckReport {
         schema_version: 1,
+        build_profile: if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
+        .into(),
         engine_version: env!("CARGO_PKG_VERSION").into(),
         sdk_version: maa_adapter::SDK_VERSION.into(),
         binding_version: maa_adapter::BINDING_VERSION.into(),
@@ -872,6 +957,9 @@ pub fn run(
         warmup,
         requested_samples: samples,
         model_lock_sha256: hex::encode(Sha256::digest(include_bytes!("../../../models.lock.json"))),
+        case_manifest_sha256: sha256(cases_path)?,
+        boundary_timing_scope: BOUNDARY_TIMING_SCOPE.into(),
+        raw_cpu_threads,
         known_differences: differences,
         devices,
         comparisons,

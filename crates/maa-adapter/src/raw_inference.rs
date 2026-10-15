@@ -20,6 +20,18 @@ use crate::{
 pub const RAW_FLASH_MODEL: &str = "yolov8n-640-flash-20250921.onnx";
 pub const ORT_BINDING_VERSION: &str = "2.0.0-rc.10";
 pub const ORT_RUNTIME_VERSION: &str = "1.29.0";
+pub const DEFAULT_RAW_CPU_THREADS: usize = 0;
+
+pub fn raw_threading(device: InferenceDevice, cpu_threads: usize) -> Result<Value> {
+    ensure!(
+        cpu_threads <= 64,
+        "原始 CPU 线程数须为 0..64，0 表示 ORT 默认"
+    );
+    Ok(
+        json!({"intra_op_threads":if matches!(device, InferenceDevice::Cpu) {cpu_threads} else {1},
+        "inter_op_threads":1,"execution_mode":"sequential","intra_op_spinning":false,"inter_op_spinning":false}),
+    )
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RawRuntimeInfo {
@@ -174,8 +186,10 @@ pub(crate) fn tensor_shape(ty: &ValueType, expected: &[i64]) -> bool {
 pub(crate) fn create_raw_session(
     path: &Path,
     device: InferenceDevice,
+    cpu_threads: usize,
     max_bytes: u64,
 ) -> Result<(Session, RawRuntimeInfo, String)> {
+    let threading = raw_threading(device, cpu_threads)?;
     let runtime = raw_runtime_info()?;
     ensure!(
         (1..=max_bytes).contains(&std::fs::metadata(path)?.len()),
@@ -185,7 +199,7 @@ pub(crate) fn create_raw_session(
     let sha256 = hex::encode(Sha256::digest(&bytes));
     let mut builder = Session::builder()?
         .with_parallel_execution(false)?
-        .with_intra_threads(1)?
+        .with_intra_threads(threading["intra_op_threads"].as_u64().unwrap() as usize)?
         .with_inter_threads(1)?
         .with_config_entry("session.intra_op.allow_spinning", "0")?
         .with_config_entry("session.inter_op.allow_spinning", "0")?;
@@ -206,8 +220,9 @@ pub(crate) fn create_raw_session(
 }
 
 impl RawClassifier {
-    fn new(path: &Path, device: InferenceDevice) -> Result<Self> {
-        let (session, runtime, sha256) = create_raw_session(path, device, 16 * 1024 * 1024)?;
+    fn new(path: &Path, device: InferenceDevice, cpu_threads: usize) -> Result<Self> {
+        let (session, runtime, sha256) =
+            create_raw_session(path, device, cpu_threads, 16 * 1024 * 1024)?;
         ensure!(
             session.inputs.len() == 1
                 && session.inputs[0].name == "images"
@@ -255,7 +270,11 @@ impl NativeSession {
                 path.starts_with(&self.resource_root),
                 "原始闪光模型指向资源目录之外"
             );
-            *cached = Some(RawClassifier::new(&path, self.inference_device)?);
+            *cached = Some(RawClassifier::new(
+                &path,
+                self.inference_device,
+                self.raw_cpu_threads,
+            )?);
             setup_at.elapsed().as_micros() as u64
         } else {
             0
@@ -287,6 +306,7 @@ impl NativeSession {
         let scores: [f32; 3] = scores.try_into()?;
         let mut detail = raw_flash_decision(scores, &config)?;
         detail["adaptation"]["runtime"] = serde_json::to_value(&classifier.runtime)?;
+        detail["adaptation"]["threading"] = raw_threading(classifier.device, self.raw_cpu_threads)?;
         detail["adaptation"]["model_sha256"] = json!(classifier.sha256);
         detail["adaptation"]["device"] = json!(format!("{:?}", classifier.device));
         detail["adaptation"]["directml_registration_confirmed"] = match classifier.device {

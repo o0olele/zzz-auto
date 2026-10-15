@@ -1,6 +1,6 @@
 # M1 模型对照
 
-本轮实现固定模型获取、Maa 资源转换和离线 CPU / DirectML 验证入口。模型版本以参考提交的默认配置为准，`models.lock.json` 固定官方发布包及使用文件的 SHA-256；缓存放在 `sdk/models`，转换资源放在 `resources/generated/recognition`。参考仓和来源模型不修改，不使用 Python 构建或验证。正式应用继续保持待迁移，模型能加载和旧版行为兼容分别验收。
+本轮实现固定模型获取、Maa 资源转换和离线 CPU / DirectML 验证入口。模型版本以参考提交的默认配置为准，`models.lock.json` 固定官方发布包及使用文件的 SHA-256；缓存放在 `sdk/models`，转换资源放在 `resources/generated/recognition`。参考仓和来源模型不修改，新程序的构建与正式验证不使用 Python；一次性采集旧版证据使用下文的隔离环境。正式应用继续保持待迁移，模型能加载和旧版行为兼容分别验收。
 
 OCR 采用旧 PP-OCRv5 检测、识别与原字典，字典原样复制为 Maa 的 `keys.txt`；旧方向分类默认关闭，可视化字体不进入引擎资源。闪光与两种检测模型保留标签索引，不重新训练或替换模型。资源转换先检查全部文件，再复制并校验输出，生成资源附带差异清单。
 
@@ -54,7 +54,7 @@ Rust 适配入口 `LegacyFlashClassify` 接收原图 ROI，在 SDK 自带的 `op
 
 首次模型校验 / 会话创建由 `session_setup_us` 单列，正式采样区分预处理、同步推理和结果读取；补充路径没有 Maa 队列，报告的 `execution_path` 为 `sdk_onnxruntime_direct`，`enqueue` 为 0。DirectML 配置证据分为 Maa 日志与原始 SDK 注册成功，不能解释为全部算子都在 GPU 执行。注册时关闭内存模式和并行执行，遵循 [ONNX Runtime DirectML 约定](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html)。
 
-阈值附近的已知概率、RGB / NCHW、CPU / DirectML、错误模型和设备失败已通过回归；真实游戏正例、同机旧实现输出及完整性能基线仍待补齐。SDK 与旧版 ORT / OpenCV 的计算差异仍需真实语料对照，原始分数可读不等于已经验收全部旧行为。
+阈值附近的已知概率、RGB / NCHW、CPU / DirectML、错误模型和设备失败已通过回归；10 月 15 日补入真实红光 / 黄光与消失帧，记录见[新增红黄光帧](#新增红黄光帧)。同机旧实现输出、真实阈值附近样本及完整性能基线仍待补齐。SDK 与旧版 ORT / OpenCV 的计算差异仍需真实语料对照，原始分数可读不等于已经验收全部旧行为。
 
 ## 原始推理的取消
 
@@ -68,4 +68,95 @@ CLI `recognize` 为这两种类型接入 Ctrl+C 与 `--cancel-after-ms`，计时
 
 Maa 依据固定版本的[识别协议](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/docs/en_us/3.1-PipelineProtocol.md)、[分类源码](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Vision/NeuralNetworkClassifier.cpp)、[检测源码](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Vision/NeuralNetworkDetector.cpp)和[OCR 资源约定](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaFramework/Resource/OCRResMgr.h)。旧实现的具体版本与结果在独立测试仓案例和验收记录中维护。
 
-运行入口见根 README。案例清单位于独立测试仓 `test/zzz_auto/fixtures/recognition/cases.json`，每例登记路径、SHA-256、参数、期望来源和设备比较容差。本轮包含四个邮件 OCR 锚点及一个未命中分支、两张战斗分类画面、两种检测模型的能力调用。空洞模型当前使用非地图画面，仅证明调用和结果格式；缺少正例，不能验收空洞检测。闪光尚缺红光 / 黄光及阈值附近的已标注样本。
+运行入口见根 README。初始案例清单位于独立测试仓 `test/zzz_auto/fixtures/recognition/cases.json`，每例登记路径、SHA-256、参数、期望来源和设备比较容差，包含四个邮件 OCR 锚点及一个未命中分支、两张战斗分类画面、两种检测模型的能力调用。后续存档扩展与新增闪光帧见下文。空洞模型仍缺电视格子地图正例，真实闪光阈值附近样本仍待补。
+
+## 使用已有存档截图
+
+2026 年 10 月 15 日首次核对独立测试仓 `screens/`：有 142 个图像文件，部分 PNG / WebP 为同一画面的不同存储版本，不按 142 个独立场景计算。OCR 已有大量可用图片；迷失之地大世界的玛琳蓝色事件标记也已存在，并被此前 YOLO 对照引用。随后补入的红光 / 黄光 PNG 见[新增红黄光帧](#新增红黄光帧)。空洞电视格子地图正例、真实阈值附近样本与同机旧版实际输出仍待补齐。
+
+新增 `test/zzz_auto/fixtures/recognition/screen-cases.json`，复用六个现有文件，人工查看像素后登记 12 个案例。OCR 包括城市导航的「录像店」「六分街」、日常手册的「今日最大活跃度」「400」、饮茶仙的「邻里心愿」「10000」、商店的「购买」，以及同一区域找不到「验证码」的分支。正例不设置 Maa expected 过滤，保留 ROI 内完整文字结果；负例单独验证指定文字不存在。ROI 按当前固定图片核对，不直接作为旧业务 screen_info 的迁移结论。
+
+YOLO 包括迷失之地事件标记正例、商店中不存在该事件标记的负例，以及城市导航中不存在空洞格子目标的诊断负例；新增式舆防卫战画面的无闪光案例。蓝色事件标记按人工框 `[905,330,85,85]` / 12px 容差核对，框为 xywh；没有从本轮模型输出反写期望。全部案例的 `legacy_evidence` 为 `none`，人工预期不冒充旧版实测。
+
+CPU 与 DirectML(0) 每案预热 5 次、正式采样 30 次，共 720 个正式样本。12 组设备输出均在登记容差内一致，各设备 11 / 12 项符合人工预期。空洞模型把城市导航图案误检为 `0027-安全区`，保留预期未命中和失败状态；需结合旧版对照及调用前的画面判断确定处理方式。没有因此改阈值或模型。报告位于测试仓 `observations-screens-20261015.json`，具体观察见[验收记录](../migration/acceptance.md#2026-年-10-月-15-日复用存档截图扩充识别案例)。
+
+复跑命令如下。因为包含上述未通过案例，命令当前预期以退出码 1 结束，仍写出完整报告。OCR 的设备配置对照不能证明算子实际在 GPU 执行；识别兼容与整体性能继续等待旧版输出和其他阶段证据。
+
+```powershell
+cargo run -p zzz-engine --locked -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/screen-cases.json --fixture-root zzz-od-test --output artifacts/screens-report.json --directml 0 --warmup 5 --samples 30
+```
+
+## 新增红黄光帧
+
+用户在 `screens/战斗画面/` 补入 24 个 1920×1080 PNG，约 50.8 MiB。逐图查看并核对文件哈希：`红光A-出现前.png` 与 `红光A-出现1.png` 完全相同，画面中已有红光；保留两个来源文件，在案例清单的 `annotation.duplicate_files` 中登记，只用「出现1」作为独立案例，不把同一图片同时标为红光与无闪光。
+
+新增 `test/zzz_auto/fixtures/recognition/flash-sequence-cases.json`，含 23 个独立帧：红光 A / B 各 5 个出现帧，黄光 A 的 5 帧和 B 的 4 帧，以及四组的消失帧。出现帧由用户文件说明和逐图视觉核对标为红 / 黄，消失帧标为无闪光，保留战斗特效和残影。源图、模型、阈值均保持原样；人工期望不根据模型结果修改，`legacy_evidence` 全为 `none`。图片序号没有时间戳，不用于闪光响应时序或延迟验收。
+
+全部案例使用 `LegacyFlashRaw`、固定 `yolov8n-640-flash-20250921.onnx`、全帧 ROI 和原阈值 0.9；无闪光类别为 0，红 / 黄为 1 / 2，最高概率低于有效阈值时原结果为 -1。三个概率、候选、阈值后的类别及实际模型哈希写入报告。CPU / DirectML 正式结果及人工预期差异见[验收记录](../migration/acceptance.md#2026-年-10-月-15-日红黄光真实帧对照)。
+
+```powershell
+cargo run -p zzz-engine --locked -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/flash-sequence-cases.json --fixture-root zzz-od-test --output artifacts/flash-sequence-report.json --directml 0 --warmup 5 --samples 30
+```
+
+## 旧版实际输出与自动比较
+
+先完成闪光原始输出的同图对照。旧版采样工具放在独立测试仓，只读取固定参考提交和模型缓存，直接调用原 `Yolov8Classifier.run` 的预处理、推理及判定；记录原始三类概率时调用原后处理，不复制一份分类算法。Python 3.11.9 与参考 `uv.lock` 中的识别依赖安装在主仓忽略的 `sdk/legacy-baseline/`，与 Maa DLL 隔离进程；新程序、构建和日常 Rust 回归不依赖这个环境。
+
+采样前校验参考提交、实际导入源码、依赖版本、模型、图片及案例清单的哈希。CPU 和 DirectML 分进程顺序运行；保留首次调用、预热、正式样本、稳定性与提供程序配置。旧版结果与人工期望分别保存，四个人工标注差异不能因为新旧一致而消失。
+
+Rust `recognition-compare` 读取固定采样约定、旧输出和新输出，无需 Python 或加载 SDK。比较前校验案例清单、模型、源码和运行环境的登记信息，以及设备、完整案例集合、样本数量和结果稳定性；按案例容差比较全部概率、候选、命中与框。输入不匹配时拒绝比较，缺失或错误结果不能算相同。结论只覆盖本清单中的闪光输出，不自动提升为全部识别兼容或 M1 完成；性能和 OCR / YOLO 仍分别验收。
+
+在工程根目录执行以下命令。准备工具只安装固定清单里的识别依赖，已有缓存时可加 `-Offline`，不安装到系统 Python 或参考仓。采样工具仅支持 `LegacyFlashRaw` 和 CPU / DirectML(0)，直接读取已由 `setup-models.ps1` 校验的原模型缓存。旧版概率通过继承原分类器的 `process_output` 旁路记录，再调用原后处理；未改旧版预处理、推理或类别判定。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File zzz-od-test/test/zzz_auto/legacy/setup.ps1
+sdk/legacy-baseline/python/python.exe -B zzz-od-test/test/zzz_auto/legacy/export_flash.py --reference E:/Code/ZenlessZoneZero-OneDragon --fixture-root zzz-od-test --cases zzz-od-test/test/zzz_auto/fixtures/recognition/flash-sequence-cases.json --output artifacts/legacy-flash.json --directml
+cargo run -p zzz-engine --locked -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/flash-sequence-cases.json --fixture-root zzz-od-test --output artifacts/current-flash.json --directml 0
+cargo run -p zzz-engine --locked -- recognition-compare --cases zzz-od-test/test/zzz_auto/fixtures/recognition/flash-sequence-cases.json --fixture-root zzz-od-test --runtime-lock zzz-od-test/test/zzz_auto/legacy/runtime.lock.json --legacy artifacts/legacy-flash.json --current artifacts/current-flash.json --output artifacts/flash-comparison.json
+```
+
+旧版与新版采样顺序运行，避免跨进程 GPU 重叠。新报告增加 `case_manifest_sha256`，绑定包括参数和容差在内的整份案例清单；旧报告缺少此字段时须重跑，不能补写哈希冒充原始采样。比较入口输出每设备每案例的两份观察、概率最大绝对差、人工预期检查及错误。命令退出码只表示新旧输出比较；两版都有的人工标注失败仍保留为 `all_human_expectations_passed=false`，不会被改写为通过。采样时间含旧版完整 `run`，新报告保留 debug 各阶段时间，本轮不进行性能验收。
+
+## OCR 与 YOLO 旧版对照
+
+下一轮复用存档 OCR 和两种 YOLO 案例，单独固定扩展采样环境与采样器，保留上一轮闪光报告和采样约定。OCR 调用原 `OnnxOcrMatcher.run_ocr` / `match_words`，模型用原 `ONNXPaddleOcr` 加载固定缓存；YOLO 调用原检测器，迷失之地继续调用原头像遮罩。只调整采样器的模型位置，不修改参考仓或重写原识别算法。
+
+OCR 同时保存过滤前与过滤后结果，逐项比较文字、框和分数。原案例的「验证码」负例仅对固定字面文字使用原 `same_word=True`，不将 Maa 的正则 expected 宣称为旧 LCS 兼容。正式报告保留算法差异，不能放宽容差或修改人工期望来获得通过。YOLO 验证固定模型、标签文件、阈值、类别过滤、NMS 与遮罩后的最终输出；现有素材仍不替代空洞电视地图正例或同分 NMS 边界验收。
+
+扩展案例为 `ocr-yolo-cases.json`：取 `screen-cases.json` 的 8 个 OCR / 3 个 YOLO 案例，加上 `yolo-cases.json` 的 4 个适配案例，原图片、参数、人工期望及 2px / 0.01 容差不变。15 案包含重复图片与重复 ROI，不能算作 15 张独立图片。采样器 `export_recognition.py` 和 `recognition-runtime.lock.json` 单独固定，不改闪光原采样器和原采样约定。扩展依赖增加参考 `uv.lock` 中的 Pillow 12.3.0、Shapely 2.1.2 和 pyclipper 1.4.0，采样前后核对 57 个参考源码文件，实际导入未登记源码时拒绝保存。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File zzz-od-test/test/zzz_auto/legacy/setup.ps1 -LockFile zzz-od-test/test/zzz_auto/legacy/recognition-runtime.lock.json
+sdk/legacy-baseline/python/python.exe -B zzz-od-test/test/zzz_auto/legacy/export_recognition.py --reference E:/Code/ZenlessZoneZero-OneDragon --fixture-root zzz-od-test --cases zzz-od-test/test/zzz_auto/fixtures/recognition/ocr-yolo-cases.json --output artifacts/legacy-ocr-yolo.json --directml
+cargo run -p zzz-engine --release --locked -- --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/ocr-yolo-cases.json --fixture-root zzz-od-test --output artifacts/current-ocr-yolo-release.json --directml 0
+cargo run -p zzz-engine --release --locked -- recognition-compare --cases zzz-od-test/test/zzz_auto/fixtures/recognition/ocr-yolo-cases.json --fixture-root zzz-od-test --runtime-lock zzz-od-test/test/zzz_auto/legacy/recognition-runtime.lock.json --legacy artifacts/legacy-ocr-yolo.json --current artifacts/current-ocr-yolo-release.json --output artifacts/comparison-ocr-yolo.json
+```
+
+本轮正式结果为 30 项同设备比较中 24 项一致：YOLO 两设备各 7 / 7 项通过，OCR 各 5 / 8 项通过。标题与同 ROI 负例的框宽差 3px，超过原 2px 容差；「400」在旧版检测阶段没有文字框，新版能正确识别。负例过滤后两边都为空，过滤前的标题框差异仍使比较失败。旧版与新版的城市导航空洞误检相同，人工预期继续未通过。`recognition-check` 与 `recognition-compare` 均以退出码 1 保存完整报告，不能因有失败而丢弃报告。
+
+新报告增加 `build_profile`，本轮为 release。正式计时不含固定图片解码，但旧采样包含结果整理、裁 ROI 与 RGB 转换在计时外，新路径阶段定义不同；原始 YOLO 的 Rust CPU 会话固定单线程，旧版使用默认线程池，ORT 版本也不同。保留每例 30 个正式计时样本和 P50 / P95 作诊断，不能据此宣布达到 110% 性能目标。下一步先对齐测量范围并评估 CPU 线程策略，再补完整识别与动作链的性能；具体观察见[验收记录](../migration/acceptance.md#2026-年-10-月-15-日-ocr-yolo-旧版输出与-release-采样)。
+
+## 原始推理 CPU 线程与统一计时
+
+先用现有 7 个 YOLO 案例做控制变量实验，保持固定模型、图片、ROI、阈值及 NMS 不变。新旧计时统一从已解码的完整 1080p BGR 帧开始，包含颜色转换、遮罩、缩放、张量、推理、后处理与标准结果生成；固定图解码、模型加载、预热、稳定性比较、文件写出不进入正式样本。原生各阶段时间继续单列，新增加完整调用边界的样本，不能用旧报告的阶段 total 冒充统一计时。
+
+线程选择属于原始 ORT 会话，不改变 Maa OCR 或原生 Pipeline 的线程配置。离线诊断允许显式选择 CPU intra-op 线程数，0 表示 ORT 默认，1 表示之前的单线程；会话创建后不能修改，报告记录请求值。保持顺序执行、inter-op 单线程和关闭自旋；DirectML 保留原线程设置及 GPU 独占规则。根据同机 release 输出与 P95 选择默认值，再复验闪光、取消、会话复用与输入清理。
+
+旧版统一计时采样器与约定单独保存，不改此前采样器或存档。比较器仅在两份报告声明相同计时边界、新版为 release、样本完整稳定且输出一致时计算离线 P50 / P95 与 110% 目标；范围只限固定帧识别调用，不代替游戏截图、动作、IPC、停止或长期稳定性验收。
+
+`recognition-check --raw-cpu-threads 0..64` 仅配置原始闪光 / YOLO 的 CPU 会话，0 交给 ORT 选择线程数，省略时采用默认策略。它不是实际工作线程数量的测量值；DirectML 的 intra / inter 仍各为 1。报告的 `adaptation.threading` 记录每会话设置，创建后不能修改。`boundary_measurements_us` 和 `boundary_timing` 记录统一边界的正式样本与分位数，原 `measurements` / `timing` 保留其阶段含义。
+
+在没有其他本项目推理、构建或测试运行时，先编译，再顺序采样：
+
+```powershell
+cargo build -p zzz-engine --release --locked
+sdk/legacy-baseline/python/python.exe -B zzz-od-test/test/zzz_auto/legacy/benchmark_yolo.py --reference E:/Code/ZenlessZoneZero-OneDragon --fixture-root zzz-od-test --cases zzz-od-test/test/zzz_auto/fixtures/recognition/yolo-performance-cases.json --output artifacts/yolo-legacy-aligned.json --samples 60
+target/release/zzz-engine.exe --resources resources/generated/recognition recognition-check --cases zzz-od-test/test/zzz_auto/fixtures/recognition/yolo-performance-cases.json --fixture-root zzz-od-test --output artifacts/yolo-cpu-default.json --samples 60
+target/release/zzz-engine.exe recognition-compare --cases zzz-od-test/test/zzz_auto/fixtures/recognition/yolo-performance-cases.json --fixture-root zzz-od-test --runtime-lock zzz-od-test/test/zzz_auto/legacy/yolo-benchmark.lock.json --legacy artifacts/yolo-legacy-aligned.json --current artifacts/yolo-cpu-default.json --output artifacts/comparison-yolo-cpu.json
+```
+
+控制变量时，为同一 release 引擎的识别命令分别传 `--raw-cpu-threads 1`、`0`、`2`、`4`、`8`，各输出不同文件；不要同时运行。旧版使用原 `Yolov8Detector` 及迷失之地遮罩，新增 BGR→RGB 转换在计时内，模型初始化、解码与稳定性比较在计时外。新采样器通过原冻结约定验证环境和源码，并用 `yolo-benchmark.lock.json` 固定新增工具与辅助文件。
+
+比较器对统一计时要求双方至少预热 5 次、至少 30 个正式样本，并验证边界、release、样本数量和输出；不合条件时不将旧阶段计时当成可比性能。可比较时逐案给出 `performance`、P95 比例与 110% 结果，汇总为 `all_performance_targets_passed`。任何输出差异、错误、不稳定、缺失样本或超出目标均不能通过；旧版误检的人工预期失败仍单列。没有旧统一计时的历史报告继续只比较输出，性能状态为未提供。
+
+2026 年 10 月 15 日在本机完成五组 30 次正式样本实验，ORT 默认与固定 8 线程的 7 案均达到离线 P95 目标；默认改为 0，避免将本机核心数量写死为所有机器的设置。用默认入口再做每边 60 次正式样本确认，7 / 7 项输出及离线 P95 目标均通过。对照、确认、闪光复验及 SHA-256 索引存放在测试仓 `fixtures/recognition/yolo-threading-20261015/`，具体数据见[验收记录](../migration/acceptance.md#2026-年-10-月-15-日原始-yolo-cpu-线程与统一计时)。`legacy_performance_available=true` 只说明该比较报告具备本范围的同机旧计时，不表示全部 M1 性能通过。

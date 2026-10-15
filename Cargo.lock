@@ -2347,6 +2347,7 @@ name = "od-platform"
 version = "0.1.4"
 dependencies = [
  "anyhow",
+ "dunce",
  "od-core",
  "serde",
  "tokio",

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod host;
+mod session;
 
 use host::Host;
 use od_protocol::{ApiError, Command, DesktopUpdate, Payload};
@@ -50,6 +51,26 @@ async fn reconnect_engine(
 }
 
 #[tauri::command]
+async fn elevate_engine(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+) -> Result<(), ApiError> {
+    main_window(&window)?;
+    state.elevate(&app).await
+}
+
+#[tauri::command]
+async fn recover_inputs(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+) -> Result<String, ApiError> {
+    main_window(&window)?;
+    state.recover(&app).await
+}
+
+#[tauri::command]
 fn subscribe_engine(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, Host>,
@@ -69,6 +90,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             engine_request,
             reconnect_engine,
+            elevate_engine,
+            recover_inputs,
             subscribe_engine
         ])
         .on_window_event(|window, event| {
@@ -110,8 +133,16 @@ fn main() {
                     "quit" => {
                         let app = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            app.state::<Host>().shutdown().await;
-                            app.exit(0);
+                            match app.state::<Host>().shutdown().await {
+                                Ok(()) => app.exit(0),
+                                Err(error) => {
+                                    app.state::<Host>().report_error(error);
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.show();
+                                        let _ = window.set_focus();
+                                    }
+                                }
+                            }
                         });
                     }
                     _ => {}
@@ -132,15 +163,19 @@ fn main() {
                     eprintln!("{error}");
                 }
                 loop {
-                    let update = match handle.state::<Host>().request(Command::Snapshot).await {
+                    let (privilege, snapshot) = handle.state::<Host>().poll(&handle).await;
+                    let update = match snapshot {
                         Ok(Payload::Snapshot(snapshot)) => DesktopUpdate::Snapshot(snapshot),
                         Err(error) => DesktopUpdate::Offline(error),
                         _ => unreachable!(),
                     };
                     if let Ok(mut channel) = handle.state::<Host>().channel.lock()
-                        && channel
-                            .as_ref()
-                            .is_some_and(|channel| channel.send(update).is_err())
+                        && channel.as_ref().is_some_and(|channel| {
+                            if let Some(privilege) = privilege {
+                                let _ = channel.send(DesktopUpdate::Privilege(privilege));
+                            }
+                            channel.send(update).is_err()
+                        })
                     {
                         channel.take();
                     }
@@ -153,7 +188,7 @@ fn main() {
         .expect("Tauri 桌面初始化失败");
     app.run(|app, event| {
         if let tauri::RunEvent::Exit = event {
-            tauri::async_runtime::block_on(app.state::<Host>().shutdown());
+            let _ = tauri::async_runtime::block_on(app.state::<Host>().shutdown());
         }
     });
 }

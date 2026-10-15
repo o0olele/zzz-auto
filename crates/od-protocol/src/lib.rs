@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v5 使用显式输入动作，增加鼠标、摇杆与扳机；桌面与引擎必须成套使用。
-pub const PROTOCOL_VERSION: u32 = 5;
+// v6 增加桌面持有管道的托管配对和引擎权限状态；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 6;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -17,6 +17,20 @@ pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 pub struct Handshake {
     pub version: u32,
     pub token: String,
+}
+
+// 回连入口的应答包含一次性密钥，不实现 Debug 或发往前端。
+#[derive(Serialize, Deserialize)]
+pub struct EngineGreeting {
+    pub version: u32,
+    pub token: String,
+    pub engine_integrity: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct EnginePrivilege {
+    pub engine_integrity: u32,
+    pub desktop_integrity: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -108,6 +122,7 @@ pub struct Response {
 pub enum DesktopUpdate {
     Snapshot(Box<Snapshot>),
     Offline(ApiError),
+    Privilege(EnginePrivilege),
 }
 
 impl Response {

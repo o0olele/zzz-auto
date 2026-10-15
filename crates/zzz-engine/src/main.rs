@@ -129,6 +129,19 @@ enum Action {
         #[arg(long)]
         parent_pid: u32,
     },
+    ServeClient {
+        #[arg(long)]
+        pipe: String,
+        #[arg(long)]
+        parent_pid: u32,
+    },
+    // 内部恢复入口：只接受已配对桌面的释放计划，不初始化 SDK。
+    RecoverInput {
+        #[arg(long)]
+        pipe: String,
+        #[arg(long)]
+        parent_pid: u32,
+    },
     Probe {
         #[arg(long)]
         fixture: PathBuf,
@@ -262,6 +275,12 @@ async fn main() -> Result<()> {
             );
             let engine = Engine::new(paths)?;
             return zzz_engine::transport::serve_managed(engine, &pipe, token, parent_pid).await;
+        }
+        Action::ServeClient { pipe, parent_pid } => {
+            return zzz_engine::transport::serve_connected(paths, &pipe, parent_pid).await;
+        }
+        Action::RecoverInput { pipe, parent_pid } => {
+            return zzz_engine::transport::recover_connected(&pipe, parent_pid).await;
         }
         _ => {}
     }

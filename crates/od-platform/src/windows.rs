@@ -25,7 +25,7 @@ use windows_sys::Win32::{
     },
 };
 
-pub struct OwnedHandle(HANDLE);
+pub struct OwnedHandle(pub(crate) HANDLE);
 
 // HANDLE 的所有权可以移动到原生工作线程，访问仍保持串行。
 unsafe impl Send for OwnedHandle {}
@@ -42,7 +42,7 @@ fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(Some(0)).collect()
 }
 
-fn checked_handle(handle: HANDLE) -> Result<OwnedHandle> {
+pub(crate) fn checked_handle(handle: HANDLE) -> Result<OwnedHandle> {
     ensure!(!handle.is_null(), "{}", std::io::Error::last_os_error());
     Ok(OwnedHandle(handle))
 }
@@ -299,7 +299,7 @@ pub fn check_keyboard_target(window: &WindowInfo, foreground: bool) -> Result<()
         keyboard_permission(current.pid).context("无法确认键鼠权限，请检查游戏与工具的运行权限")?;
     ensure!(
         permission.compatible,
-        "游戏权限高于引擎，Windows 会限制键鼠输入。请从托盘退出工具，再以管理员身份启动工具；启动器正常启动不代表游戏没有管理员权限"
+        "游戏权限高于引擎，Windows 会限制键鼠输入。请先停止任务，再在总览点击“提升引擎权限”，授权后重新连接游戏"
     );
     if foreground {
         let mut foreground_pid = 0;

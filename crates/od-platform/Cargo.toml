@@ -13,3 +13,4 @@ tokio.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+dunce = "=1.0.5"

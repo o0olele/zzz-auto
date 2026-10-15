@@ -21,4 +21,5 @@ export type Request = { version: number, id: string, command: Command, };
 export type Payload = { "type": "snapshot", "data": Snapshot } | { "type": "applications", "data": Array<AppDefinition> } | { "type": "windows", "data": Array<WindowInfo> } | { "type": "screenshot", "data": Screenshot } | { "type": "run", "data": RunRecord } | { "type": "events", "data": Array<RunEvent> } | { "type": "ack" };
 export type ApiError = { code: string, message: string, details: string | null, };
 export type Response = { version: number, id: string, result: Payload | null, error: ApiError | null, };
-export type DesktopUpdate = { "type": "snapshot", "data": Snapshot } | { "type": "offline", "data": ApiError };
+export type DesktopUpdate = { "type": "snapshot", "data": Snapshot } | { "type": "offline", "data": ApiError } | { "type": "privilege", "data": EnginePrivilege };
+export type EnginePrivilege = { engine_integrity: number, desktop_integrity: number, };

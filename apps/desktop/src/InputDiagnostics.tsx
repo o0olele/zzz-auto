@@ -64,7 +64,7 @@ export function InputDiagnostics({ snapshot, connected, busy, onStart, onStop }:
   return <Card className="input-diagnostics">
     <div className="card-title"><h2>真实输入诊断</h2><Badge appearance="outline">单次输入与释放</Badge></div>
     <p>选择输入方式和动作，持有后自动释放。鼠标被游戏锁定时，可先按 Win 或 Alt+Tab 回到工具；启动诊断后，在延时期间切回游戏。Xbox / DS4 需要 ViGEmBus 驱动。</p>
-    {!gamepad && snapshot?.window?.keyboard_permission?.compatible === false && <MessageBar intent="warning"><MessageBarBody>检测到游戏权限高于引擎，Windows 会限制键鼠输入。请从托盘退出工具，再以管理员身份启动工具后重新连接。</MessageBarBody></MessageBar>}
+    {!gamepad && snapshot?.window?.keyboard_permission?.compatible === false && <MessageBar intent="warning"><MessageBarBody>检测到游戏权限高于引擎，Windows 会限制键鼠输入。请先停止任务，再到总览点击“提升引擎权限”，授权后重新连接游戏。</MessageBarBody></MessageBar>}
     <div className="input-fields">
       <Field label="输入方式"><Select value={mode} disabled={disabled} onChange={(_, data) => { const next = data.value as InputMode; setMode(next); setKind('key'); setKey(next === 'xbox' || next === 'ds4' ? '1' : '87'); setConfirmed(false); }}>{Object.entries(modes).map(([option, label]) => <option key={option} value={option}>{label}</option>)}</Select></Field>
       <Field label="输入动作"><Select value={kind} disabled={disabled} onChange={(_, data) => selectAction(data.value as ActionType)}><option value="key">{gamepad ? '数字按键' : '键盘按键'}</option>{gamepad ? <><option value="stick">摇杆</option><option value="trigger">扳机</option></> : <option value="mouse_button">鼠标按键</option>}</Select></Field>

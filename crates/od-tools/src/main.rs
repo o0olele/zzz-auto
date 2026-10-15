@@ -98,6 +98,7 @@ fn main() -> Result<()> {
                 od_protocol::ApiError::decl(),
                 od_protocol::Response::decl(),
                 od_protocol::DesktopUpdate::decl(),
+                od_protocol::EnginePrivilege::decl(),
             ];
             std::fs::create_dir_all(
                 output

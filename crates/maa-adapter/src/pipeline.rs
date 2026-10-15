@@ -1,7 +1,7 @@
-use crate::{NativeSession, SDK_VERSION};
+use crate::{InputPipelineConfig, InputPipelineResult, NativeSession, SDK_VERSION};
 use anyhow::{Result, ensure};
 use maa_framework::{MaaStatus, job::Job};
-use serde::Serialize;
+pub use od_core::{PipelineEnd, PipelineProbeResult};
 use std::{
     collections::BTreeSet,
     sync::{
@@ -18,30 +18,10 @@ pub struct PipelineInputPlan {
     pub contacts: BTreeSet<i32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PipelineEnd {
-    Succeeded,
-    Failed,
-    Cancelled,
-    TimedOut,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PipelineProbeResult {
-    pub sdk_version: String,
-    pub entry: String,
-    pub end: PipelineEnd,
-    pub native_status: String,
-    pub stop_status: Option<String>,
-    pub enqueue_us: u64,
-    pub elapsed_ms: u64,
-    pub release_ms: u64,
-    pub stop_ms: Option<u64>,
-}
+pub const INPUT_PIPELINE_ENTRY: &str = "Prototype.Input.Down";
 
 impl NativeSession {
-    // 仅供固定图与可反应模拟控制器验证。游戏入口待业务资源和输入清单验收后接入。
+    // 任意入口只供离线验证；游戏仅开放由受限配置生成的诊断流程。
     pub fn probe_fixture_pipeline(
         &mut self,
         entry: &str,
@@ -79,6 +59,17 @@ impl NativeSession {
         cancel: Arc<AtomicBool>,
         timeout: Duration,
     ) -> Result<PipelineProbeResult> {
+        self.run_pipeline_override(entry, inputs, cancel, timeout, "{}")
+    }
+
+    fn run_pipeline_override(
+        &mut self,
+        entry: &str,
+        inputs: &PipelineInputPlan,
+        cancel: Arc<AtomicBool>,
+        timeout: Duration,
+        pipeline: &str,
+    ) -> Result<PipelineProbeResult> {
         ensure!(!entry.is_empty(), "Pipeline 入口不能为空");
         ensure!(!timeout.is_zero(), "Pipeline 超时必须大于零");
         ensure!(
@@ -108,6 +99,7 @@ impl NativeSession {
             elapsed_ms: 0,
             release_ms: 0,
             stop_ms: None,
+            released: false,
         };
         let execution = (|| -> Result<()> {
             if cancel.load(Ordering::Acquire) {
@@ -121,7 +113,7 @@ impl NativeSession {
             self.input_cleanup_pending = true;
             self.pipeline_controller_pending = true;
             let enqueue_at = Instant::now();
-            let job = self.tasker.post_task(entry, "{}")?;
+            let job = self.tasker.post_task(entry, pipeline)?;
             report.enqueue_us = enqueue_at.elapsed().as_micros() as u64;
             ensure!(job.id > 0, "Maa 拒绝 Pipeline 启动请求");
             loop {
@@ -184,6 +176,96 @@ impl NativeSession {
             errors.insert(0, format!("Maa Pipeline 失败：{}", report.native_status));
         }
         ensure!(errors.is_empty(), "{}", errors.join("；"));
+        report.released = true;
         Ok(report)
     }
+
+    pub fn input_pipeline(
+        &mut self,
+        config: InputPipelineConfig,
+        cancel: Arc<AtomicBool>,
+    ) -> Result<InputPipelineResult> {
+        config.validate().map_err(anyhow::Error::msg)?;
+        ensure!(
+            self.input_mode == Some(config.input.mode),
+            "输入模式与当前控制器不匹配"
+        );
+        ensure!(
+            !self.tasker.running(),
+            "Maa Tasker 仍在运行，不能启动输入 Pipeline"
+        );
+        if self.input_cleanup_pending
+            || !self.held_keys.is_empty()
+            || !self.held_contacts.is_empty()
+        {
+            self.release_inputs()?;
+        }
+        let mut stopped_at = None;
+        crate::input::wait_delay(
+            Duration::from_millis(config.input.start_delay_ms.into()),
+            &cancel,
+            &mut stopped_at,
+        );
+        if !cancel.load(Ordering::Acquire) {
+            self.prepare_input_target(config.input, &cancel, &mut stopped_at)?;
+        }
+        let (pipeline, inputs) = input_pipeline_definition(config)?;
+        let mut report = self.run_pipeline_override(
+            INPUT_PIPELINE_ENTRY,
+            &inputs,
+            cancel,
+            Duration::from_millis(config.timeout_ms.into()),
+            &pipeline,
+        )?;
+        // 启动延时 / 截图期间观察到的取消也保留；计时不包含控制器重建。
+        if let Some(at) = stopped_at {
+            report.stop_ms = Some(at.elapsed().as_millis() as u64);
+        }
+        Ok(InputPipelineResult {
+            config,
+            pipeline: report,
+        })
+    }
+}
+
+fn input_pipeline_definition(config: InputPipelineConfig) -> Result<(String, PipelineInputPlan)> {
+    use od_core::InputProbeAction;
+    use serde_json::json;
+    config.validate().map_err(anyhow::Error::msg)?;
+    let mut inputs = PipelineInputPlan::default();
+    let (mut down, mut up) = match config.input.action {
+        InputProbeAction::Key { key } => {
+            inputs.keys.insert(key);
+            (
+                json!({"action":"KeyDown", "key":key, "auto_up":true}),
+                json!({"action":"KeyUp", "key":key}),
+            )
+        }
+        action => {
+            let (contact, x, y, _) = crate::input::touch_args(action).expect("鼠标动作有通道");
+            inputs.contacts.insert(contact);
+            (
+                json!({"action":"TouchDown", "contact":contact, "target":[x,y], "pressure":0, "auto_up":true}),
+                json!({"action":"TouchUp", "contact":contact}),
+            )
+        }
+    };
+    let base = json!({"recognition":"DirectHit", "pre_delay":0, "post_delay":0, "rate_limit":0, "repeat":1, "repeat_delay":0, "enabled":true, "inverse":false, "on_error":[], "next":[]});
+    for node in [&mut down, &mut up] {
+        for (key, value) in base.as_object().expect("对象") {
+            node[key] = value.clone();
+        }
+    }
+    down["next"] = json!(["Prototype.Input.Hold"]);
+    up["pre_delay"] = json!(config.input.hold_ms % 25);
+    let mut hold = base;
+    hold["action"] = json!("DoNothing");
+    hold["repeat"] = json!(config.input.hold_ms / 25 + 1);
+    hold["repeat_delay"] = json!(25);
+    hold["next"] = json!(["Prototype.Input.Up"]);
+    Ok((
+        json!({INPUT_PIPELINE_ENTRY:down, "Prototype.Input.Hold":hold, "Prototype.Input.Up":up})
+            .to_string(),
+        inputs,
+    ))
 }

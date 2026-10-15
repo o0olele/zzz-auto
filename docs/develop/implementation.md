@@ -46,13 +46,21 @@ M0 清单与现有基线已按路线图关闭，当前推进 M1 的可运行工�
 
 Xbox / DS4 不创建新手柄冒充旧设备复位。确认拥有进程已退出后，根据 [ViGEmClient 的设备移除契约](https://github.com/nefarius/ViGEmClient/blob/master/include/ViGEm/Client.h)由驱动移除该进程拥有的虚拟设备，界面要求人工确认游戏状态。该契约与键鼠 API 投递成功都不能代替游戏消费、真实驱动卸载和高权限路径的实机验证。恢复失败时提示停止使用、按下并松开对应键鼠、关闭游戏并检查虚拟设备，必要时重启 Windows；损坏记录须在确认旧引擎已退出、游戏已关闭且输入已人工恢复后，备份并移走数据目录中的记录再重启桌面，禁止在输入状态不明时直接删记录。
 
-后台路由依据固定 SDK 的 [MessageInput](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaWin32ControlUnit/Input/MessageInput.cpp)；Win32 投递限制见 [SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput) 和 [SendMessageTimeoutW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw)。恢复结果要求用户先检查游戏，再手动重连并重新勾选输入确认；不会恢复之前的任务。当前独立恢复覆盖桌面托管输入探针，CLI 不受桌面监督，游戏带输入 Pipeline 尚未开放，后续必须先登记全部可能输入再接入恢复计划。
+后台路由依据固定 SDK 的 [MessageInput](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaWin32ControlUnit/Input/MessageInput.cpp)；Win32 投递限制见 [SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput) 和 [SendMessageTimeoutW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw)。恢复结果要求用户先检查游戏，再手动重连并重新勾选输入确认；不会恢复之前的任务。当前独立恢复覆盖桌面托管输入探针与受控输入 Pipeline，复用同一份单次动作计划及匹配运行的显式释放证明。CLI 不受桌面监督；未来业务 Pipeline 必须先登记全部可能输入再接入恢复计划。
 
 独立测试仓的 `input_recovery.rs` / `input_window.rs` 使用隐藏测试窗口、真正的进程退出和独立恢复可执行进程，覆盖发送前落盘、应答丢失、明确释放证明、存活进程拒绝、PID 复用、窗口挂起、控制权冲突、全部鼠标按键、扩展键、弹窗及 PostMessage 队列顺序。模拟按下消息仅发往测试自身窗口，不向游戏或系统输入流按下任何键；前台包检查只构造事件而不调用 SendInput。另有桌面界面回归覆盖取消恢复、失败保持拦截、手动重连及确认重置。
 
 ```powershell
 cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --locked --test input_recovery -- --test-threads=1
 ```
+
+## M1 实机带输入 Pipeline
+
+桌面在原有输入诊断中增加 Maa Pipeline 执行方式；协议 v7 的 `StartInputPipeline` 只接收受限配置和输入确认，不接收任意 JSON 或入口。固定三节点图由 Rust 生成并通过 Tasker 的单次参数覆盖提交，数字键及鼠标动作、25ms 等待拆分、计时范围和实机步骤见[输入 Pipeline 说明](input-pipeline.md)。它与直接输入共用唯一工作线程、运行槽、控制器切换、目标检查及独立崩溃恢复。摇杆和扳机继续使用直接输入，不把可能被 Pipeline 坐标规则转换的模拟量当作已支持。
+
+`RunRecord.input_pipeline` 单独保存结构化结果，避免把 Tasker 总耗时当作直接输入的按下完成或实际持有时长；旧运行记录缺少此字段时仍能读取。Pipeline 成功、失败、主动停止和超时分别保留，只有明确释放后才能写入结果或清除桌面恢复记录。旧的离线任意入口仍拒绝游戏控制器；游戏诊断入口只运行固定图。正常 SDK 自动抬起以外，始终等待队列后显式释放全部声明输入，失败时阻止后续任务。
+
+独立测试仓的 `pipeline_stop.rs` 对六种输入方式和全部鼠标键使用真实 Tasker 与可记录控制器；`input_recovery.rs` 另以真实引擎、管道、GDI 截图和 Win32 控制器，在屏幕外、不激活的专用测试窗口上验证 SendMessage / PostMessage 的完成、停止、超时、运行结果落盘和恢复证明。该窗口需要设置可见标志以通过 SDK 连接检查，但位置在屏幕外，输入只以后台消息发给它。测试不会操作真实游戏或向全局流发送按下，不能替代游戏及高权限实机验收。
 
 ## M1 输入诊断
 

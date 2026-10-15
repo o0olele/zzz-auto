@@ -609,3 +609,18 @@ Windows 参数通过 Unicode API 直接传递并验证引号、反斜杠、空�
 原始日志为主仓 `artifacts/validation-input-recovery-20261015.log`、`validation-input-recovery-final-20261015.log` 与 `validation-input-recovery-frontend-final-20261015.log`；摘要、源码及构建产物哈希索引、界面截图另存测试仓 `test/zzz_auto/fixtures/input-recovery/`。旧 OCR、Pipeline 和提权采样档案保持原始字节。
 
 **仍未实机验收**：真实游戏对前台 / Legacy / 后台释放消息的消费、普通桌面与管理员恢复进程的 UAC 和跨权限输入、ViGEm 在拥有进程崩溃后的设备移除及游戏端反应。手柄恢复测试只证明独立进程检查拥有进程已退出、没有创建新控制器；驱动行为依据官方契约，不记为真实卸载验收通过。CLI 尚无桌面监督，游戏带输入 Pipeline 和业务暂停 / 恢复尚未接入该计划。M1 保持进行中；提权与崩溃恢复合并提交，配套测试提交为 `zzz-od-test de3de68f6997167ed156cf55cb8bb6126cb2f9b3`，尚未推送，也未更新便携包。固定验证档案中的提交状态保留采样时的快照。
+
+## 2026 年 10 月 15 日实机带输入 Pipeline 入口
+
+已开放桌面原生诊断中的 Maa Pipeline 执行方式，协议升为 v7。只运行 Rust 生成的三节点单次按下、短等待、释放流程，不接收任意 JSON 或入口；支持六种方式的数字键及键鼠方式的五种鼠标按键，摇杆与扳机继续使用直接输入。Pipeline 与直接探针共用目标检查、唯一控制器 / 运行槽、输入确认和发送前落盘的崩溃恢复计划。结构化结果单独记录结束原因与释放证明，旧运行记录仍可读取；取消或超时后，即使原生状态为 Succeeded，也保留正确运行终态。
+
+验证结果：
+
+- 全量脚本以退出码 0 完成格式、类型生成、引擎构建、严格 workspace Clippy 和全部 139 项 Rust 回归。最终强化等待 / 坐标验证并修正准备阶段的取消优先级后，另复验 7 项输入动作测试、3 项 Pipeline 恢复测试和 4 项固定图测试，全部通过；独立测试全部目标的严格 Clippy、桌面 debug 构建、前端生产构建与 8 项前端回归通过。
+- 真实 Maa Tasker 对六种输入方式与全部鼠标按键完成固定图，确认只按下一次、客户区坐标不变，释放及 inactive 完成；补验 1 / 24 / 25 / 26 / 51ms 等待边界、200ms 阻塞按下期间停止、超时、预取消、释放失败重试、模拟量拒绝、超时参数和输入确认。截图准备中取消时未投递按下，也不会再因前台或截图尺寸检查误报失败。
+- 真实托管引擎经过管道、Maa Tasker、GDI 截图与 Win32 控制器，向屏幕外且不激活的专用窗口发送后台消息，分别验证 SendMessage / PostMessage 的正常完成、持有期间停止和超时，共 6 个端到端诊断场景。确认运行中拒绝另一任务、运行结果落盘、最后收到抬起消息且恢复记录仅在释放证明后清除。该窗口需设置可见标志以通过 SDK 连接检查；没有向真实游戏或全局输入流发送按下。
+- Pipeline 发送请求前的恢复登记、应答前进程退出、缺少释放证明、失败 / 超时但明确释放、独立恢复和不重放均有回归。前端验证切换执行方式或修改超时后重新确认、运行中禁止编辑、停止等待收尾、超时独立显示、模拟量选项边界及不自动重跑；已检查模拟截图。
+
+主仓日志为 `artifacts/validation-game-input-pipeline-20261015.log`、`validation-game-input-pipeline-frontend-20261015.log`、`validation-game-input-pipeline-preparation-final-20261015.log`、`validation-game-input-pipeline-recovery-final-20261015.log` 和 `validation-game-input-pipeline-hold-final-20261015.log`。测试仓 `test/zzz_auto/fixtures/game-input-pipeline/` 保存摘要、最终 6 个原生窗口诊断观察、界面截图及输入哈希索引；旧验证档案不回写。单次 debug 观察没有正式预热或同类统计，不能作为完整 IPC / 真实游戏停止 P95 的 250ms 验收结论。
+
+实机入口与操作步骤见[输入 Pipeline 说明](../develop/input-pipeline.md)。**待实机确认**：游戏对键鼠 / Xbox / DS4 数字键的实际响应、前后台组合、停止后的残留、真实 UAC 与管理员游戏、ViGEm 崩溃卸载及长时间稳定性。已有后台键盘未响应的反馈仍有效，隔离窗口成功不改变该兼容结论。M1 保持进行中，邮件领奖等业务 Pipeline、暂停 / 恢复及 CLI 输入监督仍未实现；本轮配套测试提交为 `zzz-od-test bd716575d9e7583564118ca0bbf2a58eb59e5e8d`，实现与测试配对提交，尚未推送，也未更新便携包。固定验证档案中的提交状态保留采样时的快照。

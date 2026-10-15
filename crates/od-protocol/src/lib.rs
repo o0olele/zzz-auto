@@ -1,14 +1,14 @@
 use od_core::{
-    AppDefinition, CaptureMethod, InputProbeConfig, RunEvent, RunRecord, Screenshot, Snapshot,
-    WindowInfo,
+    AppDefinition, CaptureMethod, InputPipelineConfig, InputProbeConfig, RunEvent, RunRecord,
+    Screenshot, Snapshot, WindowInfo,
 };
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v6 增加桌面持有管道的托管配对和引擎权限状态；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 6;
+// v7 增加受控输入 Pipeline 命令及独立结果；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 7;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -55,6 +55,11 @@ pub enum Command {
     StartProbe,
     StartInputProbe {
         config: InputProbeConfig,
+        #[serde(default)]
+        allow_input: bool,
+    },
+    StartInputPipeline {
+        config: InputPipelineConfig,
         #[serde(default)]
         allow_input: bool,
     },

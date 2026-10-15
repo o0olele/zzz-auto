@@ -11,8 +11,11 @@ pub mod yolo;
 pub use inference::{GpuLease, RecognitionImage, RecognitionMeasurement, RecognitionTiming};
 pub use maa_framework::common::ControllerFeature;
 pub use maa_framework::custom_controller::CustomControllerCallback;
-pub use od_core::{CaptureMethod, InputMode, InputProbeAction, InputProbeConfig, InputProbeResult};
-pub use pipeline::{PipelineEnd, PipelineInputPlan, PipelineProbeResult};
+pub use od_core::{
+    CaptureMethod, InputMode, InputPipelineConfig, InputPipelineResult, InputProbeAction,
+    InputProbeConfig, InputProbeResult, PipelineEnd, PipelineProbeResult,
+};
+pub use pipeline::{INPUT_PIPELINE_ENTRY, PipelineInputPlan};
 pub use raw_control::{
     RawRecognitionCancelled, RawRecognitionControl, RawRecognitionPhase, RawRecognitionStatus,
 };

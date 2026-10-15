@@ -56,6 +56,8 @@ pub struct RunRecord {
     pub message: String,
     #[serde(default)]
     pub input_probe: Option<InputProbeResult>,
+    #[serde(default)]
+    pub input_pipeline: Option<Box<InputPipelineResult>>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -216,6 +218,62 @@ pub struct InputProbeResult {
     pub elapsed_ms: u64,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct InputPipelineConfig {
+    pub input: InputProbeConfig,
+    pub timeout_ms: u32,
+}
+
+impl InputPipelineConfig {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        self.input.validate()?;
+        if !matches!(
+            self.input.action,
+            InputProbeAction::Key { .. } | InputProbeAction::MouseButton { .. }
+        ) {
+            return Err("Pipeline 仅开放数字按键和鼠标，摇杆与扳机请使用直接输入诊断");
+        }
+        if !(1..=10_000).contains(&self.timeout_ms) {
+            return Err("Pipeline 超时须为 1..10000ms（不含启动延时与准备）");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineEnd {
+    Succeeded,
+    Failed,
+    Cancelled,
+    TimedOut,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct PipelineProbeResult {
+    pub sdk_version: String,
+    pub entry: String,
+    pub end: PipelineEnd,
+    pub native_status: String,
+    pub stop_status: Option<String>,
+    #[ts(type = "number")]
+    pub enqueue_us: u64,
+    #[ts(type = "number")]
+    pub elapsed_ms: u64,
+    #[ts(type = "number")]
+    pub release_ms: u64,
+    #[ts(type = "number | null")]
+    pub stop_ms: Option<u64>,
+    pub released: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct InputPipelineResult {
+    pub config: InputPipelineConfig,
+    pub pipeline: PipelineProbeResult,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct RunEvent {
     #[ts(type = "number")]
@@ -255,6 +313,7 @@ impl RunSlot {
             finished_at: None,
             message: "任务已启动".into(),
             input_probe: None,
+            input_pipeline: None,
         };
         self.current = Some(run.clone());
         Ok(run)
@@ -319,6 +378,26 @@ impl RunSlot {
         )?;
         let run = self.current.as_mut().ok_or("当前没有任务")?;
         run.input_probe = Some(result);
+        Ok(run.clone())
+    }
+
+    pub fn finish_input_pipeline(
+        &mut self,
+        id: Uuid,
+        result: InputPipelineResult,
+    ) -> Result<RunRecord, &'static str> {
+        if !result.pipeline.released {
+            return Err("输入尚未确认释放，不能完成 Pipeline 诊断");
+        }
+        let (state, message) = match result.pipeline.end {
+            PipelineEnd::Succeeded => (RunState::Succeeded, "输入 Pipeline 完成，输入已释放"),
+            PipelineEnd::Cancelled => (RunState::Stopped, "输入 Pipeline 已停止，输入已释放"),
+            PipelineEnd::TimedOut => (RunState::Failed, "输入 Pipeline 超时，输入已释放"),
+            PipelineEnd::Failed => (RunState::Failed, "输入 Pipeline 失败，输入已释放"),
+        };
+        self.finish(id, state, message.into())?;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        run.input_pipeline = Some(Box::new(result));
         Ok(run.clone())
     }
 }

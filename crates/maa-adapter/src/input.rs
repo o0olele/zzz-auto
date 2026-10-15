@@ -17,7 +17,11 @@ fn observe_cancel(cancel: &AtomicBool, stopped_at: &mut Option<Instant>) -> bool
     stopped_at.is_some()
 }
 
-fn wait_delay(duration: Duration, cancel: &AtomicBool, stopped_at: &mut Option<Instant>) {
+pub(crate) fn wait_delay(
+    duration: Duration,
+    cancel: &AtomicBool,
+    stopped_at: &mut Option<Instant>,
+) {
     let until = Instant::now() + duration;
     while !observe_cancel(cancel, stopped_at) {
         let left = until.saturating_duration_since(Instant::now());
@@ -28,7 +32,7 @@ fn wait_delay(duration: Duration, cancel: &AtomicBool, stopped_at: &mut Option<I
     }
 }
 
-fn touch_args(action: InputProbeAction) -> Option<(i32, i32, i32, i32)> {
+pub(crate) fn touch_args(action: InputProbeAction) -> Option<(i32, i32, i32, i32)> {
     match action {
         InputProbeAction::Key { .. } => None,
         InputProbeAction::MouseButton { button, x, y } => Some((
@@ -53,6 +57,57 @@ fn touch_args(action: InputProbeAction) -> Option<(i32, i32, i32, i32)> {
 }
 
 impl NativeSession {
+    pub(crate) fn prepare_input_target(
+        &self,
+        config: InputProbeConfig,
+        cancel: &AtomicBool,
+        stopped_at: &mut Option<Instant>,
+    ) -> Result<()> {
+        if observe_cancel(cancel, stopped_at) {
+            return Ok(());
+        }
+        if matches!(config.action, InputProbeAction::MouseButton { .. }) {
+            // Maa 首次触摸会初始化坐标缩放；失败时可能使用 (0, 0)。
+            // 先确认真实尺寸并初始化缓存，不能让截图失败变成错误位置的点击。
+            let id = self.controller.post_screencap()?;
+            let status = self.wait_input_job(id, cancel, stopped_at)?;
+            // 截图期间点击停止常伴随切回工具；取消后不再要求游戏仍在前台。
+            if observe_cancel(cancel, stopped_at) {
+                return Ok(());
+            }
+            ensure!(status.is_success(), "鼠标输入前截图失败，未发送输入");
+            let image = self.controller.cached_image()?;
+            ensure!(
+                image.width() == od_core::BASE_WIDTH && image.height() == od_core::BASE_HEIGHT,
+                "鼠标输入前截图须为 1920×1080，未发送输入"
+            );
+        }
+        if observe_cancel(cancel, stopped_at) {
+            return Ok(());
+        }
+        if let Some(window) = &self.game_window
+            && config.mode.is_gamepad()
+        {
+            let current = od_platform::parse_game_window(&window.hwnd)?;
+            ensure!(
+                current.pid == window.pid && current.width == 1920 && current.height == 1080,
+                "游戏窗口身份或尺寸已变化，请重新连接"
+            );
+        }
+        if let Some(window) = &self.game_window
+            && !config.mode.is_gamepad()
+        {
+            od_platform::check_keyboard_target(
+                window,
+                matches!(
+                    config.mode,
+                    crate::InputMode::Foreground | crate::InputMode::ForegroundLegacy
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
     fn cleanup_job(
         &mut self,
         post: impl Fn(&crate::fixture::NativeController) -> Result<i64>,
@@ -180,41 +235,7 @@ impl NativeSession {
             if observe_cancel(&cancel, &mut stopped_at) {
                 return Ok(());
             }
-            if matches!(config.action, InputProbeAction::MouseButton { .. }) {
-                // Maa 首次触摸会初始化坐标缩放；失败时可能使用 (0, 0)。
-                // 先确认真实尺寸并初始化缓存，不能让截图失败变成错误位置的点击。
-                let id = self.controller.post_screencap()?;
-                ensure!(
-                    self.wait_input_job(id, &cancel, &mut stopped_at)?
-                        .is_success(),
-                    "鼠标输入前截图失败，未发送输入"
-                );
-                let image = self.controller.cached_image()?;
-                ensure!(
-                    image.width() == od_core::BASE_WIDTH && image.height() == od_core::BASE_HEIGHT,
-                    "鼠标输入前截图须为 1920×1080，未发送输入"
-                );
-            }
-            if let Some(window) = &self.game_window
-                && config.mode.is_gamepad()
-            {
-                let current = od_platform::parse_game_window(&window.hwnd)?;
-                ensure!(
-                    current.pid == window.pid && current.width == 1920 && current.height == 1080,
-                    "游戏窗口身份或尺寸已变化，请重新连接"
-                );
-            }
-            if let Some(window) = &self.game_window
-                && !config.mode.is_gamepad()
-            {
-                od_platform::check_keyboard_target(
-                    window,
-                    matches!(
-                        config.mode,
-                        crate::InputMode::Foreground | crate::InputMode::ForegroundLegacy
-                    ),
-                )?;
-            }
+            self.prepare_input_target(config, &cancel, &mut stopped_at)?;
             // 权限与前台检查可能耗时；检查期间停止也不能再投递按下。
             if observe_cancel(&cancel, &mut stopped_at) {
                 return Ok(());

@@ -79,11 +79,17 @@ enum Work {
     InputProbe {
         id: Uuid,
         config: InputProbeConfig,
+        pipeline_timeout: Option<u32>,
         window: WindowInfo,
         capture: CaptureMethod,
         cancel: Arc<AtomicBool>,
     },
     Shutdown(oneshot::Sender<()>),
+}
+
+enum InputOutcome {
+    Direct(od_core::InputProbeResult),
+    Pipeline(od_core::InputPipelineResult),
 }
 
 #[derive(Clone)]
@@ -223,60 +229,11 @@ impl Engine {
             Command::StartInputProbe {
                 config,
                 allow_input,
-            } => {
-                if !allow_input {
-                    return Err(ApiError::new(
-                        "input_not_confirmed",
-                        "输入诊断会操作游戏，请先确认允许真实输入",
-                    ));
-                }
-                config
-                    .validate()
-                    .map_err(|e| ApiError::new("invalid_input", e))?;
-                let mut state = self.state.lock().expect("运行状态锁失效");
-                if !state.sdk.ready {
-                    return Err(ApiError::new("sdk_not_ready", state.sdk.message.clone()));
-                }
-                let window = state
-                    .window
-                    .clone()
-                    .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
-                if state.native_pending {
-                    return Err(ApiError::new("busy", "截图或连接操作尚未完成"));
-                }
-                let capture = state.capture_method.unwrap_or_default();
-                let record = state
-                    .slot
-                    .begin("prototype.input_probe")
-                    .map_err(|e| ApiError::new("busy", e))?;
-                let cancel = Arc::new(AtomicBool::new(false));
-                if self
-                    .sender
-                    .try_send(Work::InputProbe {
-                        id: record.id,
-                        config,
-                        window,
-                        capture,
-                        cancel: cancel.clone(),
-                    })
-                    .is_err()
-                {
-                    let _ = state
-                        .slot
-                        .finish(record.id, RunState::Failed, "工作线程不可用".into());
-                    return Err(ApiError::new("worker_unavailable", "工作线程无法接收任务"));
-                }
-                state.cancel = Some(cancel);
-                state.event(
-                    Some(record.id),
-                    "info",
-                    format!(
-                        "开始真实输入诊断：{:?}，动作 {:?}，延时 {}ms，按住 {}ms",
-                        config.mode, config.action, config.start_delay_ms, config.hold_ms
-                    ),
-                );
-                Ok(Payload::Run(record))
-            }
+            } => self.start_input(config, allow_input, None),
+            Command::StartInputPipeline {
+                config,
+                allow_input,
+            } => self.start_input(config.input, allow_input, Some(config.timeout_ms)),
             Command::Stop { run_id } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 let record = state
@@ -298,6 +255,79 @@ impl Engine {
                 Ok(Payload::Ack)
             }
         }
+    }
+
+    fn start_input(
+        &self,
+        config: InputProbeConfig,
+        allow_input: bool,
+        pipeline_timeout: Option<u32>,
+    ) -> Result<Payload, ApiError> {
+        if !allow_input {
+            return Err(ApiError::new(
+                "input_not_confirmed",
+                "输入诊断会操作游戏，请先确认允许真实输入",
+            ));
+        }
+        config
+            .validate()
+            .map_err(|e| ApiError::new("invalid_input", e))?;
+        if let Some(timeout_ms) = pipeline_timeout {
+            od_core::InputPipelineConfig {
+                input: config,
+                timeout_ms,
+            }
+            .validate()
+            .map_err(|e| ApiError::new("invalid_input", e))?;
+        }
+        let mut state = self.state.lock().expect("运行状态锁失效");
+        if !state.sdk.ready {
+            return Err(ApiError::new("sdk_not_ready", state.sdk.message.clone()));
+        }
+        let window = state
+            .window
+            .clone()
+            .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
+        if state.native_pending {
+            return Err(ApiError::new("busy", "截图或连接操作尚未完成"));
+        }
+        let capture = state.capture_method.unwrap_or_default();
+        let record = state
+            .slot
+            .begin(if pipeline_timeout.is_some() {
+                "prototype.input_pipeline"
+            } else {
+                "prototype.input_probe"
+            })
+            .map_err(|e| ApiError::new("busy", e))?;
+        let cancel = Arc::new(AtomicBool::new(false));
+        if self
+            .sender
+            .try_send(Work::InputProbe {
+                id: record.id,
+                config,
+                pipeline_timeout,
+                window,
+                capture,
+                cancel: cancel.clone(),
+            })
+            .is_err()
+        {
+            let _ = state
+                .slot
+                .finish(record.id, RunState::Failed, "工作线程不可用".into());
+            return Err(ApiError::new("worker_unavailable", "工作线程无法接收任务"));
+        }
+        state.cancel = Some(cancel);
+        state.event(
+            Some(record.id),
+            "info",
+            format!(
+                "开始真实输入诊断：{:?}，动作 {:?}，延时 {}ms，按住 {}ms，Pipeline 超时 {:?}",
+                config.mode, config.action, config.start_delay_ms, config.hold_ms, pipeline_timeout
+            ),
+        );
+        Ok(Payload::Run(record))
     }
 
     async fn native_request(
@@ -493,6 +523,7 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
             Work::InputProbe {
                 id,
                 config,
+                pipeline_timeout,
                 window,
                 capture,
                 cancel,
@@ -538,7 +569,28 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
                         if let Some(controller) = &mut native {
                             controller.release_inputs()?;
                         }
-                        return Ok(od_core::InputProbeResult {
+                        let release_ms = started.elapsed().as_millis() as u64;
+                        if let Some(timeout_ms) = pipeline_timeout {
+                            return Ok(InputOutcome::Pipeline(od_core::InputPipelineResult {
+                                config: od_core::InputPipelineConfig {
+                                    input: config,
+                                    timeout_ms,
+                                },
+                                pipeline: od_core::PipelineProbeResult {
+                                    sdk_version: maa_adapter::SDK_VERSION.into(),
+                                    entry: maa_adapter::INPUT_PIPELINE_ENTRY.into(),
+                                    end: od_core::PipelineEnd::Cancelled,
+                                    native_status: "NotStarted".into(),
+                                    stop_status: None,
+                                    enqueue_us: 0,
+                                    elapsed_ms: release_ms,
+                                    release_ms,
+                                    stop_ms: Some(release_ms),
+                                    released: true,
+                                },
+                            }));
+                        }
+                        return Ok(InputOutcome::Direct(od_core::InputProbeResult {
                             config,
                             pressed: false,
                             released: true,
@@ -549,16 +601,30 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
                             release_ms: started.elapsed().as_millis() as u64,
                             stop_ms: Some(started.elapsed().as_millis() as u64),
                             elapsed_ms: started.elapsed().as_millis() as u64,
-                        });
+                        }));
                     }
-                    native
+                    let controller = native
                         .as_mut()
-                        .ok_or_else(|| anyhow::anyhow!("控制器未连接"))?
-                        .input_probe(config, cancel)
+                        .ok_or_else(|| anyhow::anyhow!("控制器未连接"))?;
+                    if let Some(timeout_ms) = pipeline_timeout {
+                        controller
+                            .input_pipeline(
+                                od_core::InputPipelineConfig {
+                                    input: config,
+                                    timeout_ms,
+                                },
+                                cancel,
+                            )
+                            .map(InputOutcome::Pipeline)
+                    } else {
+                        controller
+                            .input_probe(config, cancel)
+                            .map(InputOutcome::Direct)
+                    }
                 })();
                 let mut state = state.lock().expect("运行状态锁失效");
                 let record = match result {
-                    Ok(mut result) => {
+                    Ok(InputOutcome::Direct(mut result)) => {
                         if state
                             .slot
                             .current()
@@ -567,6 +633,17 @@ fn worker(paths: EnginePaths, state: Arc<Mutex<State>>, receiver: mpsc::Receiver
                             result.stopped = true;
                         }
                         state.slot.finish_input_probe(id, result)
+                    }
+                    Ok(InputOutcome::Pipeline(mut result)) => {
+                        if result.pipeline.end == od_core::PipelineEnd::Succeeded
+                            && state
+                                .slot
+                                .current()
+                                .is_some_and(|run| run.state == RunState::Stopping)
+                        {
+                            result.pipeline.end = od_core::PipelineEnd::Cancelled;
+                        }
+                        state.slot.finish_input_pipeline(id, result)
                     }
                     Err(error) => state
                         .slot

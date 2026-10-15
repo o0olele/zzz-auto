@@ -41,7 +41,7 @@ pub fn require_idle(payload: Payload) -> Result<(), ApiError> {
         }
         Payload::Snapshot(_) => Err(ApiError::new(
             "busy",
-            "请先停止任务并等待收尾，再提升引擎权限",
+            "已有任务运行或正在收尾，请等待完成后重试",
         )),
         _ => Err(offline("无法确认当前运行状态")),
     }
@@ -176,6 +176,15 @@ impl EngineSession {
                 config,
                 allow_input: true,
             } => Some(*config),
+            Command::StartInputPipeline {
+                config,
+                allow_input: true,
+            } => {
+                config
+                    .validate()
+                    .map_err(|error| ApiError::new("invalid_input", error))?;
+                Some(config.input)
+            }
             _ => None,
         };
         if let Some(config) = input {
@@ -183,11 +192,11 @@ impl EngineSession {
                 .validate()
                 .map_err(|error| ApiError::new("invalid_input", error))?;
             let snapshot = self.request_raw(Command::Snapshot).await?;
+            require_idle(snapshot.clone())?;
             if let Some(journal) = &mut self.journal {
                 journal.observe(&snapshot)?;
                 journal.require_clean()?;
             }
-            require_idle(snapshot.clone())?;
             let Payload::Snapshot(snapshot) = snapshot else {
                 return Err(offline("无法确认游戏身份"));
             };

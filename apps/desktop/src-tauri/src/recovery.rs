@@ -114,10 +114,14 @@ impl RecoveryJournal {
         if let (Some(plan), Some(run)) = (&self.plan, run)
             && plan.run_id.as_deref() == Some(run.id.to_string().as_str())
             && run.state.is_terminal()
-            && run
+            && (run
                 .input_probe
                 .as_ref()
                 .is_some_and(|result| result.released)
+                || run
+                    .input_pipeline
+                    .as_ref()
+                    .is_some_and(|result| result.pipeline.released))
         {
             self.clear()?;
         }

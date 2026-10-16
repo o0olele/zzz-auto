@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, MessageBar, MessageBarBody, Spinner } from '@fluentui/react-components';
-import type { Command, MailPhase, Snapshot } from './generated/protocol';
+import type { Command, MailConfig, MailPhase, Snapshot } from './generated/protocol';
 
 const phases: Record<MailPhase, string> = { navigate: '进入邮件', inspect: '重新识别画面', claim: '领取奖励', after_claim: '核对领取结果', confirm: '确认奖励弹窗', after_confirm: '核对已领取状态', return_list: '返回菜单', return_world: '返回大世界', done: '完成' };
 const states: Record<string, string> = { running: '运行中', pausing: '暂停中', paused: '已暂停', stopping: '停止中', succeeded: '完成', failed: '失败', stopped: '已停止' };
 const integer = (value: string, min: number, max: number) => value.trim() !== '' && Number.isSafeInteger(Number(value)) && Number(value) >= min && Number(value) <= max;
 
-export function MailDiagnostics({ snapshot, connected, busy, onCommand }: {
-  snapshot: Snapshot | null; connected: boolean; busy: boolean; onCommand: (command: Command) => Promise<void>;
+export function MailDiagnostics({ snapshot, connected, busy, defaults, onCommand }: {
+  snapshot: Snapshot | null; connected: boolean; busy: boolean; defaults: MailConfig | null; onCommand: (command: Command) => Promise<void>;
 }) {
   const [timeout, setTimeout] = useState('60000');
   const [delay, setDelay] = useState('3000');
@@ -16,7 +16,11 @@ export function MailDiagnostics({ snapshot, connected, busy, onCommand }: {
   const run = snapshot?.run?.app_id === 'email' ? snapshot.run : null;
   const progress = run?.mail;
   const valid = integer(timeout, 1, 60000) && integer(delay, 0, 10000);
-  const disabled = !connected || busy || active;
+  const disabled = !connected || busy || active || !defaults;
+  useEffect(() => {
+    if (defaults) { setTimeout(String(defaults.timeout_ms)); setDelay(String(defaults.start_delay_ms)); }
+    setConfirmed(false);
+  }, [defaults?.timeout_ms, defaults?.start_delay_ms]);
   useEffect(() => { setConfirmed(false); }, [connected, snapshot?.window?.hwnd, snapshot?.window?.pid, snapshot?.capture_method]);
   return <Card className="mail-diagnostics">
     <div className="card-title"><h2>邮件流程试运行</h2><Badge appearance="outline">主流程通过 · 边界待验收</Badge></div>

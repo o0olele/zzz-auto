@@ -115,6 +115,7 @@ p { color: var(--muted); font-size: 13px; line-height: 1.85; margin: 0; }
 .group-plan { padding-left: 24px; }
 .group-plan li { padding: 6px 4px; }
 .group-plan li>span:first-child { margin-right: 12px; }
+.group-step-release { display: inline-block; margin-left: 12px; }
 .group-blocker { color: var(--muted); margin: 8px 0; }
 .history-item { padding: 14px 0; border-top: 1px solid var(--line); }
 .history-item p, .history-item code { overflow-wrap: anywhere; font-size: 11px; }

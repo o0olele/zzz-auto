@@ -11,6 +11,39 @@ use uuid::Uuid;
 pub const CONFIG_SCHEMA: u32 = 1;
 const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct GeneralSettings {
+    pub capture_method: crate::CaptureMethod,
+    pub mail: crate::mail::MailConfig,
+}
+
+impl GeneralSettings {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        self.mail.validate().map_err(invalid)
+    }
+
+    // 与协议一起生成表单定义；前端不维护另一份字段名、可选值与数值范围。
+    pub fn fields() -> serde_json::Value {
+        use crate::{CaptureMethod, mail::MailConfig};
+        let options: Vec<_> = [
+            CaptureMethod::FramePool,
+            CaptureMethod::PrintWindow,
+            CaptureMethod::Dxgi,
+            CaptureMethod::ScreenDc,
+            CaptureMethod::Gdi,
+        ]
+        .into_iter()
+        .map(|value| serde_json::json!({ "value": value, "label": value.name() }))
+        .collect();
+        serde_json::json!([
+            { "key": "capture_method", "kind": "select", "label": "默认截图方式", "options": options },
+            { "key": "timeout_ms", "kind": "integer", "label": "默认邮件超时（ms）", "min": 1, "max": MailConfig::MAX_TIMEOUT_MS },
+            { "key": "start_delay_ms", "kind": "integer", "label": "默认启动 / 继续延时（ms）", "min": 0, "max": MailConfig::MAX_START_DELAY_MS }
+        ])
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct GroupApp {
@@ -22,6 +55,8 @@ pub struct GroupApp {
 #[serde(deny_unknown_fields)]
 pub struct AppGroup {
     pub id: String,
+    #[serde(default)]
+    pub run_policy: crate::daily::RunPolicy,
     pub apps: Vec<GroupApp>,
 }
 
@@ -31,6 +66,8 @@ pub struct AccountInstance {
     pub id: u32,
     pub name: String,
     pub active_in_od: bool,
+    #[serde(default)]
+    pub game_region: crate::daily::GameRegion,
     pub groups: Vec<AppGroup>,
 }
 
@@ -40,6 +77,9 @@ pub struct AccountInstance {
 pub struct AccountConfig {
     pub schema: u32,
     pub revision: u32,
+    // v1 文件缺少整个设置对象时兼容默认值；对象存在时仍严格校验字段。
+    #[serde(default)]
+    pub general: GeneralSettings,
     pub active_instance: u32,
     pub instances: Vec<AccountInstance>,
     pub import_id: Option<String>,
@@ -48,6 +88,18 @@ pub struct AccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConfigChange {
+    SetGameRegion {
+        instance_id: u32,
+        game_region: crate::daily::GameRegion,
+    },
+    SetRunPolicy {
+        instance_id: u32,
+        group_id: String,
+        run_policy: crate::daily::RunPolicy,
+    },
+    SaveGeneral {
+        settings: GeneralSettings,
+    },
     CreateInstance {
         name: String,
     },
@@ -89,6 +141,7 @@ pub fn default_group() -> AppGroup {
     apps.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
     AppGroup {
         id: "one_dragon".into(),
+        run_policy: crate::daily::RunPolicy::default(),
         apps: apps
             .into_iter()
             .filter(|app| app.default_group)
@@ -105,11 +158,13 @@ impl Default for AccountConfig {
         Self {
             schema: CONFIG_SCHEMA,
             revision: 0,
+            general: GeneralSettings::default(),
             active_instance: 1,
             instances: vec![AccountInstance {
                 id: 1,
                 name: "默认账号".into(),
                 active_in_od: true,
+                game_region: crate::daily::GameRegion::default(),
                 groups: vec![default_group()],
             }],
             import_id: None,
@@ -122,6 +177,7 @@ impl AccountConfig {
         if self.schema != CONFIG_SCHEMA {
             return Err(invalid("账号配置版本不支持"));
         }
+        self.general.validate()?;
         if self.instances.is_empty() || self.instances.len() > 128 {
             return Err(invalid("账号数量必须为 1..128"));
         }
@@ -163,6 +219,27 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::SetGameRegion {
+                instance_id,
+                game_region,
+            } => {
+                self.instance_mut(instance_id)?.game_region = game_region;
+            }
+            ConfigChange::SetRunPolicy {
+                instance_id,
+                group_id,
+                run_policy,
+            } => {
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .run_policy = run_policy;
+            }
+            ConfigChange::SaveGeneral { settings } => {
+                self.general = settings;
+            }
             ConfigChange::CreateInstance { name } => {
                 validate_name(&name)?;
                 let id = (1..=9999)
@@ -172,6 +249,7 @@ impl AccountConfig {
                     id,
                     name,
                     active_in_od: true,
+                    game_region: crate::daily::GameRegion::default(),
                     groups: vec![default_group()],
                 });
             }

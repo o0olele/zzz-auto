@@ -185,17 +185,15 @@ impl EngineSession {
             Command::StartMail {
                 config,
                 allow_input: true,
-            }
-            | Command::StartGroupTrial {
-                config,
-                allow_input: true,
-                ..
             } => {
                 config
                     .validate()
                     .map_err(|error| ApiError::new("invalid_input", error))?;
                 Some(od_core::mail::MailConfig::recovery_inputs().to_vec())
             }
+            Command::StartGroupTrial {
+                allow_input: true, ..
+            } => Some(od_core::mail::MailConfig::recovery_inputs().to_vec()),
             Command::StartInputProbe {
                 config,
                 allow_input: true,

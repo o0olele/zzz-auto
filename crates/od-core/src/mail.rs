@@ -16,8 +16,13 @@ impl Default for MailConfig {
     }
 }
 impl MailConfig {
+    pub const MAX_TIMEOUT_MS: u32 = 60_000;
+    pub const MAX_START_DELAY_MS: u32 = 10_000;
+
     pub fn validate(self) -> Result<(), &'static str> {
-        if !(1..=60_000).contains(&self.timeout_ms) || self.start_delay_ms > 10_000 {
+        if !(1..=Self::MAX_TIMEOUT_MS).contains(&self.timeout_ms)
+            || self.start_delay_ms > Self::MAX_START_DELAY_MS
+        {
             return Err("邮件超时须为 1..60000ms，启动 / 继续延时须为 0..10000ms");
         }
         Ok(())

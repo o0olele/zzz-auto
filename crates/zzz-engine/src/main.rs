@@ -123,6 +123,16 @@ enum Action {
     Doctor,
     // 只校验资源，不加载 SDK、连接游戏或创建用户数据；供发布前及测试机检查。
     MailBundleCheck,
+    CoffeeBundleCheck {
+        #[arg(long)]
+        bundle: PathBuf,
+    },
+    CoffeeInspect {
+        #[arg(long)]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+    },
     Applications,
     Windows,
     Serve {
@@ -272,6 +282,14 @@ async fn main() -> Result<()> {
                 serde_json::json!({"valid":true,"bundle":bundle,"sdk_version":maa_adapter::SDK_VERSION,"engine_version":env!("CARGO_PKG_VERSION"),"protocol_version":od_protocol::PROTOCOL_VERSION}),
             );
         }
+        Action::CoffeeBundleCheck { ref bundle } => {
+            return print(
+                serde_json::json!({"valid":true,"read_only":true,"bundle":maa_adapter::validate_coffee_bundle(bundle)?}),
+            );
+        }
+        Action::CoffeeInspect { ref bundle, .. } => {
+            maa_adapter::validate_coffee_bundle(bundle)?;
+        }
         Action::Applications => return print(od_core::applications()?),
         Action::Windows => return print(od_platform::game_windows()?),
         Action::Serve { pipe, parent_pid } => {
@@ -296,6 +314,10 @@ async fn main() -> Result<()> {
     let sdk = maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"))?;
     match args.command {
         Action::Doctor => print(sdk),
+        Action::CoffeeInspect { bundle, image } => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            print(native.inspect_coffee_fixture(&image)?)
+        }
         Action::RecognitionCheck {
             cases,
             fixture_root,

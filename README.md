@@ -47,7 +47,7 @@ CLI `input-probe` 使用同一实现，指定 `--hwnd`、`--key`、`--hold-ms`�
 cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode background --key 87 --hold-ms 1000 --start-delay-ms 3000 --cancel-after-ms 3200 --allow-input
 ```
 
-CLI 键盘使用 Win32 VK，可选 `--mode foreground-legacy` 或 `background-post` 对照 Maa 的兼容方式；手柄参数、计时边界和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。邮件暂停 / 继续见[试运行说明](docs/develop/mail-pipeline.md)，旧配置的账号与应用组导入见[M3 使用说明](docs/develop/account-config.md#使用)。声音闪避、HTTP、MCP、通用设置转换及正式游戏应用调度继续迁移。
+CLI 键盘使用 Win32 VK，可选 `--mode foreground-legacy` 或 `background-post` 对照 Maa 的兼容方式；手柄参数、计时边界和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。邮件暂停 / 继续见[试运行说明](docs/develop/mail-pipeline.md)，旧配置的账号与应用组导入见[M3 使用说明](docs/develop/account-config.md#使用)。声音闪避、HTTP、MCP、其余设置转换及多应用执行继续迁移。
 
 新动作使用 `--action mouse|stick|trigger`，其余停止、确认与计时参数相同。示例中的句柄需要替换为 `windows` 命令返回的游戏句柄：
 
@@ -57,7 +57,11 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode xbox -
 cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --action trigger --side right --value 128 --hold-ms 500 --allow-input
 ```
 
-当前协议为 v8，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline 和邮件试运行的暂停 / 继续。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
+桌面“通用设置”可保存默认截图方式、邮件超时和启动 / 继续延时。设置由 Rust 与账号配置一同持久保存，应用组预览显示实际参数，开始时由引擎核对修订并读取。原生诊断可临时调整；完整用法与旧截图配置导入范围见[通用运行设置](docs/develop/general-settings.md)。账号区服、按日跳过及游戏日过期处理见[应用组每日计划](docs/develop/daily-runs.md)。
+
+当前协议为 v13，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline、应用组邮件试运行与账号历史。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
+
+咖啡已有只读区域转换和离线截图检查，应用组邮件入口已有顺序调度状态及分项进度。咖啡实际点单和多个游戏应用交接仍待后态素材与实机验证，使用方法与缺口见[咖啡识别与顺序调度](docs/develop/coffee-and-groups.md)。
 
 桌面在发送真实输入探针或输入 Pipeline 前，把恢复计划写入数据目录的 `input-recovery.json`。引擎崩溃、应答丢失或收尾未确认时会阻止重连，请点击“恢复遗留输入”：确认旧进程退出后，由独立进程只发送对应释放；原管理员引擎可能需要再次授权 Windows。恢复后先确认游戏状态，再手动重连，不自动重放任务。桌面重启也保留拦截；失败或取消授权不会清除记录。当前覆盖桌面托管的单次输入与受控 Pipeline，CLI 和未来业务 Pipeline 须单独接入。真实游戏、跨权限释放与 ViGEm 卸载仍需实机验收，见[实现说明](docs/develop/implementation.md#m1-崩溃后的独立输入恢复)。
 

@@ -12,6 +12,14 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    CoffeeBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/coffee-preview")]
+        output: PathBuf,
+    },
     /// 只读预览旧配置；--apply 必须同时提供上次预览的 --preview-id。
     ImportConfig {
         #[arg(long)]
@@ -71,6 +79,15 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::CoffeeBundle {
+            reference,
+            models,
+            output,
+        } => {
+            od_tools::coffee::build_bundle(&reference, &models, &output)?;
+            println!("已生成咖啡只读预览资源：{}", output.display());
+            Ok(())
+        }
         Tool::ImportConfig {
             source,
             data,
@@ -130,19 +147,27 @@ fn main() -> Result<()> {
         }
         Tool::Types { output } => {
             let declarations = [
+                od_core::daily::GameRegion::decl(),
+                od_core::daily::RunPolicy::decl(),
+                od_core::daily::GameDay::decl(),
                 od_core::run_plan::RunContext::decl(),
+                od_core::run_plan::PlanDecision::decl(),
                 od_core::run_plan::AppAvailability::decl(),
                 od_core::run_plan::PlannedApp::decl(),
                 od_core::run_plan::GroupPlan::decl(),
                 od_core::run_history::HistoryItem::decl(),
                 od_core::run_history::RunHistory::decl(),
                 od_core::config::GroupApp::decl(),
+                od_core::config::GeneralSettings::decl(),
                 od_core::config::AppGroup::decl(),
                 od_core::config::AccountInstance::decl(),
                 od_core::config::AccountConfig::decl(),
                 od_core::config::ConfigChange::decl(),
                 od_core::AppDefinition::decl(),
                 od_core::RunState::decl(),
+                od_core::group_run::GroupStepState::decl(),
+                od_core::group_run::GroupStepProgress::decl(),
+                od_core::group_run::GroupProgress::decl(),
                 od_core::mail::MailConfig::decl(),
                 od_core::mail::MailState::decl(),
                 od_core::mail::MailPhase::decl(),
@@ -182,12 +207,15 @@ fn main() -> Result<()> {
             std::fs::write(
                 output,
                 format!(
-                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\n",
+                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\n",
                     declarations
                         .into_iter()
                         .map(|decl| format!("export {decl}"))
                         .collect::<Vec<_>>()
-                        .join("\n")
+                        .join("\n"),
+                    serde_json::to_string_pretty(&od_core::config::GeneralSettings::fields())?,
+                    serde_json::to_string_pretty(&od_core::daily::GameRegion::options())?,
+                    serde_json::to_string_pretty(&od_core::daily::RunPolicy::options())?
                 ),
             )?;
             Ok(())

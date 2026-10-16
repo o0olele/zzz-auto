@@ -1,5 +1,12 @@
-use crate::{RunRecord, config::reject_links};
+use crate::{
+    RunRecord, RunState,
+    config::reject_links,
+    daily::GameDay,
+    mail::{MailPhase, MailState},
+};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -23,6 +30,12 @@ pub struct RunHistory {
     pub items: Vec<HistoryItem>,
     pub unreadable: u32,
     pub has_more: bool,
+}
+
+pub struct DailyCompletions {
+    pub game_day: GameDay,
+    pub apps: BTreeMap<String, Uuid>,
+    pub unreadable: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,6 +77,19 @@ impl RunStore {
             .join("accounts")
             .join(format!("{instance_id:04}"));
         plain(&path)?;
+        // Windows 可能将“上级是文件”报告为子路径不存在，不能据此当作空历史。
+        for directory in [&self.directory, &self.directory.join("accounts"), &path] {
+            match fs::metadata(directory) {
+                Ok(metadata) if !metadata.is_dir() => {
+                    return Err(HistoryError::Invalid(
+                        "运行记录路径应为目录，不能被同名文件占用",
+                    ));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
         Ok(path)
     }
 
@@ -113,20 +139,118 @@ impl RunStore {
         instance_id: u32,
         live_run: Option<Uuid>,
     ) -> Result<RunHistory, HistoryError> {
+        let mut items = Vec::new();
+        let (valid, unreadable) = self.scan_records(instance_id, |record| {
+            let interrupted = !record.state.is_terminal() && live_run != Some(record.id);
+            items.push(HistoryItem {
+                record,
+                interrupted,
+            });
+            items.sort_by(|a, b| {
+                b.record
+                    .started_at
+                    .cmp(&a.record.started_at)
+                    .then(b.record.id.cmp(&a.record.id))
+            });
+            items.truncate(100);
+        })?;
+        // 查询结果留出协议封装余量，不让大量错误详情挤爆 IPC 响应。
+        let mut size: usize = 0;
+        items.retain(|item| {
+            size = size.saturating_add(
+                serde_json::to_vec(item).map_or(usize::MAX / 2, |bytes| bytes.len()),
+            );
+            size <= 8 * 1024 * 1024
+        });
+        let has_more = valid > items.len();
+        Ok(RunHistory {
+            instance_id,
+            items,
+            unreadable,
+            has_more,
+        })
+    }
+
+    pub fn daily_completions(
+        &self,
+        instance_id: u32,
+        game_day: GameDay,
+        now: DateTime<Utc>,
+    ) -> Result<DailyCompletions, HistoryError> {
+        game_day.validate().map_err(HistoryError::Invalid)?;
+        let mut successes: BTreeMap<String, (DateTime<Utc>, Uuid)> = BTreeMap::new();
+        let (_, unreadable) = self.scan_records(instance_id, |record| {
+            let Some(finished) = record.finished_at else {
+                return;
+            };
+            let Some(context) = &record.context else {
+                return;
+            };
+            // 目前仅邮件有经过验证的应用完成与释放契约；登记表不能充当执行证明。
+            if record.app_id != "email"
+                || record.state != RunState::Succeeded
+                || context.game_day.as_ref() != Some(&game_day)
+                || finished < record.started_at
+                || finished > now
+                || !game_day.contains(record.started_at)
+                || !game_day.contains(finished)
+                || record.group.as_ref().is_some_and(|group| {
+                    group.state != RunState::Succeeded
+                        || group.current_index.is_some()
+                        || group.steps.len() != 1
+                        || context.app_ids != ["email"]
+                        || group.steps.iter().any(|step| {
+                            step.app_id != "email"
+                                || step.state != crate::group_run::GroupStepState::Succeeded
+                                || !step.inputs_released
+                                || !step.started_at.zip(step.finished_at).is_some_and(
+                                    |(start, end)| {
+                                        start <= end
+                                            && end <= finished
+                                            && game_day.contains(start)
+                                            && game_day.contains(end)
+                                    },
+                                )
+                        })
+                })
+                || !record.mail.as_ref().is_some_and(|mail| {
+                    mail.state == MailState::Succeeded
+                        && mail.phase == MailPhase::Done
+                        && mail.inputs_released
+                })
+            {
+                return;
+            }
+            let entry = successes
+                .entry(record.app_id)
+                .or_insert((finished, record.id));
+            if (finished, record.id) > *entry {
+                *entry = (finished, record.id);
+            }
+        })?;
+        Ok(DailyCompletions {
+            game_day,
+            apps: successes
+                .into_iter()
+                .map(|(app, (_, id))| (app, id))
+                .collect(),
+            unreadable,
+        })
+    }
+
+    fn scan_records(
+        &self,
+        instance_id: u32,
+        mut visit: impl FnMut(RunRecord),
+    ) -> Result<(usize, u32), HistoryError> {
         let directory = self.account_directory(instance_id)?;
         let entries = match fs::read_dir(directory) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(RunHistory {
-                    instance_id,
-                    items: Vec::new(),
-                    unreadable: 0,
-                    has_more: false,
-                });
+                return Ok((0, 0));
             }
             Err(error) => return Err(error.into()),
         };
-        let mut items = Vec::new();
         let mut unreadable = 0;
         let mut valid = 0;
         for (count, entry) in entries.enumerate() {
@@ -143,37 +267,12 @@ impl RunStore {
             match read_record(&path, instance_id) {
                 Ok(record) => {
                     valid += 1;
-                    let interrupted = !record.state.is_terminal() && live_run != Some(record.id);
-                    items.push(HistoryItem {
-                        record,
-                        interrupted,
-                    });
-                    items.sort_by(|a, b| {
-                        b.record
-                            .started_at
-                            .cmp(&a.record.started_at)
-                            .then(b.record.id.cmp(&a.record.id))
-                    });
-                    items.truncate(100);
+                    visit(record);
                 }
                 Err(_) => unreadable += 1,
             }
         }
-        // 查询结果留出协议封装余量，不让大量错误详情挤爆 IPC 响应。
-        let mut size: usize = 0;
-        items.retain(|item| {
-            size = size.saturating_add(
-                serde_json::to_vec(item).map_or(usize::MAX / 2, |bytes| bytes.len()),
-            );
-            size <= 8 * 1024 * 1024
-        });
-        let has_more = valid > items.len();
-        Ok(RunHistory {
-            instance_id,
-            items,
-            unreadable,
-            has_more,
-        })
+        Ok((valid, unreadable))
     }
 }
 

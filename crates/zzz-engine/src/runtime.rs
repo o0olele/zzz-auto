@@ -2,13 +2,14 @@ use crate::mail::{MailRun, MailState};
 use chrono::Utc;
 use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, NativeSession};
 use od_core::config::{ConfigError, ConfigStore};
+use od_core::daily::{GameDay, RunPolicy};
 use od_core::{
     InputProbeConfig, RunEvent, RunRecord, RunSlot, RunState, SdkStatus, Snapshot, WindowInfo,
 };
 use od_core::{mail::MailConfig, pipeline::PipelineRequest};
 use od_core::{
     run_history::RunStore,
-    run_plan::{RunContext, plan_group},
+    run_plan::{GroupPlan, plan_group_at},
 };
 use od_protocol::{ApiError, Command, Payload};
 use std::{
@@ -108,6 +109,11 @@ struct MailWork {
     prepared: bool,
     events: Option<maa_adapter::PipelineEvents>,
     dropped: u64,
+}
+
+struct PreparedGroup {
+    plan: GroupPlan,
+    previous_run: Option<Uuid>,
 }
 
 enum InputOutcome {
@@ -258,6 +264,8 @@ impl Engine {
                         .save(record)
                         .map_err(|error| ApiError::new("history_error", error.to_string()))?;
                     let id = record.id;
+                    let record = record.clone();
+                    let _ = state.slot.confirm_group_saved(&record);
                     state.failed_save = None;
                     state.record_error = None;
                     state.event(
@@ -273,9 +281,9 @@ impl Engine {
                 group_id,
             } => {
                 let config = self.config.read().map_err(config_error)?;
-                plan_group(&config, instance_id, &group_id)
+                self.group_plan(config, instance_id, group_id)
+                    .await
                     .map(Payload::GroupPlan)
-                    .map_err(|error| ApiError::new("invalid_group", error))
             }
             Command::RunHistory { instance_id } => {
                 let config = self.config.read().map_err(config_error)?;
@@ -311,7 +319,7 @@ impl Engine {
                 instance_id,
                 group_id,
                 revision,
-                config,
+                game_day,
                 allow_input,
                 confirm_account,
             } => {
@@ -321,7 +329,34 @@ impl Engine {
                         "请先确认游戏登录账号与所选账号一致",
                     ));
                 }
-                self.start_mail(config, allow_input, Some((instance_id, group_id, revision)))
+                if !allow_input {
+                    return Err(ApiError::new("input_not_confirmed", "请先确认允许真实输入"));
+                }
+                let previous_run = {
+                    let state = self.state.lock().expect("运行状态锁失效");
+                    if state.record_error.is_some() {
+                        return Err(ApiError::new(
+                            "history_error",
+                            "请先修复目录并重试保存运行记录",
+                        ));
+                    }
+                    if state.slot.busy() || state.native_pending {
+                        return Err(ApiError::new("busy", "已有任务或原生请求尚未完成"));
+                    }
+                    state.slot.current().map(|run| run.id)
+                };
+                let saved = self.config.read().map_err(config_error)?;
+                if saved.revision != revision {
+                    return Err(config_error(ConfigError::Conflict(Box::new(saved))));
+                }
+                let plan = self.group_plan(saved, instance_id, group_id).await?;
+                if plan.game_day.date != game_day {
+                    return Err(ApiError::new(
+                        "plan_expired",
+                        "预览的游戏日已过期，请重新预览并确认",
+                    ));
+                }
+                self.start_mail(None, true, Some(PreparedGroup { plan, previous_run }))
             }
             Command::AccountConfig => self
                 .config
@@ -338,21 +373,21 @@ impl Engine {
                 {
                     return Err(ApiError::new(
                         "busy",
-                        "请先停止任务并等待原生请求与输入收尾，再修改账号或应用组",
+                        "请先停止任务并等待原生请求与输入收尾，再修改配置",
                     ));
                 }
                 let config = self.config.update(revision, change).map_err(config_error)?;
                 state.event(
                     None,
                     "info",
-                    format!("账号与应用组配置已保存，修订 {}", config.revision),
+                    format!("配置已保存，修订 {}", config.revision),
                 );
                 Ok(Payload::AccountConfig(config))
             }
             Command::StartMail {
                 config,
                 allow_input,
-            } => self.start_mail(config, allow_input, None),
+            } => self.start_mail(Some(config), allow_input, None),
             Command::Pause { run_id } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 let record = state
@@ -501,11 +536,35 @@ impl Engine {
         }
     }
 
+    async fn group_plan(
+        &self,
+        config: od_core::config::AccountConfig,
+        instance_id: u32,
+        group_id: String,
+    ) -> Result<GroupPlan, ApiError> {
+        let now = Utc::now();
+        let plan = plan_group_at(&config, instance_id, &group_id, now, None)
+            .map_err(|error| ApiError::new("invalid_group", error))?;
+        if plan.run_policy == RunPolicy::Always {
+            return Ok(plan);
+        }
+        let history = self.history.clone();
+        tokio::task::spawn_blocking(move || {
+            let completed = history
+                .daily_completions(instance_id, plan.game_day, now)
+                .map_err(|error| ApiError::new("history_error", error.to_string()))?;
+            plan_group_at(&config, instance_id, &group_id, now, Some(&completed))
+                .map_err(|error| ApiError::new("invalid_group", error))
+        })
+        .await
+        .map_err(|_| ApiError::new("history_error", "每日记录查询线程异常退出"))?
+    }
+
     fn start_mail(
         &self,
-        config: MailConfig,
+        config: Option<MailConfig>,
         allow_input: bool,
-        group: Option<(u32, String, u32)>,
+        group: Option<PreparedGroup>,
     ) -> Result<Payload, ApiError> {
         if !allow_input {
             return Err(ApiError::new(
@@ -513,9 +572,6 @@ impl Engine {
                 "邮件流程会操作游戏，请先确认允许真实输入",
             ));
         }
-        config
-            .validate()
-            .map_err(|error| ApiError::new("invalid_input", error))?;
         let mut state = self.state.lock().expect("运行状态锁失效");
         if state.record_error.is_some() {
             return Err(ApiError::new(
@@ -523,23 +579,40 @@ impl Engine {
                 "请先修复目录并重试保存运行记录",
             ));
         }
-        let context: Option<RunContext> = if let Some((instance_id, group_id, revision)) = group {
-            if state.slot.busy() || state.native_pending {
-                return Err(ApiError::new("busy", "已有任务或原生请求尚未完成"));
-            }
-            let saved = self.config.read().map_err(config_error)?;
-            if saved.revision != revision {
-                return Err(config_error(ConfigError::Conflict(Box::new(saved))));
-            }
-            let plan = plan_group(&saved, instance_id, &group_id)
-                .map_err(|error| ApiError::new("invalid_group", error))?;
-            if !plan.executable {
-                return Err(ApiError::new("group_blocked", plan.blockers.join("；")));
-            }
-            Some(plan.context)
-        } else {
-            None
-        };
+        let (plan, config): (Option<GroupPlan>, MailConfig) =
+            if let Some(PreparedGroup { plan, previous_run }) = group {
+                if state.slot.busy() || state.native_pending {
+                    return Err(ApiError::new("busy", "已有任务或原生请求尚未完成"));
+                }
+                let saved = self.config.read().map_err(config_error)?;
+                if saved.revision != plan.context.config_revision {
+                    return Err(config_error(ConfigError::Conflict(Box::new(saved))));
+                }
+                let day = GameDay::at(plan.game_day.region, Utc::now())
+                    .map_err(|error| ApiError::new("invalid_group", error))?;
+                if day != plan.game_day || state.slot.current().map(|run| run.id) != previous_run {
+                    return Err(ApiError::new(
+                        "plan_expired",
+                        "预检期间游戏日或运行记录已变化，请重新预览",
+                    ));
+                }
+                if plan.all_done {
+                    return Err(ApiError::new(
+                        "group_already_done",
+                        "本游戏日已完成，无需重复执行；请重新预览",
+                    ));
+                }
+                if !plan.executable {
+                    return Err(ApiError::new("group_blocked", plan.blockers.join("；")));
+                }
+                let config = plan.mail_config;
+                (Some(plan), config)
+            } else {
+                (None, config.expect("诊断入口必须提供邮件参数"))
+            };
+        config
+            .validate()
+            .map_err(|error| ApiError::new("invalid_input", error))?;
         if !state.sdk.ready {
             return Err(ApiError::new("sdk_not_ready", state.sdk.message.clone()));
         }
@@ -550,8 +623,8 @@ impl Engine {
         if state.native_pending {
             return Err(ApiError::new("busy", "截图或连接操作尚未完成"));
         }
-        let record = match context {
-            Some(context) => state.slot.begin_group_mail(config, context),
+        let record = match plan {
+            Some(plan) => state.slot.begin_group_plan(config, &plan),
             None => state.slot.begin_mail(config),
         }
         .map_err(|error| ApiError::new("busy", error))?;
@@ -571,6 +644,10 @@ impl Engine {
             state.event(Some(record.id), "error", message.clone());
             return Err(ApiError::new("history_error", message));
         }
+        state
+            .slot
+            .confirm_group_saved(&record)
+            .map_err(|error| ApiError::new("history_error", error))?;
         let control = run.control();
         let work = MailWork {
             fixture: self.fixture,
@@ -589,10 +666,17 @@ impl Engine {
                 state
                     .slot
                     .update_mail(record.id, progress, "工作线程不可用，未投递游戏动作".into())
-                && let Err(error) = self.history.save(&failed)
             {
-                state.failed_save = Some(failed);
-                state.record_error = Some(format!("运行 {} 的结果保存失败：{error}", record.id));
+                match self.history.save(&failed) {
+                    Ok(()) => {
+                        let _ = state.slot.confirm_group_saved(&failed);
+                    }
+                    Err(error) => {
+                        state.failed_save = Some(failed);
+                        state.record_error =
+                            Some(format!("运行 {} 的结果保存失败：{error}", record.id));
+                    }
+                }
             }
             return Err(ApiError::new(
                 "worker_unavailable",
@@ -1241,12 +1325,15 @@ fn save_run(paths: &EnginePaths, state: &mut State, record: &RunRecord) {
             "error",
             format!("运行结果保存失败：{error}"),
         );
-    } else if state
-        .failed_save
-        .as_ref()
-        .is_some_and(|failed| failed.id == record.id)
-    {
-        state.failed_save = None;
-        state.record_error = None;
+    } else {
+        let _ = state.slot.confirm_group_saved(record);
+        if state
+            .failed_save
+            .as_ref()
+            .is_some_and(|failed| failed.id == record.id)
+        {
+            state.failed_save = None;
+            state.record_error = None;
+        }
     }
 }

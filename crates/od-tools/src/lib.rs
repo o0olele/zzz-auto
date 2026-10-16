@@ -1,4 +1,5 @@
 pub mod baseline;
+pub mod coffee;
 pub mod config_import;
 pub mod flash_model;
 pub mod inventory;

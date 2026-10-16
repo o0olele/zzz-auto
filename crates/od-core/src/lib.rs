@@ -1,4 +1,7 @@
+pub mod coffee;
 pub mod config;
+pub mod daily;
+pub mod group_run;
 pub mod mail;
 pub mod ocr;
 pub mod pipeline;
@@ -70,6 +73,9 @@ pub struct RunRecord {
     pub input_pipeline: Option<Box<InputPipelineResult>>,
     #[serde(default)]
     pub mail: Option<mail::MailProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub group: Option<group_run::GroupProgress>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -300,9 +306,44 @@ pub struct RunEvent {
 #[derive(Debug, Default)]
 pub struct RunSlot {
     current: Option<RunRecord>,
+    group_schedule: Option<group_run::GroupSchedule>,
 }
 
 impl RunSlot {
+    pub fn begin_group_plan(
+        &mut self,
+        config: mail::MailConfig,
+        plan: &run_plan::GroupPlan,
+    ) -> Result<RunRecord, &'static str> {
+        let mut schedule = group_run::GroupSchedule::new(plan)?;
+        let permit = schedule.start_next(Utc::now())?.ok_or("应用组无需执行")?;
+        // 生产执行器仍限邮件；通用调度能力不自动开放其他应用。
+        if schedule.current_app() != Some("email") || plan.context.app_ids != ["email"] {
+            return Err("当前执行器仅支持邮件");
+        }
+        self.begin_group_mail(config, plan.context.clone())?;
+        debug_assert!(schedule.permitted_app(&permit).is_none());
+        self.current.as_mut().expect("运行已创建").group = Some(schedule.progress().clone());
+        self.group_schedule = Some(schedule);
+        Ok(self.current.as_ref().expect("运行已创建").clone())
+    }
+
+    pub fn confirm_group_saved(&mut self, record: &RunRecord) -> Result<(), &'static str> {
+        if self.current.as_ref().is_none_or(|run| run.id != record.id) {
+            return Err("保存回执的运行 ID 已过期");
+        }
+        if let Some(schedule) = &mut self.group_schedule {
+            schedule.confirm_saved(
+                record
+                    .group
+                    .as_ref()
+                    .ok_or("保存记录缺少分项进度")?
+                    .checkpoint,
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn begin_group_mail(
         &mut self,
         config: mail::MailConfig,
@@ -334,6 +375,10 @@ impl RunSlot {
         if !matches!(run.state, RunState::Running | RunState::Pausing) {
             return Err("当前状态不能暂停");
         }
+        if let Some(schedule) = &mut self.group_schedule {
+            schedule.request_pause()?;
+            run.group = Some(schedule.progress().clone());
+        }
         run.state = RunState::Pausing;
         run.message = "已请求暂停，正在等待队列静止与输入释放".into();
         Ok(run.clone())
@@ -346,6 +391,10 @@ impl RunSlot {
         }
         if run.state != RunState::Paused {
             return Err("只有确认暂停的任务可以继续");
+        }
+        if let Some(schedule) = &mut self.group_schedule {
+            schedule.resume()?;
+            run.group = Some(schedule.progress().clone());
         }
         run.state = RunState::Running;
         if let Some(progress) = &mut run.mail {
@@ -381,10 +430,31 @@ impl RunSlot {
             MailState::Failed | MailState::TimedOut => RunState::Failed,
             MailState::Stopped => RunState::Stopped,
         };
-        run.state = next;
+        if let Some(schedule) = &mut self.group_schedule {
+            if progress.state == MailState::Paused && next != RunState::Stopping {
+                schedule.acknowledge_pause(progress.inputs_released)?;
+            } else if next.is_terminal() {
+                let outcome = match next {
+                    RunState::Succeeded => group_run::AppOutcome::Succeeded,
+                    RunState::Stopped => group_run::AppOutcome::Stopped,
+                    _ => group_run::AppOutcome::Failed,
+                };
+                schedule.complete_current(
+                    "email",
+                    outcome,
+                    progress.inputs_released,
+                    Utc::now(),
+                )?;
+            }
+            run.group = Some(schedule.progress().clone());
+        }
+        run.state = self
+            .group_schedule
+            .as_ref()
+            .map_or(next, |schedule| schedule.progress().state);
         run.mail = Some(progress);
         run.message = message;
-        if next.is_terminal() {
+        if run.state.is_terminal() {
             run.finished_at = Some(Utc::now());
         }
         Ok(run.clone())
@@ -414,7 +484,9 @@ impl RunSlot {
             input_probe: None,
             input_pipeline: None,
             mail: None,
+            group: None,
         };
+        self.group_schedule = None;
         self.current = Some(run.clone());
         Ok(run)
     }
@@ -425,6 +497,10 @@ impl RunSlot {
             return Err("运行 ID 已过期");
         }
         if !run.state.is_terminal() {
+            if let Some(schedule) = &mut self.group_schedule {
+                schedule.request_stop();
+                run.group = Some(schedule.progress().clone());
+            }
             run.state = RunState::Stopping;
             run.message = "已请求停止，正在等待原生队列及输入释放".into();
         }

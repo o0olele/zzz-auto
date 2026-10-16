@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail, ensure};
 use od_core::config::{
-    AccountConfig, AccountInstance, AppGroup, CONFIG_SCHEMA, ConfigStore, GroupApp, default_group,
-    reject_links,
+    AccountConfig, AccountInstance, AppGroup, CONFIG_SCHEMA, ConfigStore, GeneralSettings,
+    GroupApp, default_group, reject_links,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -71,6 +71,16 @@ struct OldGroup {
     app_order: Vec<String>,
     #[serde(default)]
     app_run_list: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct LegacyEnvironment {
+    screenshot_method: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct LegacyGameAccount {
+    game_region: Option<od_core::daily::GameRegion>,
 }
 
 pub fn preview(source: &Path, data: &Path) -> Result<ImportPreview> {
@@ -243,14 +253,40 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     let mut instances = Vec::new();
     let mut active = Vec::new();
     let mut warnings = vec![
-        "仅转换账号与应用组；其余字段及 YAML 原样归档，设置、凭据、战斗脚本和旧运行记录仍待迁移。"
+        "转换账号及区服、应用组和可兼容的截图设置；其余字段及 YAML 原样归档，凭据、战斗脚本和旧运行记录仍待迁移。"
             .into(),
     ];
+    let mut general = GeneralSettings::default();
+    if let Some(env) = files.iter().find(|file| file.relative == "env.yml") {
+        let environment: LegacyEnvironment = parse(env)?;
+        if environment.screenshot_method.as_deref() == Some("print_window") {
+            general.capture_method = od_core::CaptureMethod::PrintWindow;
+        } else {
+            warnings.push("旧截图方式未直接转换，采用 FramePool 默认值，请在通用设置中核对；旧自动回退、BitBlt 和 PIL 不与 Maa 截图方式视为等价。".into());
+        }
+        converted.insert(env.relative.clone());
+    }
     for item in legacy.instance_list {
         if item.active {
             active.push(item.idx);
         }
         let prefix = format!("{:02}/", item.idx);
+        let game_region = if let Some(file) = files
+            .iter()
+            .find(|file| file.relative == format!("{prefix}game_account.yml"))
+        {
+            let account: LegacyGameAccount = parse(file)?;
+            converted.insert(file.relative.clone());
+            account.game_region
+        } else {
+            None
+        };
+        if game_region.is_none() {
+            warnings.push(format!(
+                "账号 {} 缺少区服，采用旧版默认国服；启用按日跳过前请核对。",
+                item.idx
+            ));
+        }
         let mut groups = Vec::new();
         for file in files {
             let Some(suffix) = file.relative.strip_prefix(&prefix) else {
@@ -261,6 +297,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 let group: LegacyGroup = parse(file)?;
                 groups.push(AppGroup {
                     id: parts[0].into(),
+                    run_policy: od_core::daily::RunPolicy::default(),
                     apps: group
                         .app_list
                         .into_iter()
@@ -276,6 +313,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         if !groups.iter().any(|g| g.id == "one_dragon") {
             let mut group = AppGroup {
                 id: "one_dragon".into(),
+                run_policy: od_core::daily::RunPolicy::default(),
                 apps: Vec::new(),
             };
             if let Some(file) = files
@@ -316,6 +354,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             id: item.idx,
             name: item.name,
             active_in_od: item.active_in_od,
+            game_region: game_region.unwrap_or_default(),
             groups,
         });
     }
@@ -344,6 +383,8 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         }
     }
     let mut hash = Sha256::new();
+    // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
+    hash.update(b"zzz-auto-config-import-v3\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());
@@ -353,7 +394,13 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         manifest.push(ImportFile {
             path: format!("config/{}", file.relative),
             sha256: hex::encode(Sha256::digest(&file.bytes)),
-            disposition: if converted.contains(&file.relative) {
+            disposition: if file.relative == "env.yml" {
+                "已检查截图设置；其他环境字段仅归档，待迁移"
+            } else if file.relative.ends_with("/game_account.yml")
+                && converted.contains(&file.relative)
+            {
+                "已检查区服；凭据和其他账号字段仅归档，待迁移"
+            } else if converted.contains(&file.relative) {
                 "账号 / 应用组已转换；完整原文归档"
             } else {
                 "仅归档，待迁移"
@@ -365,6 +412,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     let config = AccountConfig {
         schema: CONFIG_SCHEMA,
         revision: 0,
+        general,
         active_instance,
         instances,
         import_id: Some(preview_id.clone()),

@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v10 增加应用组预检、账号试运行及按账号查询记录；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 10;
+// v13 增加应用组检查点与分项进度；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 13;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -51,7 +51,7 @@ pub enum Command {
         instance_id: u32,
         group_id: String,
         revision: u32,
-        config: od_core::mail::MailConfig,
+        game_day: String,
         #[serde(default)]
         allow_input: bool,
         #[serde(default)]

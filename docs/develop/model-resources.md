@@ -1,6 +1,6 @@
 # M3 模型资源下载与桌面管理
 
-固定模型包的下载、缓存校验和解压已迁到 Rust，提供独立引擎 CLI 及桌面“模型资源”页。只处理 `models.lock.json` 中的四个固定模型，不接受外部 URL 或清单，不下载或替换 Maa DLL。完整运行资源包的构建、版本切换及回滚继续后续实现。
+固定模型包的下载、缓存校验和解压已迁到 Rust，提供独立引擎 CLI 及桌面“模型资源”页。只处理 `models.lock.json` 中的四个固定模型，不接受外部 URL 或清单，不下载或替换 Maa DLL。完整运行资源包的原生构建、本地导入、版本切换及回滚见[运行资源包首批](runtime-resources.md)；完整包联网下载与桌面切换入口继续后续实现。
 
 ## 桌面使用与任务
 
@@ -38,7 +38,7 @@ cargo run -p zzz-engine --locked -- model-resources prepare --model ppocrv5
 
 准备命令的标准错误按模型和阶段报告 JSON 进度，下载每增加约 1 MiB 更新一次；标准输出只在全部所选项完成后返回结果，包含 `reused` 与 `downloaded`。网络使用 HTTPS、系统代理与证书校验，最多允许十次重定向，不接受 HTTP 降级；不续传半包。
 
-发行引擎可以直接执行 `zzz-auto-engine.exe model-resources ...`，这一步无需 Rust、PowerShell、Node 或 Python。当前开发脚本 `scripts/setup-models.ps1` 已改为调用该实现，再运行既有 Rust 模型转换。桌面只接通缓存准备，转换后的完整运行资源发布仍按后续阶段推进。
+发行引擎可以直接执行 `zzz-auto-engine.exe model-resources ...`，这一步无需 Rust、PowerShell、Node 或 Python。当前开发脚本 `scripts/setup-models.ps1` 已改为调用该实现，再运行既有 Rust 模型转换。桌面此页只接通缓存准备；转换后的运行资源使用独立的[运行资源包入口](runtime-resources.md)。
 
 ## 验证
 

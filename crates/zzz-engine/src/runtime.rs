@@ -187,7 +187,7 @@ impl Engine {
     }
 
     fn with_factory(
-        paths: EnginePaths,
+        mut paths: EnginePaths,
         factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
     ) -> anyhow::Result<Self> {
         let fixture = factory.is_some();
@@ -196,6 +196,14 @@ impl Engine {
         )?);
         let config = ConfigStore::new(&paths.data)?;
         let config_owner = Arc::new(config.acquire_owner()?);
+        let resource_id = if !fixture {
+            let (directory, id) =
+                crate::runtime_resources::select_for_engine(&paths.data, &paths.resources)?;
+            paths.resources = directory;
+            id
+        } else {
+            None
+        };
         config.read()?;
         let history = RunStore::new(&paths.data)?;
         std::fs::create_dir_all(paths.data.join("runs"))?;
@@ -208,7 +216,7 @@ impl Engine {
                 expected_version: maa_adapter::SDK_VERSION.into(),
                 binding_version: maa_adapter::BINDING_VERSION.into(),
                 directory: paths.sdk.display().to_string(),
-                message: "正在校验并加载 Maa SDK".into(),
+                message: "正在校验运行资源并加载 Maa SDK".into(),
             },
             window: None,
             capture_method: None,
@@ -228,7 +236,7 @@ impl Engine {
             .name("maa-worker".into())
             .spawn(move || {
                 let _owner = worker_owner;
-                worker(paths, worker_state, receiver, factory);
+                worker(paths, worker_state, receiver, factory, resource_id);
             })?;
         Ok(Self {
             resources,
@@ -926,9 +934,23 @@ fn worker(
     state: Arc<Mutex<State>>,
     receiver: mpsc::Receiver<Work>,
     factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
+    resource_id: Option<String>,
 ) {
     {
-        let result = maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"));
+        let result = (|| -> anyhow::Result<SdkStatus> {
+            if let Some(id) = resource_id {
+                crate::runtime_resources::validate_directory(&paths.resources, Some(&id))?;
+                state.lock().expect("运行状态锁失效").event(
+                    None,
+                    "info",
+                    format!(
+                        "运行资源校验通过：{id}，目录：{}",
+                        paths.resources.display()
+                    ),
+                );
+            }
+            maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"))
+        })();
         let mut state = state.lock().expect("运行状态锁失效");
         match result {
             Ok(sdk) => {

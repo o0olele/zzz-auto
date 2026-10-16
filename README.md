@@ -122,6 +122,8 @@ cargo run -p zzz-engine --locked -- --resources resources/generated/recognition 
 
 ## 工程与数据
 
+已转换的邮件、地图及基础运行资源可由原生 CLI 打成独立版本包，校验本地 ZIP 后安装，退出引擎后启用或回滚；桌面下次启动读取同一数据目录中的选择。用法见[运行资源包](docs/develop/runtime-resources.md)。完整包联网下载与桌面切换入口继续待实现。
+
 已增加旧版闪光、OCR 和 YOLO 实际输出采样及纯 Rust 的 `recognition-compare` 命令，支持核对同一批固定图的概率、候选、文字、框与分数；OCR 同时比较过滤前结果。旧版采样环境单独放在忽略的 SDK 缓存中，仅用于迁移取证；新程序和正式回归不依赖 Python。命令见[闪光旧版输出说明](docs/develop/recognition-validation.md#旧版实际输出与自动比较)及 [OCR / YOLO 对照说明](docs/develop/recognition-validation.md#ocr-与-yolo-旧版对照)。比较结果与人工标注分别报告，不能把新旧共有的漏检当成人工预期通过。
 
 六个 Rust crate 分别负责通用核心、协议、平台、Maa 适配、引擎与迁移工具；桌面位于 `apps/desktop/`。详见 [首轮实现说明](docs/develop/implementation.md)。

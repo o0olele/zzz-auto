@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v8 增加邮件试运行、暂停 / 继续状态及结果；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 8;
+// v9 增加账号与应用组配置、修订冲突；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 9;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -43,6 +43,11 @@ pub struct Request {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "params", rename_all = "snake_case")]
 pub enum Command {
+    AccountConfig,
+    UpdateAccountConfig {
+        revision: u32,
+        change: od_core::config::ConfigChange,
+    },
     StartMail {
         config: od_core::mail::MailConfig,
         #[serde(default)]
@@ -90,6 +95,7 @@ pub enum Command {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum Payload {
+    AccountConfig(od_core::config::AccountConfig),
     Snapshot(Box<Snapshot>),
     Applications(Vec<AppDefinition>),
     Windows(Vec<WindowInfo>),

@@ -1,6 +1,7 @@
 use crate::mail::{MailRun, MailState};
 use chrono::Utc;
 use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, NativeSession};
+use od_core::config::{ConfigError, ConfigStore};
 use od_core::{
     InputProbeConfig, RunEvent, RunRecord, RunSlot, RunState, SdkStatus, Snapshot, WindowInfo,
 };
@@ -112,10 +113,23 @@ pub struct Engine {
     state: Arc<Mutex<State>>,
     sender: mpsc::SyncSender<Work>,
     fixture: bool,
+    config: ConfigStore,
+    _config_owner: Arc<std::fs::File>,
 }
 
 fn native_error(error: anyhow::Error) -> ApiError {
     ApiError::new("native_error", format!("{error:#}"))
+}
+
+fn config_error(error: ConfigError) -> ApiError {
+    match error {
+        ConfigError::Conflict(latest) => ApiError {
+            code: "config_conflict".into(),
+            message: "配置已被其他窗口或进程修改，请核对最新配置后重新编辑".into(),
+            details: serde_json::to_string(&latest).ok(),
+        },
+        error => ApiError::new("config_error", error.to_string()),
+    }
 }
 
 impl Engine {
@@ -142,6 +156,9 @@ impl Engine {
         factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
     ) -> anyhow::Result<Self> {
         let fixture = factory.is_some();
+        let config = ConfigStore::new(&paths.data)?;
+        let config_owner = Arc::new(config.acquire_owner()?);
+        config.read()?;
         std::fs::create_dir_all(paths.data.join("runs"))?;
         let state = Arc::new(Mutex::new(State {
             sdk: SdkStatus {
@@ -165,13 +182,19 @@ impl Engine {
         }));
         let (sender, receiver) = mpsc::sync_channel(8);
         let worker_state = state.clone();
+        let worker_owner = config_owner.clone();
         std::thread::Builder::new()
             .name("maa-worker".into())
-            .spawn(move || worker(paths, worker_state, receiver, factory))?;
+            .spawn(move || {
+                let _owner = worker_owner;
+                worker(paths, worker_state, receiver, factory);
+            })?;
         Ok(Self {
             state,
             sender,
             fixture,
+            config,
+            _config_owner: config_owner,
         })
     }
 
@@ -216,6 +239,32 @@ impl Engine {
 
     pub async fn execute(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
+            Command::AccountConfig => self
+                .config
+                .read()
+                .map(Payload::AccountConfig)
+                .map_err(config_error),
+            Command::UpdateAccountConfig { revision, change } => {
+                let mut state = self.state.lock().expect("运行状态锁失效");
+                if state.native_pending
+                    || state
+                        .slot
+                        .current()
+                        .is_some_and(|run| !run.state.is_terminal())
+                {
+                    return Err(ApiError::new(
+                        "busy",
+                        "请先停止任务并等待原生请求与输入收尾，再修改账号或应用组",
+                    ));
+                }
+                let config = self.config.update(revision, change).map_err(config_error)?;
+                state.event(
+                    None,
+                    "info",
+                    format!("账号与应用组配置已保存，修订 {}", config.revision),
+                );
+                Ok(Payload::AccountConfig(config))
+            }
             Command::StartMail {
                 config,
                 allow_input,

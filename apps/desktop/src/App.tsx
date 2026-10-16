@@ -14,10 +14,12 @@ import { desktop, elevateEngine, errorMessage, reconnect, recoverInputs, request
 import catalog from '../../../resources/catalog/applications.json';
 import { InputDiagnostics } from './InputDiagnostics';
 import { MailDiagnostics } from './MailDiagnostics';
+import { AccountSettings } from './AccountSettings';
 
-type Page = 'home' | 'apps' | 'native' | 'progress';
+type Page = 'home' | 'accounts' | 'apps' | 'native' | 'progress';
 const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'home', label: '总览', icon: <Home24Regular /> },
+  { id: 'accounts', label: '账号与应用组', icon: <Apps24Regular /> },
   { id: 'apps', label: '应用迁移', icon: <Apps24Regular /> },
   { id: 'native', label: '原生诊断', icon: <Desktop24Regular /> },
   { id: 'progress', label: '开发与验收', icon: <DocumentText24Regular /> },
@@ -35,8 +37,8 @@ const captureHints: Record<CaptureMethod, string> = {
 const milestones = [
   ['M0', '清单与基线', '清单与基线已完成，参考模型已按用户决定接受。'],
   ['M1', 'Maa 集成原型', '原生 SDK、独立引擎、桌面通信与截图入口正在验证。'],
-  ['M2', '首个日常 Pipeline', '邮件离线流程已验证，桌面试运行与暂停恢复继续验收。'],
-  ['M3', '应用与桌面基础', '账号导入、应用组、配置修订、首批日常与运行记录。'],
+  ['M2', '首个日常 Pipeline', '主流程通过，边界待验收；暂停、异常恢复等继续验证。'],
+  ['M3', '应用与桌面基础', '进行中：账号导入、应用组和配置修订；后续推进首批日常与运行记录。'],
   ['M4', 'Rust 自动战斗', '状态时间窗、动作抢占、声音闪避和输入释放。'],
   ['M5', '剩余游戏应用', '探索、路径、经营及剩余应用逐项迁移。'],
   ['M6', '工具与外部能力', '图像与路线编辑器、HTTP、MCP 和 Rust Agent。'],
@@ -118,7 +120,7 @@ export default function App() {
         <div className="brand"><div className="brand-mark">Z</div><div><strong>绝区零一条龙</strong><span>Rust · 原生自动化</span></div></div>
         <div className="workspace-label">工作台</div>
         <nav aria-label="主导航">{pages.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'selected' : ''}`} onClick={() => setPage(item.id)} aria-current={page === item.id ? 'page' : undefined}>{item.icon}<span>{item.label}</span>{page === item.id && <ChevronRight20Regular />}</button>)}</nav>
-        <div className="sidebar-note"><Code24Regular/><strong>迁移原型 · v0.1</strong><p>按路线图逐阶段验收。邮件提供试运行入口，其余应用继续迁移。</p><Badge appearance="tint" color="brand">M1 / M2</Badge></div>
+        <div className="sidebar-note"><Code24Regular/><strong>迁移原型 · v0.1</strong><p>邮件主流程通过，边界继续验收；当前推进账号与应用组基础。</p><Badge appearance="tint" color="brand">M3 进行中</Badge></div>
         <div className="sidebar-footer"><span><i className={`status-dot ${connected && snapshot?.sdk.ready ? 'ready' : ''}`}/>{status}</span><Tooltip content="切换明暗主题" relationship="label"><Button appearance="subtle" icon={dark ? <WeatherSunny20Regular/> : <WeatherMoon20Regular/>} onClick={() => setDark(!dark)} aria-label="切换明暗主题"/></Tooltip></div>
       </aside>
 
@@ -160,10 +162,12 @@ export default function App() {
             </Card>
             <div className="home-grid">
               <Card className="connect-card"><div className="card-title"><h2>连接游戏</h2><Badge appearance="tint" color={snapshot?.window ? 'success' : 'informative'}>{snapshot?.window ? '已连接' : '尚未连接'}</Badge></div><p>启动绝区零并设置 1920 × 1080 客户区，再选择游戏窗口。</p><Field label="游戏窗口"><Select value={hwnd} onChange={(_, data) => setHwnd(data.value)} disabled={busy || active}><option value="">{windows.length ? '选择游戏窗口' : '尚未发现窗口'}</option>{windows.map(window => <option key={window.hwnd} value={window.hwnd}>{window.title} · PID {window.pid} · {window.width}×{window.height}</option>)}</Select></Field>{captureSelect}<div className="button-row"><Button disabled={!connected || busy || active} icon={<ArrowClockwise20Regular/>} onClick={() => act(scanWindows)}>扫描窗口</Button><Button appearance="primary" disabled={!hwnd || !connected || recoveryRequired || busy || active} icon={<PlugConnected24Regular/>} onClick={() => act(() => connectWindow())}>连接窗口</Button></div><Divider/><div className="connection-detail"><Text size={200}>SDK 状态</Text><p>{snapshot?.sdk.message ?? '桌面启动后自动校验随附 SDK 与引擎。'}</p></div></Card>
-              <Card className="next-card"><div className="card-title"><h2>当前阶段</h2><Badge appearance="tint" color="brand">M2 试运行</Badge></div><h3>接入首个日常流程</h3><p>M1 保留待验证项；M2 已接入邮件试运行、暂停继续和输入恢复登记。</p><div className="milestone-mini"><CheckmarkCircle20Regular/><span>30 个应用、界面和资源已登记</span></div><div className="milestone-mini"><div className="step-dot"/><span>原生 SDK 与桌面通信验证</span></div><div className="milestone-mini muted"><div className="step-dot hollow"/><span>游戏输入与模型实测</span></div><Button appearance="subtle" icon={<ArrowRight20Regular/>} iconPosition="after" onClick={() => setPage('progress')}>查看验收要求</Button></Card>
+              <Card className="next-card"><div className="card-title"><h2>当前阶段</h2><Badge appearance="tint" color="brand">M3 进行中</Badge></div><h3>账号与应用组基础</h3><p>M2 主流程通过，边界待验收；M3 已开始旧配置导入、账号隔离与应用组编辑。</p><div className="milestone-mini"><CheckmarkCircle20Regular/><span>邮件大世界 / 菜单起点主流程通过</span></div><div className="milestone-mini"><div className="step-dot"/><span>账号、配置修订与应用组</span></div><div className="milestone-mini muted"><div className="step-dot hollow"/><span>首批日常、运行记录与资源下载</span></div><Button appearance="subtle" icon={<ArrowRight20Regular/>} iconPosition="after" onClick={() => setPage('accounts')}>管理账号与应用组</Button></Card>
             </div>
             <Card><div className="card-title"><h2>最近运行</h2><Badge appearance="tint" color={active ? 'brand' : 'informative'}>{snapshot?.run ? runNames[snapshot.run.state] : '空闲'}</Badge></div>{snapshot?.run ? <><strong>{['prototype.input_probe', 'prototype.input_pipeline'].includes(snapshot.run.app_id) ? '真实输入诊断' : snapshot.run.app_id === 'email' ? '邮件试运行' : 'Maa 原生健康检查'}</strong><p className="run-message">{snapshot.run.message}</p><Text size={200}>运行 ID：{snapshot.run.id}</Text></> : <div className="empty-row"><Play20Regular/><span>尚无运行记录。连接窗口后可在原生诊断中执行健康检查。</span></div>}</Card>
           </>}
+
+          {page === 'accounts' && <AccountSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} apps={apps}/>}
 
           {page === 'apps' && <>
             <div className="page-heading"><div><div className="eyebrow">APPLICATION CATALOG</div><h1>应用迁移</h1><p>保留现有应用 ID，逐项记录实现与验收状态。</p></div><Badge appearance="tint" color="brand">{apps.length} 个已登记</Badge></div>
@@ -182,8 +186,8 @@ export default function App() {
           </>}
 
           {page === 'progress' && <>
-            <div className="page-heading"><div><div className="eyebrow">MIGRATION ROADMAP</div><h1>开发与验收</h1><p>阶段完成以验收证据为准，编译与界面预览仅是其中一部分。</p></div><Badge appearance="tint" color="brand">M1 待验证 · M2 进行中</Badge></div>
-            <Card className="roadmap-card">{milestones.map(([id, title, description], index) => <div className={`milestone ${index === 2 ? 'current' : ''}`} key={id}><div className="milestone-number">{id}</div><div><h3>{title}</h3><p>{description}</p></div><Badge appearance="tint" color={index === 0 ? 'success' : index < 3 ? 'brand' : 'informative'}>{index === 0 ? '已完成' : index === 1 ? '待验证' : index === 2 ? '进行中' : '待开始'}</Badge></div>)}</Card>
+            <div className="page-heading"><div><div className="eyebrow">MIGRATION ROADMAP</div><h1>开发与验收</h1><p>阶段完成以验收证据为准，编译与界面预览仅是其中一部分。</p></div><Badge appearance="tint" color="brand">M2 主流程通过，边界待验收 · M3 进行中</Badge></div>
+            <Card className="roadmap-card">{milestones.map(([id, title, description], index) => <div className={`milestone ${index === 3 ? 'current' : ''}`} key={id}><div className="milestone-number">{id}</div><div><h3>{title}</h3><p>{description}</p></div><Badge appearance="tint" color={index === 0 ? 'success' : index < 4 ? 'brand' : 'informative'}>{index === 0 ? '已完成' : index === 1 ? '待验证' : index === 2 ? '主流程通过，边界待验收' : index === 3 ? '进行中' : '待开始'}</Badge></div>)}</Card>
             <Card><div className="card-title"><h2>本轮验证边界</h2><Badge appearance="outline">首版 Windows x64</Badge></div><p>CPU / DirectML 模型、前后台键鼠、Xbox / DS4、权限提升、崩溃后的独立输入恢复与长时间稳定性，需要固定语料和实机记录。日常、战斗、账号导入与第三方插件按后续阶段逐项开放。</p><p className="muted">开发入口与命令见工程 README；迁移决策与验收要求见 docs/ROADMAP.md。</p></Card>
           </>}
         </div>

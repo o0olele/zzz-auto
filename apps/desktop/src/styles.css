@@ -106,4 +106,8 @@ p { color: var(--muted); font-size: 13px; line-height: 1.85; margin: 0; }
 .milestone p { font-size: 12px; }
 .main-footer { margin: 0 36px; padding: 16px 0 20px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
 .footer-dot { padding: 0 6px; }
+.account-create { display: flex; align-items: flex-end; gap: 12px; }
+.account-create>div { flex: 1; max-width: 360px; }
+.account-apps { max-height: 520px; overflow: auto; }
+.account-app { display: grid; grid-template-columns: minmax(130px, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
 @media (max-width: 1050px) { .sidebar { width: 200px; } .main { margin-left: 200px; width: calc(100% - 200px); } .content { padding: 25px; } .topbar { padding: 0 25px; } .home-grid { grid-template-columns: 1fr; } .filter-row { justify-content: flex-start; } }

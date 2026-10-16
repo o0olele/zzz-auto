@@ -123,6 +123,16 @@ enum Action {
     Doctor,
     // 只校验资源，不加载 SDK、连接游戏或创建用户数据；供发布前及测试机检查。
     MailBundleCheck,
+    MapBundleCheck {
+        #[arg(long)]
+        bundle: PathBuf,
+    },
+    MapInspect {
+        #[arg(long)]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+    },
     CoffeeBundleCheck {
         #[arg(long)]
         bundle: PathBuf,
@@ -287,6 +297,14 @@ async fn main() -> Result<()> {
                 serde_json::json!({"valid":true,"read_only":true,"bundle":maa_adapter::validate_coffee_bundle(bundle)?}),
             );
         }
+        Action::MapBundleCheck { ref bundle } => {
+            return print(
+                serde_json::json!({"valid":true,"prototype_only":true,"bundle":maa_adapter::validate_map_bundle(bundle)?}),
+            );
+        }
+        Action::MapInspect { ref bundle, .. } => {
+            maa_adapter::validate_map_bundle(bundle)?;
+        }
         Action::CoffeeInspect { ref bundle, .. } => {
             maa_adapter::validate_coffee_bundle(bundle)?;
         }
@@ -317,6 +335,10 @@ async fn main() -> Result<()> {
         Action::CoffeeInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_coffee_fixture(&image)?)
+        }
+        Action::MapInspect { bundle, image } => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            print(native.inspect_map_fixture(&image)?)
         }
         Action::RecognitionCheck {
             cases,

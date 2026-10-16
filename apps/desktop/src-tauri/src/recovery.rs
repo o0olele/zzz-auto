@@ -52,22 +52,27 @@ impl RecoveryJournal {
     }
 
     pub fn require_mail_run(&self, run_id: uuid::Uuid) -> Result<(), ApiError> {
+        self.require_pipeline_run(run_id, 2)
+    }
+
+    pub fn require_pipeline_run(&self, run_id: uuid::Uuid, version: u32) -> Result<(), ApiError> {
         let expected = self
             .plan
             .as_ref()
             .filter(|plan| {
-                plan.version == 2 && plan.run_id.as_deref() == Some(run_id.to_string().as_str())
+                plan.version == version
+                    && plan.run_id.as_deref() == Some(run_id.to_string().as_str())
             })
-            .ok_or_else(|| recovery_error("邮件恢复登记与当前运行不符"))?;
+            .ok_or_else(|| recovery_error("流程恢复登记与当前运行不符"))?;
         let disk = Self::open(self.path.parent().expect("恢复记录有父目录"))?;
         let actual = disk
             .plan
             .as_ref()
-            .ok_or_else(|| recovery_error("邮件恢复登记已丢失"))?;
+            .ok_or_else(|| recovery_error("流程恢复登记已丢失"))?;
         if serde_json::to_value(expected).map_err(recovery_error)?
             != serde_json::to_value(actual).map_err(recovery_error)?
         {
-            return Err(recovery_error("邮件恢复登记已改变"));
+            return Err(recovery_error("流程恢复登记已改变"));
         }
         Ok(())
     }
@@ -139,6 +144,12 @@ impl RecoveryJournal {
                 run.app_id == "email"
                     && run
                         .mail
+                        .as_ref()
+                        .is_some_and(|result| result.inputs_released)
+            } else if plan.version == 3 {
+                run.app_id == "prototype.map_transport"
+                    && run
+                        .map
                         .as_ref()
                         .is_some_and(|result| result.inputs_released)
             } else {

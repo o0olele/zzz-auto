@@ -182,6 +182,15 @@ impl EngineSession {
             }
         );
         let input = match &command {
+            Command::StartMap {
+                config,
+                allow_input: true,
+            } => {
+                config
+                    .validate()
+                    .map_err(|error| ApiError::new("invalid_input", error))?;
+                Some(od_core::map_transport::MapConfig::recovery_inputs().to_vec())
+            }
             Command::StartMail {
                 config,
                 allow_input: true,
@@ -228,7 +237,13 @@ impl EngineSession {
                 .window
                 .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
             let plan = od_platform::InputRecoveryPlan {
-                version: if mail_start { 2 } else { 1 },
+                version: if matches!(command, Command::StartMap { .. }) {
+                    3
+                } else if mail_start {
+                    2
+                } else {
+                    1
+                },
                 engine: od_platform::ProcessStamp::read(self.process.id())
                     .map_err(recovery_error)?,
                 game: od_platform::ProcessStamp::read(window.pid).map_err(recovery_error)?,
@@ -247,18 +262,31 @@ impl EngineSession {
                 return Err(offline("无法确认暂停状态"));
             };
             if !snapshot.run.as_ref().is_some_and(|run| {
-                run.id == run_id && run.state == od_core::RunState::Paused && run.mail.is_some()
+                run.id == run_id
+                    && run.state == od_core::RunState::Paused
+                    && (run.mail.is_some() || run.map.is_some())
             }) {
                 return Err(ApiError::new(
                     "invalid_run_state",
-                    "邮件任务尚未确认暂停或运行 ID 已过期",
+                    "流程尚未确认暂停或运行 ID 已过期",
                 ));
             }
+            let version = if snapshot.run.as_ref().is_some_and(|run| run.map.is_some()) {
+                3
+            } else {
+                2
+            };
             let valid = self
                 .journal
                 .as_ref()
-                .ok_or_else(|| recovery_error("缺少邮件恢复登记"))
-                .and_then(|journal| journal.require_mail_run(run_id));
+                .ok_or_else(|| recovery_error("缺少流程恢复登记"))
+                .and_then(|journal| {
+                    if version == 2 {
+                        journal.require_mail_run(run_id)
+                    } else {
+                        journal.require_pipeline_run(run_id, version)
+                    }
+                });
             if let Err(error) = valid {
                 self.disconnect();
                 return Err(error);

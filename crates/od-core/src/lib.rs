@@ -3,6 +3,7 @@ pub mod config;
 pub mod daily;
 pub mod group_run;
 pub mod mail;
+pub mod map_transport;
 pub mod ocr;
 pub mod pipeline;
 pub mod run_history;
@@ -73,6 +74,9 @@ pub struct RunRecord {
     pub input_pipeline: Option<Box<InputPipelineResult>>,
     #[serde(default)]
     pub mail: Option<mail::MailProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub map: Option<map_transport::MapProgress>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub group: Option<group_run::GroupProgress>,
@@ -367,10 +371,56 @@ impl RunSlot {
         Ok(run.clone())
     }
 
+    pub fn begin_map(
+        &mut self,
+        config: map_transport::MapConfig,
+    ) -> Result<RunRecord, &'static str> {
+        config.validate()?;
+        self.begin("prototype.map_transport")?;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        run.map = Some(map_transport::MapProgress::new(config));
+        Ok(run.clone())
+    }
+
+    pub fn update_map(
+        &mut self,
+        id: Uuid,
+        mut progress: map_transport::MapProgress,
+        message: String,
+    ) -> Result<RunRecord, &'static str> {
+        use map_transport::MapState;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        if run.id != id || run.map.is_none() || run.state.is_terminal() {
+            return Err("地图运行 ID 已过期或已结束");
+        }
+        if matches!(progress.state, MapState::Paused | MapState::Succeeded)
+            && !progress.inputs_released
+        {
+            return Err("地图输入尚未释放，不能确认暂停或成功");
+        }
+        if run.state == RunState::Stopping && progress.state == MapState::Succeeded {
+            progress.state = MapState::Stopped;
+        }
+        run.state = match progress.state {
+            MapState::Running => run.state,
+            MapState::Paused if run.state == RunState::Stopping => RunState::Stopping,
+            MapState::Paused => RunState::Paused,
+            MapState::Succeeded => RunState::Succeeded,
+            MapState::Failed | MapState::TimedOut => RunState::Failed,
+            MapState::Stopped => RunState::Stopped,
+        };
+        run.map = Some(progress);
+        run.message = message;
+        if run.state.is_terminal() {
+            run.finished_at = Some(Utc::now());
+        }
+        Ok(run.clone())
+    }
+
     pub fn request_pause(&mut self, id: Uuid) -> Result<RunRecord, &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
-        if run.id != id || run.mail.is_none() {
-            return Err("邮件运行 ID 已过期");
+        if run.id != id || (run.mail.is_none() && run.map.is_none()) {
+            return Err("流程运行 ID 已过期");
         }
         if !matches!(run.state, RunState::Running | RunState::Pausing) {
             return Err("当前状态不能暂停");
@@ -386,8 +436,8 @@ impl RunSlot {
 
     pub fn request_resume(&mut self, id: Uuid) -> Result<RunRecord, &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
-        if run.id != id || run.mail.is_none() {
-            return Err("邮件运行 ID 已过期");
+        if run.id != id || (run.mail.is_none() && run.map.is_none()) {
+            return Err("流程运行 ID 已过期");
         }
         if run.state != RunState::Paused {
             return Err("只有确认暂停的任务可以继续");
@@ -401,7 +451,11 @@ impl RunSlot {
             progress.inputs_released = false;
             progress.state = mail::MailState::Running;
         }
-        run.message = "准备继续邮件流程，延时后重新识别画面".into();
+        if let Some(progress) = &mut run.map {
+            progress.inputs_released = false;
+            progress.state = map_transport::MapState::Running;
+        }
+        run.message = "准备继续流程，延时后重新识别画面".into();
         Ok(run.clone())
     }
 
@@ -484,6 +538,7 @@ impl RunSlot {
             input_probe: None,
             input_pipeline: None,
             mail: None,
+            map: None,
             group: None,
         };
         self.group_schedule = None;

@@ -4,6 +4,7 @@ pub mod config_import;
 pub mod flash_model;
 pub mod inventory;
 pub mod mail;
+pub mod map_transport;
 pub mod models;
 pub mod resources;
 

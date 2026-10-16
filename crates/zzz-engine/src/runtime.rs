@@ -1,8 +1,10 @@
 use crate::mail::{MailRun, MailState};
+use crate::map_transport::{MapRun, MapState};
 use chrono::Utc;
 use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, NativeSession};
 use od_core::config::{ConfigError, ConfigStore};
 use od_core::daily::{GameDay, RunPolicy};
+use od_core::map_transport::MapConfig;
 use od_core::{
     InputProbeConfig, RunEvent, RunRecord, RunSlot, RunState, SdkStatus, Snapshot, WindowInfo,
 };
@@ -42,7 +44,7 @@ struct State {
     slot: RunSlot,
     native_pending: bool,
     cancel: Option<Arc<AtomicBool>>,
-    mail_control: Option<PipelineRequest>,
+    pipeline_control: Option<PipelineRequest>,
     events: VecDeque<RunEvent>,
     sequence: u64,
     dropped: u64,
@@ -82,7 +84,8 @@ impl State {
 
 enum Work {
     Mail(MailWork),
-    MailControl(Uuid, bool),
+    Map(MapWork),
+    PipelineControl(Uuid, bool),
     Attach(
         String,
         CaptureMethod,
@@ -104,6 +107,16 @@ enum Work {
 struct MailWork {
     fixture: bool,
     run: Box<MailRun>,
+    window: WindowInfo,
+    capture: CaptureMethod,
+    prepared: bool,
+    events: Option<maa_adapter::PipelineEvents>,
+    dropped: u64,
+}
+
+struct MapWork {
+    fixture: bool,
+    run: Box<MapRun>,
     window: WindowInfo,
     capture: CaptureMethod,
     prepared: bool,
@@ -165,6 +178,13 @@ impl Engine {
         )
     }
 
+    pub fn for_map_fixture(
+        paths: EnginePaths,
+        callback: impl maa_adapter::CustomControllerCallback + 'static,
+    ) -> anyhow::Result<Self> {
+        Self::for_mail_fixture(paths, callback)
+    }
+
     fn with_factory(
         paths: EnginePaths,
         factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
@@ -191,7 +211,7 @@ impl Engine {
             slot: RunSlot::default(),
             native_pending: false,
             cancel: None,
-            mail_control: None,
+            pipeline_control: None,
             events: VecDeque::new(),
             sequence: 0,
             dropped: 0,
@@ -225,7 +245,7 @@ impl Engine {
         if let Some(cancel) = &state.cancel {
             cancel.store(true, Ordering::Release);
         }
-        if let Some(control) = &state.mail_control {
+        if let Some(control) = &state.pipeline_control {
             control.stop();
         }
         if let Some(id) = state
@@ -239,8 +259,8 @@ impl Engine {
                 .current()
                 .is_some_and(|run| run.state == RunState::Stopping);
             let _ = state.slot.request_stop(id);
-            if state.mail_control.is_some() && !was_stopping {
-                let _ = self.sender.try_send(Work::MailControl(id, false));
+            if state.pipeline_control.is_some() && !was_stopping {
+                let _ = self.sender.try_send(Work::PipelineControl(id, false));
             }
         }
     }
@@ -388,13 +408,17 @@ impl Engine {
                 config,
                 allow_input,
             } => self.start_mail(Some(config), allow_input, None),
+            Command::StartMap {
+                config,
+                allow_input,
+            } => self.start_map(config, allow_input),
             Command::Pause { run_id } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 let record = state
                     .slot
                     .request_pause(run_id)
                     .map_err(|error| ApiError::new("invalid_run_state", error))?;
-                if let Some(control) = &state.mail_control {
+                if let Some(control) = &state.pipeline_control {
                     control.pause();
                 }
                 Ok(Payload::Run(record))
@@ -405,14 +429,16 @@ impl Engine {
                     .slot
                     .current()
                     .filter(|run| {
-                        run.id == run_id && run.state == RunState::Paused && run.mail.is_some()
+                        run.id == run_id
+                            && run.state == RunState::Paused
+                            && (run.mail.is_some() || run.map.is_some())
                     })
                     .ok_or_else(|| {
-                        ApiError::new("invalid_run_state", "只有已确认暂停的邮件任务可以继续")
+                        ApiError::new("invalid_run_state", "只有已确认暂停的流程可以继续")
                     })?;
                 if self
                     .sender
-                    .try_send(Work::MailControl(current.id, true))
+                    .try_send(Work::PipelineControl(current.id, true))
                     .is_err()
                 {
                     return Err(ApiError::new(
@@ -516,10 +542,10 @@ impl Engine {
                 if let Some(cancel) = &state.cancel {
                     cancel.store(true, Ordering::Release);
                 }
-                if let Some(control) = &state.mail_control {
+                if let Some(control) = &state.pipeline_control {
                     control.stop();
                     if !was_stopping {
-                        let _ = self.sender.try_send(Work::MailControl(run_id, false));
+                        let _ = self.sender.try_send(Work::PipelineControl(run_id, false));
                     }
                 }
                 Ok(Payload::Run(record))
@@ -683,11 +709,80 @@ impl Engine {
                 "工作线程无法接收邮件任务",
             ));
         }
-        state.mail_control = Some(control);
+        state.pipeline_control = Some(control);
         state.event(
             Some(record.id),
             "info",
             "开始邮件试运行；只使用前台键鼠，暂停期间继续占用运行槽".into(),
+        );
+        Ok(Payload::Run(record))
+    }
+
+    fn start_map(&self, config: MapConfig, allow_input: bool) -> Result<Payload, ApiError> {
+        if !allow_input {
+            return Err(ApiError::new(
+                "input_not_confirmed",
+                "地图传送会操作游戏，请先确认本次路线",
+            ));
+        }
+        config
+            .validate()
+            .map_err(|error| ApiError::new("invalid_input", error))?;
+        let mut state = self.state.lock().expect("运行状态锁失效");
+        if state.record_error.is_some() {
+            return Err(ApiError::new(
+                "history_error",
+                "请先修复目录并重试保存运行记录",
+            ));
+        }
+        if !state.sdk.ready {
+            return Err(ApiError::new("sdk_not_ready", state.sdk.message.clone()));
+        }
+        let window = state
+            .window
+            .clone()
+            .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
+        if state.native_pending {
+            return Err(ApiError::new("busy", "原生请求尚未完成"));
+        }
+        let record = state
+            .slot
+            .begin_map(config)
+            .map_err(|error| ApiError::new("busy", error))?;
+        let run = MapRun::with_id(record.id, config).map_err(native_error)?;
+        let control = run.control();
+        let work = MapWork {
+            fixture: self.fixture,
+            run: Box::new(run),
+            window,
+            capture: state.capture_method.unwrap_or_default(),
+            prepared: false,
+            events: None,
+            dropped: 0,
+        };
+        if self.sender.try_send(Work::Map(work)).is_err() {
+            let mut progress = record.map.clone().expect("地图进度已创建");
+            progress.state = MapState::Failed;
+            progress.inputs_released = true;
+            if let Ok(failed) =
+                state
+                    .slot
+                    .update_map(record.id, progress, "工作线程不可用，未投递输入".into())
+                && let Err(error) = self.history.save(&failed)
+            {
+                state.failed_save = Some(failed);
+                state.record_error = Some(format!("地图结果保存失败：{error}"));
+            }
+            return Err(ApiError::new(
+                "worker_unavailable",
+                "工作线程无法接收地图任务",
+            ));
+        }
+        state.pipeline_control = Some(control);
+        state.event(
+            Some(record.id),
+            "info",
+            "开始地图试运行：澄辉坪 → 汀曼咖啡；请在延时期间切回已打开普通地图的游戏".into(),
         );
         Ok(Payload::Run(record))
     }
@@ -846,12 +941,34 @@ fn worker(
         }
     }
     let mut paused_mail: Option<MailWork> = None;
+    let mut paused_map: Option<MapWork> = None;
     for command in receiver {
         match command {
             Work::Mail(work) => {
                 paused_mail = run_mail_work(work, &paths, &state, &mut native);
             }
-            Work::MailControl(id, resume) => {
+            Work::Map(work) => {
+                paused_map = run_map_work(work, &paths, &state, &mut native);
+            }
+            Work::PipelineControl(id, resume) => {
+                if paused_map.as_ref().is_some_and(|work| work.run.id == id) {
+                    let mut work = paused_map.take().expect("已有暂停地图任务");
+                    if resume
+                        && work.run.interrupt_requested()
+                            != Some(od_core::pipeline::Interrupt::Stop)
+                    {
+                        if let Err(error) = work.run.resume()
+                            && work.run.interrupt_requested()
+                                != Some(od_core::pipeline::Interrupt::Stop)
+                        {
+                            work.run.state = MapState::Failed;
+                            work.run.message = format!("{error:#}");
+                        }
+                    } else {
+                        work.run.control().stop();
+                    }
+                    paused_map = run_map_work(work, &paths, &state, &mut native);
+                }
                 if paused_mail.as_ref().is_some_and(|work| work.run.id == id) {
                     let mut work = paused_mail.take().expect("已有暂停任务");
                     if resume
@@ -1155,6 +1272,10 @@ fn worker(
                 state.cancel = None;
             }
             Work::Shutdown(reply) => {
+                if let Some(work) = paused_map.take() {
+                    work.run.control().stop();
+                    let _ = run_map_work(work, &paths, &state, &mut native);
+                }
                 if let Some(work) = paused_mail.take() {
                     work.run.control().stop();
                     let _ = run_mail_work(work, &paths, &state, &mut native);
@@ -1168,6 +1289,130 @@ fn worker(
     if let Some(work) = paused_mail.take() {
         work.run.control().stop();
         let _ = run_mail_work(work, &paths, &state, &mut native);
+    }
+    if let Some(work) = paused_map.take() {
+        work.run.control().stop();
+        let _ = run_map_work(work, &paths, &state, &mut native);
+    }
+}
+
+fn run_map_work(
+    mut work: MapWork,
+    paths: &EnginePaths,
+    shared: &Arc<Mutex<State>>,
+    native: &mut Option<NativeSession>,
+) -> Option<MapWork> {
+    let result = (|| -> anyhow::Result<()> {
+        if work.run.state.is_terminal() {
+            return Ok(());
+        }
+        if !work.prepared && work.fixture {
+            work.events = Some(
+                native
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("离线地图控制器未准备"))?
+                    .pipeline_events(EVENT_CAPACITY)?,
+            );
+            work.prepared = true;
+        }
+        if !work.prepared {
+            if work.run.interrupt_requested().is_some() {
+                if let Some(controller) = native.as_mut() {
+                    controller.release_inputs()?;
+                }
+                work.run.acknowledge_idle();
+                return Ok(());
+            }
+            let bundle =
+                maa_adapter::validate_map_bundle(&paths.resources.join("generated/map-preview"))?;
+            if let Some(controller) = native.as_mut() {
+                controller.release_inputs()?;
+            }
+            native.take();
+            let current = od_platform::parse_game_window(&work.window.hwnd)?;
+            anyhow::ensure!(
+                current.pid == work.window.pid && current.width == 1920 && current.height == 1080,
+                "游戏窗口身份或尺寸已变化，请重连"
+            );
+            let mut controller = NativeSession::for_game(
+                &current,
+                &paths.resources,
+                work.capture,
+                InputMode::Foreground,
+                InferenceDevice::Cpu,
+            )?;
+            controller.load_map_bundle(&bundle)?;
+            work.events = Some(controller.pipeline_events(EVENT_CAPACITY)?);
+            *native = Some(controller);
+            work.prepared = true;
+        }
+        let controller = native
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("地图控制器未连接"))?;
+        let id = work.run.id;
+        let events = work.events.as_ref();
+        let publish = |progress| {
+            let mut state = shared.lock().expect("运行状态锁失效");
+            if let Some(events) = events {
+                for event in events.receiver.try_iter() {
+                    state.event(
+                        Some(id),
+                        "debug",
+                        format!("{} {}", event.message, event.node.as_deref().unwrap_or("")),
+                    );
+                }
+            }
+            let _ = state
+                .slot
+                .update_map(id, progress, "地图传送试运行中".into());
+        };
+        if work.fixture {
+            work.run.execute_fixture_observed(controller, publish)
+        } else {
+            work.run.execute_game(controller, publish)
+        }
+    })();
+    if let Err(error) = result {
+        work.run.state = MapState::Failed;
+        work.run.message = format!("地图流程失败：{error:#}");
+        work.run.inputs_released = native
+            .as_mut()
+            .is_none_or(|controller| controller.release_inputs().is_ok());
+    }
+    let mut state = shared.lock().expect("运行状态锁失效");
+    if let Some(events) = &work.events {
+        for event in events.receiver.try_iter() {
+            state.event(
+                Some(work.run.id),
+                "debug",
+                format!("{} {}", event.message, event.node.as_deref().unwrap_or("")),
+            );
+        }
+        let dropped = events.dropped();
+        state.dropped += dropped.saturating_sub(work.dropped);
+        work.dropped = dropped;
+    }
+    if let Ok(record) =
+        state
+            .slot
+            .update_map(work.run.id, work.run.progress(), work.run.message.clone())
+    {
+        save_run(paths, &mut state, &record);
+        state.event(
+            Some(record.id),
+            if record.state == RunState::Failed {
+                "error"
+            } else {
+                "info"
+            },
+            record.message,
+        );
+    }
+    if work.run.state == MapState::Paused {
+        Some(work)
+    } else {
+        state.pipeline_control = None;
+        None
     }
 }
 
@@ -1292,7 +1537,7 @@ fn run_mail_work(
     if work.run.state == MailState::Paused {
         Some(work)
     } else {
-        state.mail_control = None;
+        state.pipeline_control = None;
         None
     }
 }

@@ -5,8 +5,10 @@ pub mod flash;
 mod inference;
 mod input;
 mod mail_bundle;
+mod map_transport;
 pub use coffee::{CoffeeObservation, validate_coffee_bundle};
 pub use mail_bundle::validate_mail_bundle;
+pub use map_transport::{MapObservation, validate_map_bundle};
 pub mod ocr;
 mod pipeline;
 mod raw_control;
@@ -111,6 +113,7 @@ pub struct NativeSession {
     raw_detectors: Mutex<BTreeMap<String, yolo::RawDetector>>,
     inference_gate: Mutex<()>,
     resource_root: PathBuf,
+    map_bundle: Option<PathBuf>,
     inference_device: InferenceDevice,
     raw_cpu_threads: usize,
     controller: fixture::NativeController,
@@ -249,6 +252,7 @@ impl NativeSession {
             raw_detectors: Mutex::new(BTreeMap::new()),
             inference_gate: Mutex::new(()),
             resource_root: path,
+            map_bundle: None,
             inference_device: device,
             raw_cpu_threads: raw_inference::DEFAULT_RAW_CPU_THREADS,
             controller,

@@ -12,6 +12,14 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    MapBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/map-preview")]
+        output: PathBuf,
+    },
     CoffeeBundle {
         #[arg(long)]
         reference: PathBuf,
@@ -79,6 +87,15 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::MapBundle {
+            reference,
+            models,
+            output,
+        } => {
+            od_tools::map_transport::build_bundle(&reference, &models, &output)?;
+            println!("已生成地图离线验证资源：{}", output.display());
+            Ok(())
+        }
         Tool::CoffeeBundle {
             reference,
             models,
@@ -172,6 +189,10 @@ fn main() -> Result<()> {
                 od_core::mail::MailState::decl(),
                 od_core::mail::MailPhase::decl(),
                 od_core::mail::MailProgress::decl(),
+                od_core::map_transport::MapConfig::decl(),
+                od_core::map_transport::MapState::decl(),
+                od_core::map_transport::MapPhase::decl(),
+                od_core::map_transport::MapProgress::decl(),
                 od_core::InputMode::decl(),
                 od_core::InputSide::decl(),
                 od_core::MouseButton::decl(),

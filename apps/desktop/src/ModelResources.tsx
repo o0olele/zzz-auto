@@ -73,7 +73,7 @@ export function ModelResources({ connected, blocked }: { connected: boolean; blo
     {loadError && <MessageBar intent="error"><MessageBarBody>{loadError}</MessageBarBody></MessageBar>}
     {snapshot && <>
       <Card className="resource-options"><div className="card-title"><h2>准备模型</h2><Badge appearance="outline">{snapshot.models.length} 个固定模型</Badge></div>
-        <p>已校验的模型会直接复用。下载完成后，游戏任务继续使用当前资源包；运行资源切换将在后续版本接通。</p>
+        <p>已校验的模型会直接复用。下载完成后，游戏任务继续使用当前资源包；已安装版本可在“运行资源”页切换。</p>
         <div className="button-row resource-actions"><Checkbox label="仅使用离线缓存" checked={offline} disabled={disabled} onChange={(_, data) => setOffline(data.checked === true)}/><Button appearance="primary" disabled={disabled || !selected?.length} onClick={() => void act('prepare')}>准备所选模型</Button></div>
         <p className="resource-path">缓存目录：{snapshot.cache_directory}</p>
       </Card>

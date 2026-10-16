@@ -1,4 +1,8 @@
 use anyhow::{Context, Result, ensure};
+pub use od_core::runtime_resources::ResourceSelection;
+use od_core::runtime_resources::{
+    InstalledResources, RuntimeResourceCatalog, RuntimeResourceRequest,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -56,15 +60,6 @@ pub struct ResourceManifest {
     pub binding_version: String,
     pub protocol_version: u32,
     pub files: Vec<ResourceFile>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct ResourceSelection {
-    pub schema_version: u32,
-    pub current: Option<String>,
-    pub previous: Option<String>,
-    pub can_rollback: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -474,6 +469,115 @@ pub fn status(data: &Path, bundled: &Path) -> Result<ResourceStatus> {
 
 pub fn resolve(data: &Path, bundled: &Path) -> Result<PathBuf> {
     Ok(status(data, bundled)?.directory)
+}
+
+fn revision(selection: &ResourceSelection) -> Result<String> {
+    Ok(hex::encode(Sha256::digest(serde_json::to_vec(selection)?)))
+}
+
+pub fn catalog(data: &Path) -> Result<RuntimeResourceCatalog> {
+    let root = store(data)?;
+    let selection = read_selection(&root)?;
+    let directory = root.join("versions");
+    check_path(&directory)?;
+    let mut versions = Vec::new();
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => Some(entries),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    if let Some(entries) = entries {
+        for (index, entry) in entries.enumerate() {
+            ensure!(index < 64, "已安装资源目录超过 64 项，请整理后再刷新");
+            let entry = entry?;
+            let id = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("资源目录名称无效"))?;
+            ensure!(hash_valid(&id), "资源目录包含未登记项目");
+            let result = read_manifest(&entry.path(), Some(&id));
+            let (version, compatible, error) = match result {
+                Ok(manifest) => (Some(manifest.version), true, None),
+                Err(error) => (None, false, Some(format!("{error:#}"))),
+            };
+            versions.push(InstalledResources {
+                id,
+                version,
+                compatible,
+                error,
+            });
+        }
+    }
+    // 保留已选择但目录丢失的版本，允许用户看清错误后回滚。
+    for id in [&selection.current, &selection.previous]
+        .into_iter()
+        .flatten()
+    {
+        if !versions.iter().any(|version| &version.id == id) {
+            versions.push(InstalledResources {
+                id: id.clone(),
+                version: None,
+                compatible: false,
+                error: Some("已选择的资源目录缺失".into()),
+            });
+        }
+    }
+    versions.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(RuntimeResourceCatalog {
+        revision: revision(&selection)?,
+        selection,
+        directory: directory.display().to_string(),
+        versions,
+    })
+}
+
+pub fn preview_change(
+    data: &Path,
+    bundled: &Path,
+    request: &RuntimeResourceRequest,
+) -> Result<ResourceSelection> {
+    request.validate().map_err(anyhow::Error::msg)?;
+    let root = store(data)?;
+    let mut selection = read_selection(&root)?;
+    let expected = match request {
+        RuntimeResourceRequest::Activate { revision, .. }
+        | RuntimeResourceRequest::Rollback { revision } => revision,
+        RuntimeResourceRequest::Refresh => anyhow::bail!("刷新不是版本切换"),
+    };
+    ensure!(
+        revision(&selection)? == *expected,
+        "资源选择已变化，请刷新后重新确认"
+    );
+    match request {
+        RuntimeResourceRequest::Activate { id, .. } => {
+            target(&root, bundled, Some(id))?;
+            if selection.current.as_deref() != Some(id) {
+                target(&root, bundled, selection.current.as_deref())?;
+                selection.previous = selection.current.replace(id.clone());
+                selection.can_rollback = true;
+            }
+        }
+        RuntimeResourceRequest::Rollback { .. } => {
+            ensure!(selection.can_rollback, "没有可回滚的上一版本");
+            target(&root, bundled, selection.previous.as_deref())?;
+            std::mem::swap(&mut selection.current, &mut selection.previous);
+        }
+        RuntimeResourceRequest::Refresh => unreachable!(),
+    }
+    Ok(selection)
+}
+
+pub fn apply_change(
+    data: &Path,
+    bundled: &Path,
+    request: &RuntimeResourceRequest,
+) -> Result<ResourceSelection> {
+    let root = store(data)?;
+    request.validate().map_err(anyhow::Error::msg)?;
+    let _owner = od_core::config::ConfigStore::new(data)?.acquire_owner()?;
+    let selection = preview_change(data, bundled, request)?;
+    save_selection(&root, &selection)?;
+    Ok(selection)
 }
 
 // 启动时只核对选择和清单；完整文件校验在原生工作线程中完成，避免阻塞桌面首个快照。

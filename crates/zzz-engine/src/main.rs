@@ -254,6 +254,9 @@ enum ModelResourceAction {
 
 #[derive(Subcommand)]
 enum RuntimeResourceAction {
+    Catalog,
+    PreviewChange(ResourceChangeArgs),
+    ApplyChange(ResourceChangeArgs),
     Pack {
         #[arg(long)]
         source: PathBuf,
@@ -280,6 +283,34 @@ enum RuntimeResourceAction {
         id: String,
     },
     Rollback,
+}
+
+#[derive(clap::Args)]
+struct ResourceChangeArgs {
+    #[arg(
+        long,
+        required_unless_present = "rollback",
+        conflicts_with = "rollback"
+    )]
+    id: Option<String>,
+    #[arg(long, required_unless_present = "id", conflicts_with = "id")]
+    rollback: bool,
+    #[arg(long)]
+    revision: String,
+}
+
+impl ResourceChangeArgs {
+    fn request(self) -> od_core::runtime_resources::RuntimeResourceRequest {
+        match self.id {
+            Some(id) => od_core::runtime_resources::RuntimeResourceRequest::Activate {
+                id,
+                revision: self.revision,
+            },
+            None => od_core::runtime_resources::RuntimeResourceRequest::Rollback {
+                revision: self.revision,
+            },
+        }
+    }
 }
 
 fn capture(method: Capture) -> CaptureMethod {
@@ -328,6 +359,21 @@ async fn main() -> Result<()> {
         Action::RuntimeResources { command } => {
             use zzz_engine::runtime_resources;
             return match command {
+                RuntimeResourceAction::Catalog => print(runtime_resources::catalog(&paths.data)?),
+                RuntimeResourceAction::PreviewChange(change) => {
+                    print(runtime_resources::preview_change(
+                        &paths.data,
+                        &paths.resources,
+                        &change.request(),
+                    )?)
+                }
+                RuntimeResourceAction::ApplyChange(change) => {
+                    print(runtime_resources::apply_change(
+                        &paths.data,
+                        &paths.resources,
+                        &change.request(),
+                    )?)
+                }
                 RuntimeResourceAction::Pack {
                     source,
                     version,

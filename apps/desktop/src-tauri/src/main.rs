@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod host;
+mod resources;
 mod session;
 
 use host::Host;
@@ -71,6 +72,26 @@ async fn recover_inputs(
 }
 
 #[tauri::command]
+fn runtime_resource_state(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+    main_window(&window)?;
+    Ok(state.resources.snapshot())
+}
+
+#[tauri::command]
+fn start_runtime_resource_job(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+    request: od_core::runtime_resources::RuntimeResourceRequest,
+) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+    main_window(&window)?;
+    state.start_resources(&app, request)
+}
+
+#[tauri::command]
 fn subscribe_engine(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, Host>,
@@ -92,6 +113,8 @@ fn main() {
             reconnect_engine,
             elevate_engine,
             recover_inputs,
+            runtime_resource_state,
+            start_runtime_resource_job,
             subscribe_engine
         ])
         .on_window_event(|window, event| {
@@ -163,6 +186,10 @@ fn main() {
                     eprintln!("{error}");
                 }
                 loop {
+                    if handle.state::<Host>().resources.switching() {
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                        continue;
+                    }
                     let (privilege, snapshot) = handle.state::<Host>().poll(&handle).await;
                     let update = match snapshot {
                         Ok(Payload::Snapshot(snapshot)) => DesktopUpdate::Snapshot(snapshot),

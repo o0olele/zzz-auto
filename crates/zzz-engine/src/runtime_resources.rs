@@ -10,6 +10,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Seek, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
 };
 use uuid::Uuid;
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
@@ -17,7 +18,7 @@ use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 const MANIFEST: &str = "resource-manifest.json";
 const MAX_MANIFEST: u64 = 128 * 1024;
 const MAX_FILE: u64 = 128 * 1024 * 1024;
-const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;
+pub(crate) const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;
 // 首批只收集当前具有执行器的完整资源，其他生成目录不进入运行包。
 const FILES: &[&str] = &[
     "catalog/applications.json",
@@ -73,18 +74,19 @@ pub struct ResourceStatus {
 pub struct PackedResources {
     pub id: String,
     pub archive: PathBuf,
+    pub archive_bytes: u64,
     pub sha256: String,
     pub manifest: ResourceManifest,
 }
 
-fn hash_valid(value: &str) -> bool {
+pub(crate) fn hash_valid(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
-fn check_path(path: &Path) -> Result<()> {
+pub(crate) fn check_path(path: &Path) -> Result<()> {
     ensure!(path.is_absolute(), "资源路径必须是绝对路径");
     od_core::config::reject_links(path)?;
     for ancestor in path.ancestors().skip(1) {
@@ -110,11 +112,26 @@ fn read_limited(path: &Path, limit: u64) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn copy_hash(mut input: impl Read, mut output: impl Write, limit: u64) -> Result<(u64, String)> {
+pub(crate) fn cancelled(cancel: &AtomicBool) -> Result<()> {
+    ensure!(!cancel.load(Ordering::Acquire), "运行资源下载已取消");
+    Ok(())
+}
+
+fn copy_hash(input: impl Read, output: impl Write, limit: u64) -> Result<(u64, String)> {
+    copy_hash_cancellable(input, output, limit, &AtomicBool::new(false))
+}
+
+fn copy_hash_cancellable(
+    mut input: impl Read,
+    mut output: impl Write,
+    limit: u64,
+    cancel: &AtomicBool,
+) -> Result<(u64, String)> {
     let mut digest = Sha256::new();
     let mut count = 0_u64;
     let mut buffer = [0_u8; 65536];
     loop {
+        cancelled(cancel)?;
         let length = input.read(&mut buffer)?;
         if length == 0 {
             break;
@@ -201,8 +218,18 @@ fn read_manifest(root: &Path, expected_id: Option<&str>) -> Result<ResourceManif
 }
 
 pub fn validate_directory(root: &Path, expected_id: Option<&str>) -> Result<ResourceManifest> {
+    validate_directory_cancellable(root, expected_id, &AtomicBool::new(false))
+}
+
+fn validate_directory_cancellable(
+    root: &Path,
+    expected_id: Option<&str>,
+    cancel: &AtomicBool,
+) -> Result<ResourceManifest> {
+    cancelled(cancel)?;
     let manifest = read_manifest(root, expected_id)?;
     for entry in walkdir::WalkDir::new(root).min_depth(1) {
+        cancelled(cancel)?;
         let entry = entry?;
         check_path(entry.path())?;
         let name = entry
@@ -227,7 +254,7 @@ pub fn validate_directory(root: &Path, expected_id: Option<&str>) -> Result<Reso
     }
     for file in &manifest.files {
         let input = File::open(root.join(&file.path))?;
-        let (bytes, hash) = copy_hash(input, std::io::sink(), file.bytes)?;
+        let (bytes, hash) = copy_hash_cancellable(input, std::io::sink(), file.bytes, cancel)?;
         ensure!(
             bytes == file.bytes && hash == file.sha256,
             "运行资源校验失败：{}",
@@ -235,14 +262,15 @@ pub fn validate_directory(root: &Path, expected_id: Option<&str>) -> Result<Reso
         );
     }
     validate_semantics(root)?;
+    cancelled(cancel)?;
     Ok(manifest)
 }
 
 // 只在本次创建的随机临时目录中收尾；强制终止留下的目录不会被后续采用。
-struct Temporary(PathBuf);
+pub(crate) struct Temporary(pub(crate) PathBuf);
 
 impl Temporary {
-    fn directory(path: PathBuf) -> Result<Self> {
+    pub(crate) fn directory(path: PathBuf) -> Result<Self> {
         check_path(&path)?;
         fs::create_dir(&path)?;
         Ok(Self(path))
@@ -324,13 +352,14 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
     let mut archive = writer.finish()?;
     archive.sync_all()?;
     archive.rewind()?;
-    let (_, sha256) = copy_hash(&mut archive, std::io::sink(), MAX_ARCHIVE)?;
+    let (archive_bytes, sha256) = copy_hash(&mut archive, std::io::sink(), MAX_ARCHIVE)?;
     drop(archive);
     // hard_link 在目标存在时失败，避免并发打包覆盖用户文件。
     fs::hard_link(&temporary.0, &output)?;
     Ok(PackedResources {
         id,
         archive: output,
+        archive_bytes,
         sha256,
         manifest,
     })
@@ -340,7 +369,9 @@ fn extract(
     archive: &Path,
     expected_hash: &str,
     staging: &Path,
+    cancel: &AtomicBool,
 ) -> Result<(String, ResourceManifest)> {
+    cancelled(cancel)?;
     ensure!(hash_valid(expected_hash), "必须提供小写的 ZIP SHA-256");
     check_path(archive)?;
     // 校验与解压使用同一只读句柄，期间拒绝其他进程改写 ZIP。
@@ -350,13 +381,14 @@ fn extract(
         file.metadata()?.is_file() && file.metadata()?.len() <= MAX_ARCHIVE,
         "ZIP 过大或类型无效"
     );
-    let (_, hash) = copy_hash(&mut file, std::io::sink(), MAX_ARCHIVE)?;
+    let (_, hash) = copy_hash_cancellable(&mut file, std::io::sink(), MAX_ARCHIVE, cancel)?;
     ensure!(hash == expected_hash, "ZIP SHA-256 不匹配");
     file.rewind()?;
     let mut zip = ZipArchive::new(file)?;
     ensure!(zip.len() == FILES.len() + 1, "ZIP 文件数量不匹配");
     let mut names = BTreeSet::new();
     for index in 0..zip.len() {
+        cancelled(cancel)?;
         let entry = zip.by_index(index)?;
         ensure!(
             !entry.is_dir()
@@ -382,12 +414,13 @@ fn extract(
     manifest_file.sync_all()?;
     drop(manifest_file);
     for file in &manifest.files {
+        cancelled(cancel)?;
         let mut entry = zip.by_name(&file.path)?;
         ensure!(entry.size() == file.bytes, "ZIP 文件声明长度不匹配");
         let path = staging.join(&file.path);
         fs::create_dir_all(path.parent().context("资源父目录缺失")?)?;
         let mut output = OpenOptions::new().create_new(true).write(true).open(path)?;
-        let (bytes, hash) = copy_hash(&mut entry, &mut output, file.bytes)?;
+        let (bytes, hash) = copy_hash_cancellable(&mut entry, &mut output, file.bytes, cancel)?;
         output.sync_all()?;
         ensure!(
             bytes == file.bytes && hash == file.sha256,
@@ -395,15 +428,24 @@ fn extract(
             file.path
         );
     }
-    validate_directory(staging, Some(&id))?;
+    validate_directory_cancellable(staging, Some(&id), cancel)?;
     Ok((id, manifest))
 }
 
 pub fn check_archive(archive: &Path, sha256: &str) -> Result<ResourceManifest> {
+    Ok(check_archive_cancellable(archive, sha256, &AtomicBool::new(false))?.1)
+}
+
+pub(crate) fn check_archive_cancellable(
+    archive: &Path,
+    sha256: &str,
+    cancel: &AtomicBool,
+) -> Result<(String, ResourceManifest)> {
+    cancelled(cancel)?;
     let staging = Temporary::directory(
         std::env::temp_dir().join(format!("zzz-resources-{}", Uuid::new_v4())),
     )?;
-    Ok(extract(&std::path::absolute(archive)?, sha256, &staging.0)?.1)
+    extract(&std::path::absolute(archive)?, sha256, &staging.0, cancel)
 }
 
 fn store(data: &Path) -> Result<PathBuf> {
@@ -603,7 +645,12 @@ pub fn install(data: &Path, archive: &Path, sha256: &str) -> Result<String> {
     check_path(&versions)?;
     fs::create_dir_all(&versions)?;
     let staging = Temporary::directory(root.join(format!(".install-{}", Uuid::new_v4())))?;
-    let (id, _) = extract(&std::path::absolute(archive)?, sha256, &staging.0)?;
+    let (id, _) = extract(
+        &std::path::absolute(archive)?,
+        sha256,
+        &staging.0,
+        &AtomicBool::new(false),
+    )?;
     let destination = versions.join(&id);
     check_path(&destination)?;
     if destination.try_exists()? {

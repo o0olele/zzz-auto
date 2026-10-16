@@ -71,7 +71,7 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 
 ## 离线模型对照
 
-桌面“模型资源”页可检查固定模型、准备所选项、离线复用、查看进度及取消任务，缓存位于引擎数据目录的 `model-cache/`。任务离开页面后继续，退出或失联时取消；下载完成暂不切换游戏使用的资源包。CLI 的 `cargo run -p zzz-engine --locked -- model-resources status` 只读检查开发缓存，`model-resources prepare` 下载并校验，`--offline` 只用本地缓存，`--model ppocrv5` 可选择模型，`--cache` 可指定与桌面相同的目录。完整用法与范围见[模型资源管理](docs/develop/model-resources.md)。桌面“运行资源”可选择本地 ZIP、填写发布方 SHA-256 后检查并安装，再另行启用或回滚；安装与切换会重连普通权限引擎。完整包联网下载继续待办，详见[运行资源包](docs/develop/runtime-resources.md)。
+桌面“模型资源”页可检查固定模型、准备所选项、离线复用、查看进度及取消任务，缓存位于引擎数据目录的 `model-cache/`。任务离开页面后继续，退出或失联时取消；下载完成暂不切换游戏使用的资源包。CLI 的 `cargo run -p zzz-engine --locked -- model-resources status` 只读检查开发缓存，`model-resources prepare` 下载并校验，`--offline` 只用本地缓存，`--model ppocrv5` 可选择模型，`--cache` 可指定与桌面相同的目录。完整用法与范围见[模型资源管理](docs/develop/model-resources.md)。桌面“运行资源”可选择本地 ZIP、填写发布方 SHA-256 后检查并安装，再另行启用或回滚；安装与切换会重连普通权限引擎。原生 CLI `runtime-resources download` 可使用显式 HTTPS 地址、预期字节数和 SHA-256 下载并完整检查 ZIP，支持取消和已完成文件复用；桌面联网发现与签名发布继续待办，详见[运行资源包](docs/develop/runtime-resources.md)。
 
 准备固定的旧版 PP-OCRv5、闪光及两种 YOLO 模型，再运行同一批固定图的 CPU / DirectML 对照：
 

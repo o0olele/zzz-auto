@@ -1,5 +1,6 @@
 mod paths;
 pub use paths::{DesktopLayout, desktop_layout};
+pub mod download;
 pub mod model_cache;
 
 #[cfg(windows)]

@@ -257,6 +257,16 @@ enum RuntimeResourceAction {
     Catalog,
     PreviewChange(ResourceChangeArgs),
     ApplyChange(ResourceChangeArgs),
+    Download {
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        bytes: u64,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        output: PathBuf,
+    },
     Pack {
         #[arg(long)]
         source: PathBuf,
@@ -359,6 +369,46 @@ async fn main() -> Result<()> {
         Action::RuntimeResources { command } => {
             use zzz_engine::runtime_resources;
             return match command {
+                RuntimeResourceAction::Download {
+                    url,
+                    bytes,
+                    sha256,
+                    output,
+                } => {
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    let interrupt = cancel.clone();
+                    let signal = tokio::spawn(async move {
+                        if tokio::signal::ctrl_c().await.is_ok() {
+                            interrupt.store(true, std::sync::atomic::Ordering::Release);
+                        }
+                    });
+                    let result = tokio::task::spawn_blocking(move || {
+                        let source = zzz_engine::runtime_download::ResourceDownloadSource {
+                            url,
+                            bytes,
+                            sha256,
+                        };
+                        let mut previous = ("", 0_u64);
+                        zzz_engine::runtime_download::download(
+                            &source,
+                            &output,
+                            &cancel,
+                            |progress| {
+                                let megabytes = progress.completed_bytes / (1024 * 1024);
+                                if previous != (progress.phase, megabytes) {
+                                    eprintln!(
+                                        "{}",
+                                        serde_json::to_string(&progress).expect("资源进度可序列化")
+                                    );
+                                    previous = (progress.phase, megabytes);
+                                }
+                            },
+                        )
+                    })
+                    .await;
+                    signal.abort();
+                    print(result??)
+                }
                 RuntimeResourceAction::Catalog => print(runtime_resources::catalog(&paths.data)?),
                 RuntimeResourceAction::PreviewChange(change) => {
                     print(runtime_resources::preview_change(

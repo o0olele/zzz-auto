@@ -4,5 +4,6 @@ pub mod map_transport;
 pub mod model_resources;
 pub mod recognition;
 pub mod runtime;
+pub mod runtime_download;
 pub mod runtime_resources;
 pub mod transport;

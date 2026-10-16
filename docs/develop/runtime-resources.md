@@ -4,7 +4,7 @@
 
 ## 版本与启用规则
 
-原生引擎 CLI 提供 `runtime-resources pack|check|install|status|activate|rollback`。本地 ZIP 可通过 CLI 或桌面导入，安装必须给出预期 ZIP SHA-256；桌面安装及版本切换见下方说明，联网发现版本、下载完整包及签名发布后续实现。包记录内容版本、引擎、SDK、Rust 绑定、通信协议和资源格式，当前要求与本引擎精确匹配。逐文件校验之外，继续使用邮件和地图的固定流程及模型校验；健康检查和应用清单与编译时内容一致。
+原生引擎 CLI 提供 `runtime-resources pack|download|check|install|status|activate|rollback`。本地 ZIP 可通过 CLI 或桌面导入，安装必须给出预期 ZIP SHA-256；显式 HTTPS 下载见下方说明，联网发现版本、桌面完整包下载及签名发布后续实现。包记录内容版本、引擎、SDK、Rust 绑定、通信协议和资源格式，当前要求与本引擎精确匹配。逐文件校验之外，继续使用邮件和地图的固定流程及模型校验；健康检查和应用清单与编译时内容一致。
 
 数据目录的 `runtime-resources/versions/<清单哈希>/` 保存完整版本，`selection.json` 单次替换当前与上一版本。安装仅准备版本，不自动启用；相同清单重复安装只校验复用。内容版本只是展示值，目录由清单哈希决定；已存在但损坏的版本报错并保留，不覆盖。ZIP 不允许额外条目、重复路径、目录链接、越界路径或原生二进制。
 
@@ -46,7 +46,7 @@ cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-di
 
 文件选择器只选本地 ZIP，不改变进程工作目录；取消不创建任务。安装请求校验本机盘符绝对路径、扩展名及 SHA-256，拒绝网络共享、设备路径、相对路径、父目录跳转及备用数据流。仅本地主窗口可调用选择器和安装命令，不接收 URL 或自定义 Pipeline。安装再次核对 ZIP 哈希，检查后文件被替换或已有版本损坏时拒绝覆盖。
 
-桌面“运行资源”页也可查看本机已安装版本、当前和上一选择，启用已安装版本或回滚。完整包联网下载和签名发布继续待办。
+桌面“运行资源”页也可查看本机已安装版本、当前和上一选择，启用已安装版本或回滚。桌面完整包联网下载和签名发布继续待办。
 
 页面使用桌面宿主保存的异步任务状态，离开页面再回来继续查询，不重新执行安装或切换。安装完成自动刷新版本列表；刷新只读清单，不重复扫描模型。“清单可用”只表示清单与当前引擎兼容，启用前仍须完整核对文件。损坏或不兼容的版本显示原因，不静默忽略当前版本损坏。
 
@@ -72,3 +72,26 @@ Pop-Location
 ```
 
 新增命令仅作用于桌面宿主，未新增引擎 IPC，协议仍为 v15；生成类型增加本地安装请求。
+
+## 原生 HTTPS 下载
+
+显式 CLI `runtime-resources download --url <HTTPS> --bytes <预期字节数> --sha256 <预期 ZIP 哈希> --output <ZIP>` 复用模型下载的原生传输、系统代理、证书校验和可取消网络等待。输入元数据先校验；文件下载到输出目录内的临时位置，限制长度并核对哈希，再执行完整 ZIP、兼容性、逐文件及固定流程检查，通过后才保存最终 ZIP。不自动安装或启用，不加载 SDK，不占用游戏控制权。预期大小为 1..536870912 字节，哈希须为 64 位小写十六进制；地址拒绝 HTTP、用户名、密码及 URL 片段。HTTPS 重定向至多十次且禁止 HTTP 降级，连接超时为 15 秒，总超时为 120 秒。
+
+已有输出只允许完整校验后复用；无效文件保留并报错，不覆盖。并发下载最终使用不可覆盖的原子发布，取消和失败清理本次临时内容，强制终止遗留内容不作为完整文件。进度写入标准错误，成功结果写入标准输出。正式发布地址、签名清单及桌面联网发现继续待办；本轮不把显式 CLI 地址当作已受信任的发布源。
+
+`pack` 和 `download` 的成功结果增加 `archive_bytes`，前者给出发布 ZIP 的预期字节数；下载者应从发布方取得大小和哈希。`download` 还返回 `reused`、清单哈希、文件路径及包清单，不在结果或进度中回显下载 URL。输出目录可以有空格与中文，已有的完整输出可直接复用且不联网。网络错误也不附带 URL，避免在日志中输出临时下载凭据。以下占位值须替换为实际发布信息：
+
+```powershell
+cargo run -p zzz-engine --locked -- runtime-resources download --url <发布方HTTPS地址> --bytes <预期ZIP字节数> --sha256 <预期ZIP哈希> --output artifacts/runtime-download.zip
+cargo run -p zzz-engine --locked -- --data <绝对数据目录> runtime-resources install --archive artifacts/runtime-download.zip --sha256 <预期ZIP哈希>
+```
+
+Ctrl+C 在网络等待、下载块、ZIP 条目和文件哈希块之间请求取消；已通过检查且保存为最终 ZIP 后视为完成。邮件、地图的固定语义复验在调用前后检查取消，不承诺中断该次复验。下载完成后可在桌面选择此 ZIP，安装后仍另行启用。
+
+本轮独立回归新增 7 个下载用例，覆盖元数据拒绝、超长 / 截断 / 坏哈希 / 坏 ZIP、流异常、取消清理、既有文件保留、真实生成资源的下载流到安装、无 SDK CLI 复用、保存冲突、本机 TLS 等待取消，以及共用传输后的锁定模型下载与离线复用。既有 2 个桌面安装用例继续通过。测试使用受控文件流和本机端口，没有把正式 HTTPS 资源包发布或签名登记为已验收；本机 TLS 用例需要在 Windows 沙箱外运行，否则可能返回安全凭证不可用。
+
+```powershell
+cargo build -p zzz-engine --locked
+cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target --locked --test runtime_download --test desktop_runtime_install -- --test-threads=1
+cargo clippy --workspace --all-targets --locked -- -D warnings
+```

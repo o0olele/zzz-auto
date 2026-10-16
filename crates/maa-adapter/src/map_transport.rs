@@ -23,10 +23,10 @@ pub fn validate_map_bundle(root: &Path) -> Result<PathBuf> {
     );
     let manifest: Value = serde_json::from_slice(&std::fs::read(path)?)?;
     ensure!(
-        manifest["schema_version"] == 1
+        manifest["schema_version"] == 2
             && manifest["sdk_version"] == crate::SDK_VERSION
             && manifest["base_size"] == json!([1920, 1080])
-            && manifest["fixture_only"] == true
+            && manifest["prototype_only"] == true
             && manifest["accepted"] == false
             && manifest["route"]
                 == json!({"area":od_core::map_transport::AREA_NAME,"point":od_core::map_transport::POINT_NAME}),
@@ -108,6 +108,62 @@ pub struct MapObservation {
 }
 
 impl crate::NativeSession {
+    pub fn load_map_bundle(&mut self, root: &Path) -> Result<()> {
+        ensure!(!self.tasker.running(), "任务运行中不能替换地图资源");
+        let root = validate_map_bundle(root)?;
+        ensure!(
+            self._resource
+                .post_bundle(root.to_str().context("地图路径不是 UTF-8")?)?
+                .wait()
+                .is_success(),
+            "地图资源载入失败"
+        );
+        self.map_bundle = Some(root);
+        Ok(())
+    }
+
+    pub fn prepare_game_map(&mut self, cancel: Arc<AtomicBool>, delay_ms: u32) -> Result<()> {
+        self.validate_game_map()?;
+        ensure!(delay_ms <= 10_000, "地图延时超出限制");
+        self.release_inputs()?;
+        crate::input::wait_delay(Duration::from_millis(delay_ms.into()), &cancel, &mut None);
+        Ok(())
+    }
+
+    fn validate_game_map(&self) -> Result<()> {
+        ensure!(
+            self.game_window.is_some() && self.input_mode == Some(crate::InputMode::Foreground),
+            "地图实机流程需要前台键鼠游戏控制器"
+        );
+        validate_map_bundle(self.map_bundle.as_deref().context("地图资源尚未载入")?)?;
+        Ok(())
+    }
+
+    pub fn game_map_step(
+        &mut self,
+        step: MapStep,
+        cancel: Arc<AtomicBool>,
+        timeout: Duration,
+    ) -> Result<crate::PipelineExecution> {
+        self.validate_game_map()?;
+        self.prepare_input_target(
+            od_core::map_transport::MapConfig::recovery_inputs()[0],
+            &cancel,
+            &mut None,
+        )?;
+        self.run_pipeline_detailed(
+            step.entry(),
+            &crate::PipelineInputPlan {
+                keys: BTreeSet::new(),
+                contacts: [0].into(),
+            },
+            cancel,
+            timeout,
+            "{}",
+            true,
+        )
+    }
+
     pub fn prepare_fixture_map(&mut self) -> Result<()> {
         ensure!(
             self.game_window.is_none() && self.input_mode == Some(crate::InputMode::Foreground),

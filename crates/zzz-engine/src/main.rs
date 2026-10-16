@@ -299,7 +299,7 @@ async fn main() -> Result<()> {
         }
         Action::MapBundleCheck { ref bundle } => {
             return print(
-                serde_json::json!({"valid":true,"fixture_only":true,"bundle":maa_adapter::validate_map_bundle(bundle)?}),
+                serde_json::json!({"valid":true,"prototype_only":true,"bundle":maa_adapter::validate_map_bundle(bundle)?}),
             );
         }
         Action::MapInspect { ref bundle, .. } => {

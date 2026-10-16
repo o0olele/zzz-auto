@@ -128,7 +128,7 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
             files.insert(destination.clone(), bytes);
         }
     }
-    let manifest = json!({"schema_version":1,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"fixture_only":true,"accepted":false,"route":{"area":od_core::map_transport::AREA_NAME,"point":od_core::map_transport::POINT_NAME},"sources":sources,"files":files.iter().map(|(path,bytes)|json!({"path":path,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>(),"limitations":["从已打开普通地图开始，只处理可见目标，不滚动","固定文字精确匹配及区域裁剪 OCR，未声称旧版全文识别兼容","不接入实机或每日记录；落地画面不能证明具体地点"]});
+    let manifest = json!({"schema_version":2,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"prototype_only":true,"accepted":false,"route":{"area":od_core::map_transport::AREA_NAME,"point":od_core::map_transport::POINT_NAME},"sources":sources,"files":files.iter().map(|(path,bytes)|json!({"path":path,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>(),"limitations":["从已打开普通地图开始，只处理可见目标，不滚动","固定文字精确匹配及区域裁剪 OCR，未声称旧版全文识别兼容","受控试运行不写每日记录；落地画面不能证明具体地点，实机尚未验收"]});
     files.insert(
         "map-manifest.json".into(),
         serde_json::to_vec_pretty(&manifest)?,

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, ensure};
+pub use od_core::model_resources::{CacheState, ModelCacheStatus, ModelProgress, PreparedModel};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -48,36 +49,6 @@ pub struct ModelFile {
     pub bytes: u64,
     pub sha256: String,
     pub bundle_path: Option<String>,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum CacheState {
-    Missing,
-    Invalid,
-    Valid,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ModelCacheStatus {
-    pub id: String,
-    pub archive: CacheState,
-    pub files: CacheState,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PreparedModel {
-    pub id: String,
-    pub reused: bool,
-    pub downloaded: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ModelProgress {
-    pub id: String,
-    pub phase: &'static str,
-    pub completed_bytes: u64,
-    pub total_bytes: u64,
 }
 
 pub fn locked_models() -> Result<ModelLock> {
@@ -143,28 +114,106 @@ fn validate_model(model: &ModelAsset) -> Result<()> {
 /// 传输与校验分开，离线测试可以用受控字节流验证失败及取消。
 pub trait ModelDownloader {
     fn open(&self, url: &str) -> Result<Box<dyn Read>>;
+
+    fn open_cancellable<'a>(
+        &self,
+        url: &str,
+        _cancel: &'a AtomicBool,
+    ) -> Result<Box<dyn Read + 'a>> {
+        self.open(url)
+    }
 }
 
 pub struct HttpsModelDownloader;
 
 impl ModelDownloader for HttpsModelDownloader {
     fn open(&self, url: &str) -> Result<Box<dyn Read>> {
-        let response = reqwest::blocking::Client::builder()
+        open_https(url, None)
+    }
+
+    fn open_cancellable<'a>(
+        &self,
+        url: &str,
+        cancel: &'a AtomicBool,
+    ) -> Result<Box<dyn Read + 'a>> {
+        open_https(url, Some(cancel))
+    }
+}
+
+fn wait_network<T>(
+    runtime: &tokio::runtime::Runtime,
+    cancel: Option<&AtomicBool>,
+    future: impl std::future::Future<Output = reqwest::Result<T>>,
+) -> Result<T> {
+    runtime.block_on(async {
+        tokio::pin!(future);
+        loop {
+            if let Some(cancel) = cancel {
+                cancelled(cancel)?;
+            }
+            tokio::select! {
+                result = &mut future => return Ok(result?),
+                _ = tokio::time::sleep(Duration::from_millis(25)) => {}
+            }
+        }
+    })
+}
+
+struct HttpsReader<'a> {
+    runtime: tokio::runtime::Runtime,
+    response: reqwest::Response,
+    cancel: Option<&'a AtomicBool>,
+    pending: Vec<u8>,
+    offset: usize,
+}
+
+impl Read for HttpsReader<'_> {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        if output.is_empty() {
+            return Ok(0);
+        }
+        while self.offset == self.pending.len() {
+            let chunk = wait_network(&self.runtime, self.cancel, self.response.chunk())
+                .map_err(std::io::Error::other)?;
+            let Some(chunk) = chunk else {
+                return Ok(0);
+            };
+            self.pending = chunk.to_vec();
+            self.offset = 0;
+        }
+        let length = output.len().min(self.pending.len() - self.offset);
+        output[..length].copy_from_slice(&self.pending[self.offset..self.offset + length]);
+        self.offset += length;
+        Ok(length)
+    }
+}
+
+fn open_https<'a>(url: &str, cancel: Option<&'a AtomicBool>) -> Result<Box<dyn Read + 'a>> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let response = {
+        let _entered = runtime.enter();
+        let client = reqwest::Client::builder()
             .https_only(true)
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(120))
             .redirect(reqwest::redirect::Policy::limited(10))
             .user_agent(concat!("zzz-auto/", env!("CARGO_PKG_VERSION")))
-            .build()?
-            .get(url)
-            .send()?
-            .error_for_status()?;
-        ensure!(
-            response.status() == reqwest::StatusCode::OK,
-            "模型下载未返回完整文件"
-        );
-        Ok(Box::new(response))
-    }
+            .build()?;
+        wait_network(&runtime, cancel, client.get(url).send())?.error_for_status()?
+    };
+    ensure!(
+        response.status() == reqwest::StatusCode::OK,
+        "模型下载未返回完整文件"
+    );
+    Ok(Box::new(HttpsReader {
+        runtime,
+        response,
+        cancel,
+        pending: Vec::new(),
+        offset: 0,
+    }))
 }
 
 fn cancelled(cancel: &AtomicBool) -> Result<()> {
@@ -278,6 +327,15 @@ pub fn cached_files_valid(cache: &Path, model: &ModelAsset) -> bool {
 
 /// 只读状态检查。不存在的缓存目录不会因此创建。
 pub fn model_cache_status(cache: &Path, ids: &[String]) -> Result<Vec<ModelCacheStatus>> {
+    model_cache_status_cancellable(cache, ids, &AtomicBool::new(false))
+}
+
+pub fn model_cache_status_cancellable(
+    cache: &Path,
+    ids: &[String],
+    cancel: &AtomicBool,
+) -> Result<Vec<ModelCacheStatus>> {
+    cancelled(cancel)?;
     let models = selected_models(ids)?;
     let cache = std::path::absolute(cache)?;
     check_path(&cache)?;
@@ -292,7 +350,6 @@ pub fn model_cache_status(cache: &Path, ids: &[String]) -> Result<Vec<ModelCache
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(error.into()),
     };
-    let cancel = AtomicBool::new(false);
     models
         .iter()
         .map(|model| {
@@ -302,9 +359,9 @@ pub fn model_cache_status(cache: &Path, ids: &[String]) -> Result<Vec<ModelCache
                     &cache.join(&model.archive),
                     model.bytes,
                     &model.sha256,
-                    &cancel,
+                    cancel,
                 )?,
-                files: files_state(&cache.join(&model.id), model, &cancel)?,
+                files: files_state(&cache.join(&model.id), model, cancel)?,
             })
         })
         .collect()
@@ -345,7 +402,7 @@ fn progress(
 ) {
     observer(ModelProgress {
         id: model.id.clone(),
-        phase,
+        phase: phase.into(),
         completed_bytes: completed,
         total_bytes: model.bytes,
     });
@@ -360,7 +417,7 @@ fn download(
 ) -> Result<()> {
     cancelled(cancel)?;
     let mut source = downloader
-        .open(&model.url)
+        .open_cancellable(&model.url, cancel)
         .with_context(|| format!("下载模型失败：{}", model.id))?;
     let mut target = OpenOptions::new()
         .write(true)

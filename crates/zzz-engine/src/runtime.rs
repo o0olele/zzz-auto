@@ -136,6 +136,7 @@ enum InputOutcome {
 
 #[derive(Clone)]
 pub struct Engine {
+    resources: Arc<crate::model_resources::ModelResourceService>,
     state: Arc<Mutex<State>>,
     sender: mpsc::SyncSender<Work>,
     fixture: bool,
@@ -190,6 +191,9 @@ impl Engine {
         factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
     ) -> anyhow::Result<Self> {
         let fixture = factory.is_some();
+        let resources = Arc::new(crate::model_resources::ModelResourceService::new(
+            paths.data.join("model-cache"),
+        )?);
         let config = ConfigStore::new(&paths.data)?;
         let config_owner = Arc::new(config.acquire_owner()?);
         config.read()?;
@@ -227,6 +231,7 @@ impl Engine {
                 worker(paths, worker_state, receiver, factory);
             })?;
         Ok(Self {
+            resources,
             state,
             sender,
             fixture,
@@ -241,6 +246,7 @@ impl Engine {
     }
 
     pub fn cancel_active(&self) {
+        self.resources.close();
         let mut state = self.state.lock().expect("运行状态锁失效");
         if let Some(cancel) = &state.cancel {
             cancel.store(true, Ordering::Release);
@@ -268,15 +274,33 @@ impl Engine {
     pub async fn shutdown(&self) -> Result<(), ApiError> {
         self.cancel_active();
         let (tx, rx) = oneshot::channel();
-        self.sender
-            .try_send(Work::Shutdown(tx))
-            .map_err(|_| ApiError::new("worker_unavailable", "工作线程无法接收退出请求"))?;
-        rx.await
-            .map_err(|_| ApiError::new("worker_unavailable", "工作线程已异常退出"))
+        let native = match self.sender.try_send(Work::Shutdown(tx)) {
+            Ok(()) => rx
+                .await
+                .map_err(|_| ApiError::new("worker_unavailable", "工作线程已异常退出")),
+            Err(_) => Err(ApiError::new(
+                "worker_unavailable",
+                "工作线程无法接收退出请求",
+            )),
+        };
+        self.resources.shutdown().await;
+        native
     }
 
     pub async fn execute(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
+            Command::ModelResources => Ok(Payload::ModelResources(self.resources.snapshot())),
+            Command::StartModelResources {
+                kind,
+                models,
+                offline,
+            } => self
+                .resources
+                .start(kind, models, offline)
+                .map(Payload::ModelResources),
+            Command::CancelModelResources { job_id } => {
+                self.resources.cancel(job_id).map(Payload::ModelResources)
+            }
             Command::RetryRunSave => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 if let Some(record) = &state.failed_save {

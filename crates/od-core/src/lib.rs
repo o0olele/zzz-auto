@@ -4,6 +4,7 @@ pub mod daily;
 pub mod group_run;
 pub mod mail;
 pub mod map_transport;
+pub mod model_resources;
 pub mod ocr;
 pub mod pipeline;
 pub mod run_history;

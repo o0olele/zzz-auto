@@ -294,6 +294,9 @@ impl EngineSession {
         } else if !matches!(
             command,
             Command::Snapshot
+                | Command::ModelResources
+                | Command::StartModelResources { .. }
+                | Command::CancelModelResources { .. }
                 | Command::AccountConfig
                 | Command::PreviewGroup { .. }
                 | Command::RunHistory { .. }

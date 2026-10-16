@@ -59,7 +59,7 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 
 桌面“通用设置”可保存默认截图方式、邮件超时和启动 / 继续延时。设置由 Rust 与账号配置一同持久保存，应用组预览显示实际参数，开始时由引擎核对修订并读取。原生诊断可临时调整；完整用法与旧截图配置导入范围见[通用运行设置](docs/develop/general-settings.md)。账号区服、按日跳过及游戏日过期处理见[应用组每日计划](docs/develop/daily-runs.md)。
 
-当前协议为 v14，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline、地图传送试运行、应用组邮件试运行与账号历史。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
+当前协议为 v15，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline、地图传送试运行、应用组邮件试运行、账号历史及模型资源任务。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
 
 咖啡已有只读区域转换和离线截图检查，应用组邮件入口已有顺序调度状态及分项进度。咖啡实际点单和多个游戏应用交接仍待后态素材与实机验证，使用方法与缺口见[咖啡识别与顺序调度](docs/develop/coffee-and-groups.md)。
 
@@ -71,7 +71,7 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 
 ## 离线模型对照
 
-固定模型包已提供 Rust 原生资源管理：`cargo run -p zzz-engine --locked -- model-resources status` 只读检查缓存，`model-resources prepare` 下载并校验，`--offline` 只使用本地缓存，`--model ppocrv5` 可选择模型。已有有效模型直接复用；下载失败与取消不会启用半包。开发脚本已复用同一实现，完整用法和范围见[模型资源下载](docs/develop/model-resources.md)。桌面资源页及运行资源包在线切换继续后续迁移。
+桌面“模型资源”页可检查固定模型、准备所选项、离线复用、查看进度及取消任务，缓存位于引擎数据目录的 `model-cache/`。任务离开页面后继续，退出或失联时取消；下载完成暂不切换游戏使用的资源包。CLI 的 `cargo run -p zzz-engine --locked -- model-resources status` 只读检查开发缓存，`model-resources prepare` 下载并校验，`--offline` 只用本地缓存，`--model ppocrv5` 可选择模型，`--cache` 可指定与桌面相同的目录。完整用法与范围见[模型资源管理](docs/develop/model-resources.md)；运行资源包构建与在线切换继续后续迁移。
 
 准备固定的旧版 PP-OCRv5、闪光及两种 YOLO 模型，再运行同一批固定图的 CPU / DirectML 对照：
 

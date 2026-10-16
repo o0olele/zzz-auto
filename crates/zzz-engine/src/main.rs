@@ -297,7 +297,7 @@ async fn main() -> Result<()> {
                     });
                     let output_cache = cache.clone();
                     let result = tokio::task::spawn_blocking(move || {
-                        let mut previous = (String::new(), "", 0_u64);
+                        let mut previous = (String::new(), String::new(), 0_u64);
                         model_cache::prepare_models(
                             &cache,
                             &models,

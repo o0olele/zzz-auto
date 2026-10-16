@@ -2,10 +2,15 @@ use crate::mail::{MailRun, MailState};
 use chrono::Utc;
 use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, NativeSession};
 use od_core::config::{ConfigError, ConfigStore};
+use od_core::daily::{GameDay, RunPolicy};
 use od_core::{
     InputProbeConfig, RunEvent, RunRecord, RunSlot, RunState, SdkStatus, Snapshot, WindowInfo,
 };
 use od_core::{mail::MailConfig, pipeline::PipelineRequest};
+use od_core::{
+    run_history::RunStore,
+    run_plan::{GroupPlan, plan_group_at},
+};
 use od_protocol::{ApiError, Command, Payload};
 use std::{
     collections::VecDeque,
@@ -29,6 +34,8 @@ pub struct EnginePaths {
 }
 
 struct State {
+    record_error: Option<String>,
+    failed_save: Option<RunRecord>,
     sdk: SdkStatus,
     window: Option<WindowInfo>,
     capture_method: Option<CaptureMethod>,
@@ -60,6 +67,7 @@ impl State {
 
     fn snapshot(&self) -> Snapshot {
         Snapshot {
+            record_error: self.record_error.clone(),
             engine_version: env!("CARGO_PKG_VERSION").into(),
             sdk: self.sdk.clone(),
             window: self.window.clone(),
@@ -103,6 +111,11 @@ struct MailWork {
     dropped: u64,
 }
 
+struct PreparedGroup {
+    plan: GroupPlan,
+    previous_run: Option<Uuid>,
+}
+
 enum InputOutcome {
     Direct(od_core::InputProbeResult),
     Pipeline(od_core::InputPipelineResult),
@@ -114,6 +127,7 @@ pub struct Engine {
     sender: mpsc::SyncSender<Work>,
     fixture: bool,
     config: ConfigStore,
+    history: RunStore,
     _config_owner: Arc<std::fs::File>,
 }
 
@@ -159,8 +173,11 @@ impl Engine {
         let config = ConfigStore::new(&paths.data)?;
         let config_owner = Arc::new(config.acquire_owner()?);
         config.read()?;
+        let history = RunStore::new(&paths.data)?;
         std::fs::create_dir_all(paths.data.join("runs"))?;
         let state = Arc::new(Mutex::new(State {
+            record_error: None,
+            failed_save: None,
             sdk: SdkStatus {
                 ready: false,
                 version: None,
@@ -194,6 +211,7 @@ impl Engine {
             sender,
             fixture,
             config,
+            history,
             _config_owner: config_owner,
         })
     }
@@ -239,6 +257,107 @@ impl Engine {
 
     pub async fn execute(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
+            Command::RetryRunSave => {
+                let mut state = self.state.lock().expect("运行状态锁失效");
+                if let Some(record) = &state.failed_save {
+                    self.history
+                        .save(record)
+                        .map_err(|error| ApiError::new("history_error", error.to_string()))?;
+                    let id = record.id;
+                    let record = record.clone();
+                    let _ = state.slot.confirm_group_saved(&record);
+                    state.failed_save = None;
+                    state.record_error = None;
+                    state.event(
+                        Some(id),
+                        "info",
+                        "运行记录已重新保存，未执行游戏动作".into(),
+                    );
+                }
+                Ok(Payload::Snapshot(Box::new(state.snapshot())))
+            }
+            Command::PreviewGroup {
+                instance_id,
+                group_id,
+            } => {
+                let config = self.config.read().map_err(config_error)?;
+                self.group_plan(config, instance_id, group_id)
+                    .await
+                    .map(Payload::GroupPlan)
+            }
+            Command::RunHistory { instance_id } => {
+                let config = self.config.read().map_err(config_error)?;
+                if !config
+                    .instances
+                    .iter()
+                    .any(|instance| instance.id == instance_id)
+                {
+                    return Err(ApiError::new("unknown_instance", "账号不存在"));
+                }
+                let live = {
+                    let state = self.state.lock().expect("运行状态锁失效");
+                    state
+                        .slot
+                        .current()
+                        .filter(|run| {
+                            !run.state.is_terminal()
+                                && run
+                                    .context
+                                    .as_ref()
+                                    .is_some_and(|context| context.instance_id == instance_id)
+                        })
+                        .map(|run| run.id)
+                };
+                let history = self.history.clone();
+                tokio::task::spawn_blocking(move || history.history(instance_id, live))
+                    .await
+                    .map_err(|_| ApiError::new("history_error", "历史查询线程异常退出"))?
+                    .map(Payload::RunHistory)
+                    .map_err(|error| ApiError::new("history_error", error.to_string()))
+            }
+            Command::StartGroupTrial {
+                instance_id,
+                group_id,
+                revision,
+                game_day,
+                allow_input,
+                confirm_account,
+            } => {
+                if !confirm_account {
+                    return Err(ApiError::new(
+                        "account_not_confirmed",
+                        "请先确认游戏登录账号与所选账号一致",
+                    ));
+                }
+                if !allow_input {
+                    return Err(ApiError::new("input_not_confirmed", "请先确认允许真实输入"));
+                }
+                let previous_run = {
+                    let state = self.state.lock().expect("运行状态锁失效");
+                    if state.record_error.is_some() {
+                        return Err(ApiError::new(
+                            "history_error",
+                            "请先修复目录并重试保存运行记录",
+                        ));
+                    }
+                    if state.slot.busy() || state.native_pending {
+                        return Err(ApiError::new("busy", "已有任务或原生请求尚未完成"));
+                    }
+                    state.slot.current().map(|run| run.id)
+                };
+                let saved = self.config.read().map_err(config_error)?;
+                if saved.revision != revision {
+                    return Err(config_error(ConfigError::Conflict(Box::new(saved))));
+                }
+                let plan = self.group_plan(saved, instance_id, group_id).await?;
+                if plan.game_day.date != game_day {
+                    return Err(ApiError::new(
+                        "plan_expired",
+                        "预览的游戏日已过期，请重新预览并确认",
+                    ));
+                }
+                self.start_mail(None, true, Some(PreparedGroup { plan, previous_run }))
+            }
             Command::AccountConfig => self
                 .config
                 .read()
@@ -254,21 +373,21 @@ impl Engine {
                 {
                     return Err(ApiError::new(
                         "busy",
-                        "请先停止任务并等待原生请求与输入收尾，再修改账号或应用组",
+                        "请先停止任务并等待原生请求与输入收尾，再修改配置",
                     ));
                 }
                 let config = self.config.update(revision, change).map_err(config_error)?;
                 state.event(
                     None,
                     "info",
-                    format!("账号与应用组配置已保存，修订 {}", config.revision),
+                    format!("配置已保存，修订 {}", config.revision),
                 );
                 Ok(Payload::AccountConfig(config))
             }
             Command::StartMail {
                 config,
                 allow_input,
-            } => self.start_mail(config, allow_input),
+            } => self.start_mail(Some(config), allow_input, None),
             Command::Pause { run_id } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 let record = state
@@ -338,6 +457,12 @@ impl Engine {
             }
             Command::StartProbe => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
+                if state.record_error.is_some() {
+                    return Err(ApiError::new(
+                        "history_error",
+                        "请先修复目录并重试保存运行记录",
+                    ));
+                }
                 if !state.sdk.ready || state.window.is_none() {
                     return Err(ApiError::new(
                         "not_ready",
@@ -411,17 +536,83 @@ impl Engine {
         }
     }
 
-    fn start_mail(&self, config: MailConfig, allow_input: bool) -> Result<Payload, ApiError> {
+    async fn group_plan(
+        &self,
+        config: od_core::config::AccountConfig,
+        instance_id: u32,
+        group_id: String,
+    ) -> Result<GroupPlan, ApiError> {
+        let now = Utc::now();
+        let plan = plan_group_at(&config, instance_id, &group_id, now, None)
+            .map_err(|error| ApiError::new("invalid_group", error))?;
+        if plan.run_policy == RunPolicy::Always {
+            return Ok(plan);
+        }
+        let history = self.history.clone();
+        tokio::task::spawn_blocking(move || {
+            let completed = history
+                .daily_completions(instance_id, plan.game_day, now)
+                .map_err(|error| ApiError::new("history_error", error.to_string()))?;
+            plan_group_at(&config, instance_id, &group_id, now, Some(&completed))
+                .map_err(|error| ApiError::new("invalid_group", error))
+        })
+        .await
+        .map_err(|_| ApiError::new("history_error", "每日记录查询线程异常退出"))?
+    }
+
+    fn start_mail(
+        &self,
+        config: Option<MailConfig>,
+        allow_input: bool,
+        group: Option<PreparedGroup>,
+    ) -> Result<Payload, ApiError> {
         if !allow_input {
             return Err(ApiError::new(
                 "input_not_confirmed",
                 "邮件流程会操作游戏，请先确认允许真实输入",
             ));
         }
+        let mut state = self.state.lock().expect("运行状态锁失效");
+        if state.record_error.is_some() {
+            return Err(ApiError::new(
+                "history_error",
+                "请先修复目录并重试保存运行记录",
+            ));
+        }
+        let (plan, config): (Option<GroupPlan>, MailConfig) =
+            if let Some(PreparedGroup { plan, previous_run }) = group {
+                if state.slot.busy() || state.native_pending {
+                    return Err(ApiError::new("busy", "已有任务或原生请求尚未完成"));
+                }
+                let saved = self.config.read().map_err(config_error)?;
+                if saved.revision != plan.context.config_revision {
+                    return Err(config_error(ConfigError::Conflict(Box::new(saved))));
+                }
+                let day = GameDay::at(plan.game_day.region, Utc::now())
+                    .map_err(|error| ApiError::new("invalid_group", error))?;
+                if day != plan.game_day || state.slot.current().map(|run| run.id) != previous_run {
+                    return Err(ApiError::new(
+                        "plan_expired",
+                        "预检期间游戏日或运行记录已变化，请重新预览",
+                    ));
+                }
+                if plan.all_done {
+                    return Err(ApiError::new(
+                        "group_already_done",
+                        "本游戏日已完成，无需重复执行；请重新预览",
+                    ));
+                }
+                if !plan.executable {
+                    return Err(ApiError::new("group_blocked", plan.blockers.join("；")));
+                }
+                let config = plan.mail_config;
+                (Some(plan), config)
+            } else {
+                (None, config.expect("诊断入口必须提供邮件参数"))
+            };
         config
             .validate()
             .map_err(|error| ApiError::new("invalid_input", error))?;
-        let mut state = self.state.lock().expect("运行状态锁失效");
         if !state.sdk.ready {
             return Err(ApiError::new("sdk_not_ready", state.sdk.message.clone()));
         }
@@ -432,11 +623,31 @@ impl Engine {
         if state.native_pending {
             return Err(ApiError::new("busy", "截图或连接操作尚未完成"));
         }
-        let record = state
-            .slot
-            .begin_mail(config)
-            .map_err(|error| ApiError::new("busy", error))?;
+        let record = match plan {
+            Some(plan) => state.slot.begin_group_plan(config, &plan),
+            None => state.slot.begin_mail(config),
+        }
+        .map_err(|error| ApiError::new("busy", error))?;
         let run = MailRun::with_id(record.id, config).map_err(native_error)?;
+        if record.context.is_some()
+            && let Err(error) = self.history.save(&record)
+        {
+            let message = format!("启动记录保存失败，未投递游戏动作：{error}");
+            let mut progress = record.mail.clone().expect("邮件进度已创建");
+            progress.state = MailState::Failed;
+            progress.inputs_released = true;
+            state.failed_save = state
+                .slot
+                .update_mail(record.id, progress, message.clone())
+                .ok();
+            state.record_error = Some(message.clone());
+            state.event(Some(record.id), "error", message.clone());
+            return Err(ApiError::new("history_error", message));
+        }
+        state
+            .slot
+            .confirm_group_saved(&record)
+            .map_err(|error| ApiError::new("history_error", error))?;
         let control = run.control();
         let work = MailWork {
             fixture: self.fixture,
@@ -448,9 +659,25 @@ impl Engine {
             dropped: 0,
         };
         if self.sender.try_send(Work::Mail(work)).is_err() {
-            let _ = state
-                .slot
-                .finish(record.id, RunState::Failed, "工作线程不可用".into());
+            let mut progress = record.mail.clone().expect("邮件进度已创建");
+            progress.state = MailState::Failed;
+            progress.inputs_released = true;
+            if let Ok(failed) =
+                state
+                    .slot
+                    .update_mail(record.id, progress, "工作线程不可用，未投递游戏动作".into())
+            {
+                match self.history.save(&failed) {
+                    Ok(()) => {
+                        let _ = state.slot.confirm_group_saved(&failed);
+                    }
+                    Err(error) => {
+                        state.failed_save = Some(failed);
+                        state.record_error =
+                            Some(format!("运行 {} 的结果保存失败：{error}", record.id));
+                    }
+                }
+            }
             return Err(ApiError::new(
                 "worker_unavailable",
                 "工作线程无法接收邮件任务",
@@ -489,6 +716,12 @@ impl Engine {
             .map_err(|e| ApiError::new("invalid_input", e))?;
         }
         let mut state = self.state.lock().expect("运行状态锁失效");
+        if state.record_error.is_some() {
+            return Err(ApiError::new(
+                "history_error",
+                "请先修复目录并重试保存运行记录",
+            ));
+        }
         if !state.sdk.ready {
             return Err(ApiError::new("sdk_not_ready", state.sdk.message.clone()));
         }
@@ -1083,18 +1316,24 @@ fn watch_native(controller: &NativeSession, state: &Arc<Mutex<State>>) -> anyhow
 }
 
 fn save_run(paths: &EnginePaths, state: &mut State, record: &RunRecord) {
-    let path = paths.data.join("runs").join(format!("{}.json", record.id));
-    let saved = (|| -> anyhow::Result<()> {
-        let temp = path.with_extension("json.tmp");
-        std::fs::write(&temp, serde_json::to_vec_pretty(record)?)?;
-        std::fs::rename(temp, path)?;
-        Ok(())
-    })();
+    let saved = RunStore::new(&paths.data).and_then(|store| store.save(record));
     if let Err(error) = saved {
+        state.failed_save = Some(record.clone());
+        state.record_error = Some(format!("运行 {} 的结果保存失败：{error}", record.id));
         state.event(
             Some(record.id),
             "error",
             format!("运行结果保存失败：{error}"),
         );
+    } else {
+        let _ = state.slot.confirm_group_saved(record);
+        if state
+            .failed_save
+            .as_ref()
+            .is_some_and(|failed| failed.id == record.id)
+        {
+            state.failed_save = None;
+            state.record_error = None;
+        }
     }
 }

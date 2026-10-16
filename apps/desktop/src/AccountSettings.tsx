@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
-import type { AccountConfig, AppDefinition, ConfigChange } from './generated/protocol';
+import type { AccountConfig, AppDefinition, Command, ConfigChange, GameRegion, RunPolicy, Snapshot } from './generated/protocol';
+import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { errorMessage, request } from './bridge';
+import { GroupRuns } from './GroupRuns';
 
-export function AccountSettings({ connected, active, blocked, apps }: { connected: boolean; active: boolean; blocked: boolean; apps: AppDefinition[] }) {
+export function AccountSettings({ connected, active, blocked, apps, snapshot, onCommand }: { connected: boolean; active: boolean; blocked: boolean; apps: AppDefinition[]; snapshot: Snapshot | null; onCommand: (command: Command) => Promise<void> }) {
   const [config, setConfig] = useState<AccountConfig | null>(null);
   const [instanceId, setInstanceId] = useState(0);
   const [groupId, setGroupId] = useState('one_dragon');
   const [name, setName] = useState('');
   const [enabled, setEnabled] = useState(true);
+  const [region, setRegion] = useState<GameRegion>('cn');
+  const [runPolicy, setRunPolicy] = useState<RunPolicy>('always');
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -39,6 +43,9 @@ export function AccountSettings({ connected, active, blocked, apps }: { connecte
   useEffect(() => {
     setName(instance?.name ?? ''); setEnabled(instance?.active_in_od ?? true);
   }, [instance?.id, instance?.name, instance?.active_in_od]);
+
+  useEffect(() => { setRegion(instance?.game_region ?? 'cn'); }, [instance?.id, instance?.game_region]);
+  useEffect(() => { setRunPolicy(group?.run_policy ?? 'always'); }, [instance?.id, group?.id, group?.run_policy]);
 
   useEffect(() => {
     setGroupId(current => instance?.groups.some(item => item.id === current) ? current : instance?.groups[0]?.id ?? 'one_dragon');
@@ -82,6 +89,9 @@ export function AccountSettings({ connected, active, blocked, apps }: { connecte
           <Field label="账号名称"><Input value={name} maxLength={80} disabled={disabled} onChange={(_, data) => setName(data.value)}/></Field>
         </div>
         <Checkbox label="参与一条龙" checked={enabled} disabled={disabled} onChange={(_, data) => setEnabled(data.checked === true)}/>
+        <Field label="账号区服"><Select value={region} disabled={disabled} onChange={(_, data) => setRegion(data.value as GameRegion)}>{gameRegionOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></Field>
+        <p>区服用于计算每日重置日期，启用按日跳过前请确认与游戏一致。</p>
+        <Button disabled={disabled || !instance || region === instance.game_region} onClick={() => instance && void update({ type: 'set_game_region', instance_id: instance.id, game_region: region })}>保存区服</Button>
         <div className="button-row"><Button disabled={disabled || !instance || !name.trim()} onClick={() => instance && void update({ type: 'update_instance', instance_id: instance.id, name, active_in_od: enabled })}>保存账号</Button>
           <Button appearance="primary" disabled={disabled || !instance || instance.id === config.active_instance} onClick={() => instance && void update({ type: 'switch_instance', instance_id: instance.id })}>设为当前账号</Button>
           {busy && <Spinner size="tiny" label="保存配置"/>}
@@ -90,6 +100,8 @@ export function AccountSettings({ connected, active, blocked, apps }: { connecte
       </Card>
       {instance && <Card><div className="card-title"><h2>应用组顺序</h2><Badge appearance="outline">{group?.apps.length ?? 0} 项</Badge></div>
         <Field label="应用组"><Select value={groupId} disabled={busy} onChange={(_, data) => setGroupId(data.value)}>{instance.groups.map(item => <option key={item.id} value={item.id}>{item.id === 'one_dragon' ? '一条龙' : item.id}</option>)}</Select></Field>
+        <Field label="运行策略"><Select value={runPolicy} disabled={disabled} onChange={(_, data) => setRunPolicy(data.value as RunPolicy)}>{runPolicyOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></Field>
+        <Button disabled={disabled || !group || runPolicy === group.run_policy} onClick={() => group && void update({ type: 'set_run_policy', instance_id: instance.id, group_id: group.id, run_policy: runPolicy })}>保存运行策略</Button>
         <p>新账号的应用默认禁用。启用和排序会保存到当前编辑账号；应用完成迁移与验收后才开放运行。</p>
         <div className="account-apps">{group?.apps.map((item, index) => {
           const app = apps.find(app => app.id === item.app_id);
@@ -101,6 +113,7 @@ export function AccountSettings({ connected, active, blocked, apps }: { connecte
           </div>;
         })}</div>
       </Card>}
+      {instance && group && <GroupRuns instanceId={instance.id} groupId={group.id} revision={config.revision} snapshot={snapshot} connected={connected} blocked={blocked} onCommand={onCommand}/>}
     </>}
   </>;
 }

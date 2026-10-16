@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Badge, Button, Card, Divider, Field, FluentProvider, Input, MessageBar, MessageBarBody,
   ProgressBar, Select, Spinner, Tab, TabList, Text, Tooltip, webDarkTheme, webLightTheme,
@@ -7,38 +7,33 @@ import {
   Apps24Regular, ArrowClockwise20Regular, ArrowRight20Regular, CheckmarkCircle20Regular,
   ChevronRight20Regular, Code24Regular, Desktop24Regular, DocumentText24Regular,
   Home24Regular, Image24Regular, Play20Regular, PlugConnected24Regular, Search20Regular,
-  Stop20Regular, WeatherMoon20Regular, WeatherSunny20Regular,
+  Stop20Regular, WeatherMoon20Regular, WeatherSunny20Regular, Settings24Regular,
 } from '@fluentui/react-icons';
-import type { AppDefinition, CaptureMethod, EnginePrivilege, Screenshot, Snapshot, WindowInfo } from './generated/protocol';
+import type { AppDefinition, CaptureMethod, EnginePrivilege, GeneralSettings as Settings, Screenshot, Snapshot, WindowInfo } from './generated/protocol';
 import { desktop, elevateEngine, errorMessage, reconnect, recoverInputs, request, subscribe } from './bridge';
 import catalog from '../../../resources/catalog/applications.json';
 import { InputDiagnostics } from './InputDiagnostics';
 import { MailDiagnostics } from './MailDiagnostics';
 import { AccountSettings } from './AccountSettings';
+import { GeneralSettings } from './GeneralSettings';
+import { captureNames, captureHints } from './captureSettings';
 
-type Page = 'home' | 'accounts' | 'apps' | 'native' | 'progress';
+type Page = 'home' | 'accounts' | 'settings' | 'apps' | 'native' | 'progress';
 const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'home', label: '总览', icon: <Home24Regular /> },
   { id: 'accounts', label: '账号与应用组', icon: <Apps24Regular /> },
+  { id: 'settings', label: '通用设置', icon: <Settings24Regular /> },
   { id: 'apps', label: '应用迁移', icon: <Apps24Regular /> },
   { id: 'native', label: '原生诊断', icon: <Desktop24Regular /> },
   { id: 'progress', label: '开发与验收', icon: <DocumentText24Regular /> },
 ];
 const modeNames: Record<string, string> = { pipeline: 'Maa Pipeline', rust: 'Rust', hybrid: 'Rust + Pipeline', rust_service: 'Rust 服务' };
 const runNames: Record<string, string> = { running: '运行中', pausing: '暂停中', paused: '已暂停', stopping: '停止中', succeeded: '完成', failed: '失败', stopped: '已停止' };
-const captureNames: Record<CaptureMethod, string> = { frame_pool: 'FramePool', print_window: 'PrintWindow', dxgi: 'DXGI', screen_dc: 'ScreenDC', gdi: 'GDI' };
-const captureHints: Record<CaptureMethod, string> = {
-  frame_pool: '默认方式，可捕获被其他窗口遮挡的游戏。首次排查请保持游戏窗口已恢复。',
-  print_window: '兼容方式，与参考项目的默认截图 API 相同。建议使用窗口模式。',
-  dxgi: '从屏幕画面裁剪游戏区域。游戏必须可见、未最小化，且没有被其他窗口遮挡。',
-  screen_dc: '从屏幕画面裁剪游戏区域。游戏必须完整显示；可作为 DXGI 的备选。',
-  gdi: '传统兼容方式。部分游戏会返回黑图，遇到黑图请尝试 FramePool 或 PrintWindow。',
-};
 const milestones = [
   ['M0', '清单与基线', '清单与基线已完成，参考模型已按用户决定接受。'],
   ['M1', 'Maa 集成原型', '原生 SDK、独立引擎、桌面通信与截图入口正在验证。'],
   ['M2', '首个日常 Pipeline', '主流程通过，边界待验收；暂停、异常恢复等继续验证。'],
-  ['M3', '应用与桌面基础', '进行中：账号导入、应用组和配置修订；后续推进首批日常与运行记录。'],
+  ['M3', '应用与桌面基础', '进行中：账号导入、应用组邮件试运行、账号历史、通用设置与每日计划；后续推进咖啡和多应用执行。'],
   ['M4', 'Rust 自动战斗', '状态时间窗、动作抢占、声音闪避和输入释放。'],
   ['M5', '剩余游戏应用', '探索、路径、经营及剩余应用逐项迁移。'],
   ['M6', '工具与外部能力', '图像与路线编辑器、HTTP、MCP 和 Rust Agent。'],
@@ -53,10 +48,8 @@ export default function App() {
   const [windows, setWindows] = useState<WindowInfo[]>([]);
   const [hwnd, setHwnd] = useState('');
   const [screenshot, setScreenshot] = useState<Screenshot | null>(null);
-  const [captureMethod, setCaptureMethod] = useState<CaptureMethod>(() => {
-    const saved = localStorage.getItem('capture-method');
-    return saved && Object.hasOwn(captureNames, saved) ? saved as CaptureMethod : 'frame_pool';
-  });
+  const [captureMethod, setCaptureMethod] = useState<CaptureMethod>('frame_pool');
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState('');
@@ -73,7 +66,18 @@ export default function App() {
   const filtered = useMemo(() => apps.filter(app => (filter === 'all' || app.execution === filter) && `${app.name} ${app.id}`.toLowerCase().includes(query.toLowerCase())), [apps, query, filter]);
 
   useEffect(() => { localStorage.setItem('theme', dark ? 'dark' : 'light'); document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
-  useEffect(() => { localStorage.setItem('capture-method', captureMethod); }, [captureMethod]);
+  const acceptSettings = useCallback((value: Settings) => {
+    setSettings(value); setCaptureMethod(value.capture_method); setScreenshot(null);
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    setSettings(null);
+    if (connected) request({ type: 'account_config' }).then(value => {
+      if (value.type !== 'account_config') throw new Error('引擎未返回通用设置');
+      if (alive) acceptSettings(value.data.general);
+    }).catch(reason => { if (alive) setError(`读取通用设置失败：${errorMessage(reason)}`); });
+    return () => { alive = false; };
+  }, [connected, acceptSettings]);
   useEffect(() => {
     let alive = true;
     subscribe(update => {
@@ -111,7 +115,7 @@ export default function App() {
     if (value.type === 'snapshot') setSnapshot(value.data);
   }
 
-  const captureSelect = <Field label="截图方式"><Select value={captureMethod} onChange={(_, data) => { setCaptureMethod(data.value as CaptureMethod); setScreenshot(null); }} disabled={busy || active}>{Object.entries(captureNames).map(([value, label]) => <option key={value} value={value}>{label}{value === 'frame_pool' ? '（默认）' : ''}</option>)}</Select></Field>;
+  const captureSelect = <Field label="截图方式"><Select value={captureMethod} onChange={(_, data) => { setCaptureMethod(data.value as CaptureMethod); setScreenshot(null); }} disabled={busy || active || !settings}>{Object.entries(captureNames).map(([value, label]) => <option key={value} value={value}>{label}{value === settings?.capture_method ? '（已保存默认）' : ''}</option>)}</Select></Field>;
 
   const status = !desktop ? '界面预览' : !connected ? '引擎未连接' : snapshot?.sdk.ready ? '引擎已就绪' : 'SDK 待配置';
   return (
@@ -120,7 +124,7 @@ export default function App() {
         <div className="brand"><div className="brand-mark">Z</div><div><strong>绝区零一条龙</strong><span>Rust · 原生自动化</span></div></div>
         <div className="workspace-label">工作台</div>
         <nav aria-label="主导航">{pages.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'selected' : ''}`} onClick={() => setPage(item.id)} aria-current={page === item.id ? 'page' : undefined}>{item.icon}<span>{item.label}</span>{page === item.id && <ChevronRight20Regular />}</button>)}</nav>
-        <div className="sidebar-note"><Code24Regular/><strong>迁移原型 · v0.1</strong><p>邮件主流程通过，边界继续验收；当前推进账号与应用组基础。</p><Badge appearance="tint" color="brand">M3 进行中</Badge></div>
+        <div className="sidebar-note"><Code24Regular/><strong>迁移原型 · v0.1</strong><p>邮件主流程通过，边界继续验收；账号区服与应用组每日计划已接通。</p><Badge appearance="tint" color="brand">M3 进行中</Badge></div>
         <div className="sidebar-footer"><span><i className={`status-dot ${connected && snapshot?.sdk.ready ? 'ready' : ''}`}/>{status}</span><Tooltip content="切换明暗主题" relationship="label"><Button appearance="subtle" icon={dark ? <WeatherSunny20Regular/> : <WeatherMoon20Regular/>} onClick={() => setDark(!dark)} aria-label="切换明暗主题"/></Tooltip></div>
       </aside>
 
@@ -161,13 +165,15 @@ export default function App() {
               {privilege && privilege.desktop_integrity >= 12288 && <p>当前桌面本身也以管理员身份运行。要使用普通权限的界面，请退出后正常启动应用。</p>}
             </Card>
             <div className="home-grid">
-              <Card className="connect-card"><div className="card-title"><h2>连接游戏</h2><Badge appearance="tint" color={snapshot?.window ? 'success' : 'informative'}>{snapshot?.window ? '已连接' : '尚未连接'}</Badge></div><p>启动绝区零并设置 1920 × 1080 客户区，再选择游戏窗口。</p><Field label="游戏窗口"><Select value={hwnd} onChange={(_, data) => setHwnd(data.value)} disabled={busy || active}><option value="">{windows.length ? '选择游戏窗口' : '尚未发现窗口'}</option>{windows.map(window => <option key={window.hwnd} value={window.hwnd}>{window.title} · PID {window.pid} · {window.width}×{window.height}</option>)}</Select></Field>{captureSelect}<div className="button-row"><Button disabled={!connected || busy || active} icon={<ArrowClockwise20Regular/>} onClick={() => act(scanWindows)}>扫描窗口</Button><Button appearance="primary" disabled={!hwnd || !connected || recoveryRequired || busy || active} icon={<PlugConnected24Regular/>} onClick={() => act(() => connectWindow())}>连接窗口</Button></div><Divider/><div className="connection-detail"><Text size={200}>SDK 状态</Text><p>{snapshot?.sdk.message ?? '桌面启动后自动校验随附 SDK 与引擎。'}</p></div></Card>
-              <Card className="next-card"><div className="card-title"><h2>当前阶段</h2><Badge appearance="tint" color="brand">M3 进行中</Badge></div><h3>账号与应用组基础</h3><p>M2 主流程通过，边界待验收；M3 已开始旧配置导入、账号隔离与应用组编辑。</p><div className="milestone-mini"><CheckmarkCircle20Regular/><span>邮件大世界 / 菜单起点主流程通过</span></div><div className="milestone-mini"><div className="step-dot"/><span>账号、配置修订与应用组</span></div><div className="milestone-mini muted"><div className="step-dot hollow"/><span>首批日常、运行记录与资源下载</span></div><Button appearance="subtle" icon={<ArrowRight20Regular/>} iconPosition="after" onClick={() => setPage('accounts')}>管理账号与应用组</Button></Card>
+              <Card className="connect-card"><div className="card-title"><h2>连接游戏</h2><Badge appearance="tint" color={snapshot?.window ? 'success' : 'informative'}>{snapshot?.window ? '已连接' : '尚未连接'}</Badge></div><p>启动绝区零并设置 1920 × 1080 客户区，再选择游戏窗口。</p><Field label="游戏窗口"><Select value={hwnd} onChange={(_, data) => setHwnd(data.value)} disabled={busy || active}><option value="">{windows.length ? '选择游戏窗口' : '尚未发现窗口'}</option>{windows.map(window => <option key={window.hwnd} value={window.hwnd}>{window.title} · PID {window.pid} · {window.width}×{window.height}</option>)}</Select></Field>{captureSelect}<div className="button-row"><Button disabled={!connected || busy || active} icon={<ArrowClockwise20Regular/>} onClick={() => act(scanWindows)}>扫描窗口</Button><Button appearance="primary" disabled={!hwnd || !connected || recoveryRequired || busy || active || !settings} icon={<PlugConnected24Regular/>} onClick={() => act(() => connectWindow())}>连接窗口</Button></div><Divider/><div className="connection-detail"><Text size={200}>SDK 状态</Text><p>{snapshot?.sdk.message ?? '桌面启动后自动校验随附 SDK 与引擎。'}</p></div></Card>
+              <Card className="next-card"><div className="card-title"><h2>当前阶段</h2><Badge appearance="tint" color="brand">M3 进行中</Badge></div><h3>应用组每日计划</h3><p>M2 主流程通过，边界待验收；M3 已接入账号配置、应用组邮件试运行、账号历史、通用设置及每日跳过策略。</p><div className="milestone-mini"><CheckmarkCircle20Regular/><span>邮件大世界 / 菜单起点主流程通过</span></div><div className="milestone-mini"><div className="step-dot"/><span>应用组预检、修订核对与按账号记录</span></div><div className="milestone-mini muted"><div className="step-dot hollow"/><span>咖啡、多应用执行与资源下载</span></div><Button appearance="subtle" icon={<ArrowRight20Regular/>} iconPosition="after" onClick={() => setPage('accounts')}>管理账号与应用组</Button></Card>
             </div>
             <Card><div className="card-title"><h2>最近运行</h2><Badge appearance="tint" color={active ? 'brand' : 'informative'}>{snapshot?.run ? runNames[snapshot.run.state] : '空闲'}</Badge></div>{snapshot?.run ? <><strong>{['prototype.input_probe', 'prototype.input_pipeline'].includes(snapshot.run.app_id) ? '真实输入诊断' : snapshot.run.app_id === 'email' ? '邮件试运行' : 'Maa 原生健康检查'}</strong><p className="run-message">{snapshot.run.message}</p><Text size={200}>运行 ID：{snapshot.run.id}</Text></> : <div className="empty-row"><Play20Regular/><span>尚无运行记录。连接窗口后可在原生诊断中执行健康检查。</span></div>}</Card>
           </>}
 
-          {page === 'accounts' && <AccountSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} apps={apps}/>}
+          {page === 'accounts' && <AccountSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} apps={apps} snapshot={snapshot} onCommand={command => act(async () => { const value = await request(command); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); else if (value.type === 'snapshot') setSnapshot(value.data); })}/>}
+
+          {page === 'settings' && <GeneralSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} onLoaded={acceptSettings}/>}
 
           {page === 'apps' && <>
             <div className="page-heading"><div><div className="eyebrow">APPLICATION CATALOG</div><h1>应用迁移</h1><p>保留现有应用 ID，逐项记录实现与验收状态。</p></div><Badge appearance="tint" color="brand">{apps.length} 个已登记</Badge></div>
@@ -178,8 +184,8 @@ export default function App() {
 
           {page === 'native' && <>
             <div className="page-heading"><div><div className="eyebrow">NATIVE INTEGRATION</div><h1>原生诊断</h1><p>验证真实截图、输入与 Pipeline 的运行和停止行为。</p></div><Badge appearance="outline">CPU · {snapshot?.capture_method ? captureNames[snapshot.capture_method] : "未连接"}</Badge></div>
-            <Card className="preview-card"><div className="card-title"><h2>截图预览</h2><Button icon={<Image24Regular/>} disabled={(!snapshot?.window && !hwnd) || !connected || recoveryRequired || busy || active} onClick={() => act(capture)}>获取截图</Button></div>{captureSelect}<p>{captureHints[captureMethod]} 更改方式后，点击“获取截图”会重新连接并应用。</p>{screenshot?.quality.near_black && <MessageBar intent="warning"><MessageBarBody>检测到疑似黑帧：暗像素 {(screenshot.quality.dark_pixel_ratio * 100).toFixed(2)}%，平均亮度 {screenshot.quality.mean_luma.toFixed(2)}/255。请等待游戏退出加载画面；若游戏已有正常画面，尝试 PrintWindow 或 FramePool。使用 DXGI / ScreenDC 时，请把游戏完整显示在屏幕上。</MessageBarBody></MessageBar>}<div className="preview">{screenshot ? <img alt="Maa 捕获的游戏截图" src={`data:image/png;base64,${screenshot.png_base64}`} onError={() => { setScreenshot(null); setError("截图图片解码失败，请重新获取并检查引擎日志。"); }}/> : <div className="preview-empty"><Image24Regular/><strong>尚无截图</strong><span>连接游戏窗口后，手动获取一帧画面。</span></div>}</div><div className="preview-meta"><span>{screenshot ? `${screenshot.width} × ${screenshot.height} · ${screenshot.capture_method ? captureNames[screenshot.capture_method] : "离线"} · ${screenshot.color_order}` : '1920 × 1080 · PNG'}</span><span>{screenshot ? `采集用时 ${screenshot.elapsed_ms} ms` : '按需预览'}</span></div></Card>
-            <MailDiagnostics snapshot={snapshot} connected={connected && !recoveryRequired} busy={busy} onCommand={command => act(async () => { const value = await request(command); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); })}/>
+            <Card className="preview-card"><div className="card-title"><h2>截图预览</h2><Button icon={<Image24Regular/>} disabled={(!snapshot?.window && !hwnd) || !connected || recoveryRequired || busy || active || !settings} onClick={() => act(capture)}>获取截图</Button></div>{captureSelect}<p>{captureHints[captureMethod]} 更改方式后，点击“获取截图”会重新连接并应用。</p>{screenshot?.quality.near_black && <MessageBar intent="warning"><MessageBarBody>检测到疑似黑帧：暗像素 {(screenshot.quality.dark_pixel_ratio * 100).toFixed(2)}%，平均亮度 {screenshot.quality.mean_luma.toFixed(2)}/255。请等待游戏退出加载画面；若游戏已有正常画面，尝试 PrintWindow 或 FramePool。使用 DXGI / ScreenDC 时，请把游戏完整显示在屏幕上。</MessageBarBody></MessageBar>}<div className="preview">{screenshot ? <img alt="Maa 捕获的游戏截图" src={`data:image/png;base64,${screenshot.png_base64}`} onError={() => { setScreenshot(null); setError("截图图片解码失败，请重新获取并检查引擎日志。"); }}/> : <div className="preview-empty"><Image24Regular/><strong>尚无截图</strong><span>连接游戏窗口后，手动获取一帧画面。</span></div>}</div><div className="preview-meta"><span>{screenshot ? `${screenshot.width} × ${screenshot.height} · ${screenshot.capture_method ? captureNames[screenshot.capture_method] : "离线"} · ${screenshot.color_order}` : '1920 × 1080 · PNG'}</span><span>{screenshot ? `采集用时 ${screenshot.elapsed_ms} ms` : '按需预览'}</span></div></Card>
+            <MailDiagnostics snapshot={snapshot} connected={connected && !recoveryRequired} busy={busy} defaults={settings?.mail ?? null} onCommand={command => act(async () => { const value = await request(command); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); })}/>
             <InputDiagnostics snapshot={snapshot} connected={connected && !recoveryRequired} busy={busy} onStart={(config, pipelineTimeout) => act(async () => { const value = await request(pipelineTimeout === null ? { type: 'start_input_probe', params: { config, allow_input: true } } : { type: 'start_input_pipeline', params: { config: { input: config, timeout_ms: pipelineTimeout }, allow_input: true } }); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); })} onStop={() => act(async () => { if (snapshot?.run) { const value = await request({ type: 'stop', params: { run_id: snapshot.run.id } }); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); } })}/>
             <Card><div className="card-title"><h2>Pipeline 健康检查</h2><div className="button-row"><Button appearance="primary" icon={<Play20Regular/>} disabled={!snapshot?.window || !connected || recoveryRequired || busy || active} onClick={() => act(async () => { const value = await request({ type: 'start_probe' }); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); })}>运行检查</Button><Button icon={<Stop20Regular/>} disabled={!active || !connected || snapshot?.run?.app_id !== 'prototype.health_check' || snapshot?.run?.state === 'stopping'} onClick={() => act(async () => { if (snapshot?.run) await request({ type: 'stop', params: { run_id: snapshot.run.id } }); })}>停止</Button></div></div><p>执行固定的 DirectHit / DoNothing 节点，不产生游戏点击或按键。停止后等待原生任务与队列完成收尾。</p>{active && snapshot?.run?.app_id === 'prototype.health_check' && <div className="running-indicator"><Spinner size="tiny" label={snapshot?.run?.state === 'stopping' ? '正在等待停止完成' : '原生 Pipeline 运行中'}/><ProgressBar/></div>}{snapshot?.run?.app_id === 'prototype.health_check' && <div className="result-line"><Badge appearance="tint">{runNames[snapshot.run.state]}</Badge><code>{snapshot.run.message}</code></div>}</Card>
             <Card className="log-card"><div className="card-title"><h2>引擎日志</h2><Text size={200}>最多保留 256 条 · 已丢弃 {snapshot?.dropped_events ?? 0} 条</Text></div><div className="logs" role="log" aria-label="引擎运行日志">{snapshot?.events.slice(-80).map(event => <div className={`log-line ${event.level}`} key={event.sequence}><time>{new Date(event.at).toLocaleTimeString('zh-CN', { hour12: false })}</time><span>{event.level.toUpperCase()}</span><p>{event.message}</p></div>)}{!snapshot?.events.length && <div className="empty-row">连接引擎后显示诊断日志</div>}</div></Card>

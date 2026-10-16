@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-fn resolved_output(path: &Path) -> Result<PathBuf> {
+pub(crate) fn resolved_output(path: &Path) -> Result<PathBuf> {
     let mut ancestor = std::path::absolute(path)?;
     let mut missing = Vec::new();
     while !ancestor.exists() {
@@ -21,14 +21,14 @@ fn resolved_output(path: &Path) -> Result<PathBuf> {
     Ok(result)
 }
 
-fn read_within(root: &Path, relative: &str) -> Result<Vec<u8>> {
+pub(crate) fn read_within(root: &Path, relative: &str) -> Result<Vec<u8>> {
     crate::resources::safe_relative(relative)?;
     let source = root.join(relative).canonicalize()?;
     ensure!(source.starts_with(root), "来源文件指向来源目录之外");
     Ok(std::fs::read(source)?)
 }
 
-fn area<'a>(screen: &'a LegacyScreen, name: &str) -> Result<&'a LegacyArea> {
+pub(crate) fn area<'a>(screen: &'a LegacyScreen, name: &str) -> Result<&'a LegacyArea> {
     let matches: Vec<_> = screen
         .area_list
         .iter()

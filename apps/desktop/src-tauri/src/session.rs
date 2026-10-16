@@ -176,6 +176,9 @@ impl EngineSession {
             Command::StartMail {
                 allow_input: true,
                 ..
+            } | Command::StartGroupTrial {
+                allow_input: true,
+                ..
             }
         );
         let input = match &command {
@@ -188,6 +191,9 @@ impl EngineSession {
                     .map_err(|error| ApiError::new("invalid_input", error))?;
                 Some(od_core::mail::MailConfig::recovery_inputs().to_vec())
             }
+            Command::StartGroupTrial {
+                allow_input: true, ..
+            } => Some(od_core::mail::MailConfig::recovery_inputs().to_vec()),
             Command::StartInputProbe {
                 config,
                 allow_input: true,
@@ -260,6 +266,10 @@ impl EngineSession {
         } else if !matches!(
             command,
             Command::Snapshot
+                | Command::AccountConfig
+                | Command::PreviewGroup { .. }
+                | Command::RunHistory { .. }
+                | Command::RetryRunSave
                 | Command::Stop { .. }
                 | Command::Pause { .. }
                 | Command::Events { .. }

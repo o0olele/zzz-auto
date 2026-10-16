@@ -1,5 +1,6 @@
 mod paths;
 pub use paths::{DesktopLayout, desktop_layout};
+pub mod model_cache;
 
 #[cfg(windows)]
 mod engine_process;

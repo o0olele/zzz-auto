@@ -59,7 +59,7 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 
 桌面“通用设置”可保存默认截图方式、邮件超时和启动 / 继续延时。设置由 Rust 与账号配置一同持久保存，应用组预览显示实际参数，开始时由引擎核对修订并读取。原生诊断可临时调整；完整用法与旧截图配置导入范围见[通用运行设置](docs/develop/general-settings.md)。账号区服、按日跳过及游戏日过期处理见[应用组每日计划](docs/develop/daily-runs.md)。
 
-当前协议为 v14，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline、地图传送试运行、应用组邮件试运行与账号历史。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
+当前协议为 v15，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline、地图传送试运行、应用组邮件试运行、账号历史及模型资源任务。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
 
 咖啡已有只读区域转换和离线截图检查，应用组邮件入口已有顺序调度状态及分项进度。咖啡实际点单和多个游戏应用交接仍待后态素材与实机验证，使用方法与缺口见[咖啡识别与顺序调度](docs/develop/coffee-and-groups.md)。
 
@@ -70,6 +70,8 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 实机带输入 Pipeline 在“原生诊断 → 真实输入诊断 → 执行方式”选择 **Maa Pipeline**。支持键盘 / Xbox / DS4 数字键及鼠标按键；设置按住、启动延时和 Pipeline 超时，勾选输入确认后运行，再在延时期间切回游戏。流程按下一个键，经不超过 25ms 的无输入间隔等待后释放；停止或超时会等待原生队列并显式释放。超时不包含启动延时、截图准备和控制器重建，不能作为强制终止。摇杆与扳机使用“直接输入”；游戏响应及停止残留需实机观察。完整边界和复测入口见[输入 Pipeline 说明](docs/develop/input-pipeline.md)。
 
 ## 离线模型对照
+
+桌面“模型资源”页可检查固定模型、准备所选项、离线复用、查看进度及取消任务，缓存位于引擎数据目录的 `model-cache/`。任务离开页面后继续，退出或失联时取消；下载完成暂不切换游戏使用的资源包。CLI 的 `cargo run -p zzz-engine --locked -- model-resources status` 只读检查开发缓存，`model-resources prepare` 下载并校验，`--offline` 只用本地缓存，`--model ppocrv5` 可选择模型，`--cache` 可指定与桌面相同的目录。完整用法与范围见[模型资源管理](docs/develop/model-resources.md)；运行资源包构建与在线切换继续后续迁移。
 
 准备固定的旧版 PP-OCRv5、闪光及两种 YOLO 模型，再运行同一批固定图的 CPU / DirectML 对照：
 
@@ -119,6 +121,8 @@ cargo run -p zzz-engine --locked -- --resources resources/generated/recognition 
 ```
 
 ## 工程与数据
+
+已转换的邮件、地图及基础运行资源可由原生 CLI 打成独立版本包，校验本地 ZIP 后安装。桌面“运行资源”页可刷新已安装版本，预检后退出并重启引擎以启用或回滚；同样保留离线 CLI 入口。用法见[运行资源包](docs/develop/runtime-resources.md)。完整包联网下载与签名发布继续待实现。
 
 已增加旧版闪光、OCR 和 YOLO 实际输出采样及纯 Rust 的 `recognition-compare` 命令，支持核对同一批固定图的概率、候选、文字、框与分数；OCR 同时比较过滤前结果。旧版采样环境单独放在忽略的 SDK 缓存中，仅用于迁移取证；新程序和正式回归不依赖 Python。命令见[闪光旧版输出说明](docs/develop/recognition-validation.md#旧版实际输出与自动比较)及 [OCR / YOLO 对照说明](docs/develop/recognition-validation.md#ocr-与-yolo-旧版对照)。比较结果与人工标注分别报告，不能把新旧共有的漏检当成人工预期通过。
 

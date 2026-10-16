@@ -1,65 +1,8 @@
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
+pub use od_platform::model_cache::{
+    ModelAdaptation, ModelAsset, ModelFile, ModelLock, cached_files_valid, locked_models,
+};
 use std::{collections::BTreeSet, path::Path};
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ModelLock {
-    pub schema_version: u32,
-    pub reference_commit: String,
-    pub sdk_version: String,
-    pub hash_source: String,
-    pub models: Vec<ModelAsset>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ModelAsset {
-    pub id: String,
-    pub role: String,
-    pub archive: String,
-    pub bytes: u64,
-    pub url: String,
-    pub sha256: String,
-    pub files: Vec<ModelFile>,
-    pub known_differences: Vec<String>,
-    #[serde(default)]
-    pub adaptation: Option<ModelAdaptation>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ModelAdaptation {
-    pub kind: String,
-    pub bundle_path: String,
-    pub bytes: u64,
-    pub sha256: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ModelFile {
-    pub path: String,
-    pub bytes: u64,
-    pub sha256: String,
-    pub bundle_path: Option<String>,
-}
-
-pub fn locked_models() -> Result<ModelLock> {
-    Ok(serde_json::from_str(include_str!(
-        "../../../models.lock.json"
-    ))?)
-}
-
-pub fn cached_files_valid(cache: &Path, model: &ModelAsset) -> bool {
-    let Ok(cache) = cache.canonicalize() else {
-        return false;
-    };
-    model.files.iter().all(|file| {
-        let Ok(path) = cache.join(&model.id).join(&file.path).canonicalize() else {
-            return false;
-        };
-        path.starts_with(&cache)
-            && std::fs::metadata(&path).is_ok_and(|metadata| metadata.len() == file.bytes)
-            && crate::sha256(&path).is_ok_and(|hash| hash == file.sha256)
-    }) && !model.files.is_empty()
-}
 
 pub fn parse_labels(csv: &str) -> Result<Vec<String>> {
     let mut indexed = std::collections::BTreeMap::new();

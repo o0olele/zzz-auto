@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v14 增加地图受控试运行与进度；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 14;
+// v15 增加固定模型资源任务、进度及取消；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 15;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -43,6 +43,16 @@ pub struct Request {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "params", rename_all = "snake_case")]
 pub enum Command {
+    ModelResources,
+    StartModelResources {
+        kind: od_core::model_resources::ResourceJobKind,
+        models: Vec<String>,
+        #[serde(default)]
+        offline: bool,
+    },
+    CancelModelResources {
+        job_id: Uuid,
+    },
     PreviewGroup {
         instance_id: u32,
         group_id: String,
@@ -118,6 +128,7 @@ pub enum Command {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum Payload {
+    ModelResources(od_core::model_resources::ModelResources),
     GroupPlan(od_core::run_plan::GroupPlan),
     RunHistory(od_core::run_history::RunHistory),
     AccountConfig(od_core::config::AccountConfig),

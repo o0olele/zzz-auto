@@ -5,7 +5,8 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 pub struct Host {
-    session: Mutex<Option<EngineSession>>,
+    session: crate::resources::SharedSession,
+    pub resources: crate::resources::ResourceManager,
     pub channel: std::sync::Mutex<Option<tauri::ipc::Channel<od_protocol::DesktopUpdate>>>,
 }
 
@@ -31,14 +32,18 @@ fn layout(app: &AppHandle) -> Result<od_platform::DesktopLayout, ApiError> {
 
 impl Host {
     pub fn new() -> Self {
+        let session = std::sync::Arc::new(Mutex::new(None));
         Self {
-            session: Mutex::new(None),
+            resources: crate::resources::ResourceManager::new(session.clone()),
+            session,
             channel: std::sync::Mutex::new(None),
         }
     }
 
     pub async fn start(&self, app: &AppHandle) -> Result<(), ApiError> {
+        self.resources.require_available()?;
         let mut state = self.session.lock().await;
+        self.resources.require_available()?;
         if let Some(session) = state.as_mut() {
             if session.connected() && !session.exited()? {
                 return Ok(());
@@ -57,7 +62,9 @@ impl Host {
     }
 
     pub async fn elevate(&self, app: &AppHandle) -> Result<(), ApiError> {
+        self.resources.require_available()?;
         let mut state = self.session.lock().await;
+        self.resources.require_available()?;
         let current = state.as_mut().ok_or_else(|| offline("请先重连普通引擎"))?;
         if !current.connected() || current.exited()? {
             return Err(offline("请先重连普通引擎"));
@@ -74,9 +81,10 @@ impl Host {
     }
 
     pub async fn request(&self, command: Command) -> Result<Payload, ApiError> {
-        self.session
-            .lock()
-            .await
+        self.resources.require_available()?;
+        let mut state = self.session.lock().await;
+        self.resources.require_available()?;
+        state
             .as_mut()
             .ok_or_else(|| offline("引擎未连接，使用“重连引擎”重新启动"))?
             .request(command)
@@ -103,7 +111,9 @@ impl Host {
     }
 
     pub async fn recover(&self, app: &AppHandle) -> Result<String, ApiError> {
+        self.resources.require_available()?;
         let mut state = self.session.lock().await;
+        self.resources.require_available()?;
         let layout = layout(app)?;
         let journal = crate::session::recovery::RecoveryJournal::open(&layout.data)?;
         if journal.plan.is_none() {
@@ -135,11 +145,23 @@ impl Host {
     }
 
     pub async fn shutdown(&self) -> Result<(), ApiError> {
+        self.resources.close_and_wait().await;
         let mut state = self.session.lock().await;
-        if let Some(session) = state.as_mut() {
-            session.shutdown().await?;
+        if let Some(session) = state.as_mut()
+            && let Err(error) = session.shutdown().await
+        {
+            self.resources.reopen();
+            return Err(error);
         }
         state.take();
         Ok(())
+    }
+
+    pub fn start_resources(
+        &self,
+        app: &AppHandle,
+        request: od_core::runtime_resources::RuntimeResourceRequest,
+    ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+        self.resources.start(layout(app)?, request)
     }
 }

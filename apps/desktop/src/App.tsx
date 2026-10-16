@@ -17,13 +17,17 @@ import { MailDiagnostics } from './MailDiagnostics';
 import { MapDiagnostics } from './MapDiagnostics';
 import { AccountSettings } from './AccountSettings';
 import { GeneralSettings } from './GeneralSettings';
+import { ModelResources } from './ModelResources';
+import { RuntimeResources, useRuntimeResources } from './RuntimeResources';
 import { captureNames, captureHints } from './captureSettings';
 
-type Page = 'home' | 'accounts' | 'settings' | 'apps' | 'native' | 'progress';
+type Page = 'home' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'apps' | 'native' | 'progress';
 const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'home', label: '总览', icon: <Home24Regular /> },
   { id: 'accounts', label: '账号与应用组', icon: <Apps24Regular /> },
   { id: 'settings', label: '通用设置', icon: <Settings24Regular /> },
+  { id: 'resources', label: '模型资源', icon: <Apps24Regular /> },
+  { id: 'runtime_resources', label: '运行资源', icon: <Apps24Regular /> },
   { id: 'apps', label: '应用迁移', icon: <Apps24Regular /> },
   { id: 'native', label: '原生诊断', icon: <Desktop24Regular /> },
   { id: 'progress', label: '开发与验收', icon: <DocumentText24Regular /> },
@@ -34,7 +38,7 @@ const milestones = [
   ['M0', '清单与基线', '清单与基线已完成，参考模型已按用户决定接受。'],
   ['M1', 'Maa 集成原型', '原生 SDK、独立引擎、桌面通信与截图入口正在验证。'],
   ['M2', '首个日常 Pipeline', '主流程通过，边界待验收；暂停、异常恢复等继续验证。'],
-  ['M3', '应用与桌面基础', '进行中：账号导入、应用组邮件试运行、账号历史、通用设置与每日计划；后续推进咖啡和多应用执行。'],
+  ['M3', '应用与桌面基础', '进行中：账号导入、应用组邮件试运行、账号历史、通用设置、每日计划与模型资源管理；后续推进咖啡和多应用执行。'],
   ['M4', 'Rust 自动战斗', '状态时间窗、动作抢占、声音闪避和输入释放。'],
   ['M5', '剩余游戏应用', '探索、路径、经营及剩余应用逐项迁移。'],
   ['M6', '工具与外部能力', '图像与路线编辑器、HTTP、MCP 和 Rust Agent。'],
@@ -54,7 +58,11 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [actionBusy, setBusy] = useState(false);
+  const [resourcesVisited, setResourcesVisited] = useState(false);
+  const runtimeResources = useRuntimeResources(resourcesVisited);
+  const resourceSwitching = runtimeResources.snapshot.job?.state === 'running' && runtimeResources.snapshot.job.request.type !== 'refresh';
+  const busy = actionBusy || resourceSwitching;
   const [connected, setConnected] = useState(false);
   const [privilege, setPrivilege] = useState<EnginePrivilege | null>(null);
   const [elevating, setElevating] = useState(false);
@@ -64,6 +72,12 @@ export default function App() {
   const [selected, setSelected] = useState<AppDefinition | null>(null);
 
   const active = !!snapshot?.run && ['running', 'pausing', 'paused', 'stopping'].includes(snapshot.run.state);
+  useEffect(() => {
+    const job = runtimeResources.snapshot.job;
+    if (resourceSwitching || job?.reconnected) { setScreenshot(null); setWindows([]); setHwnd(''); }
+    if (job?.state !== 'running' && job?.reconnected) { setSnapshot(null); setConnected(false); }
+    if (job?.error_code?.startsWith('input_recovery')) { setRecoveryRequired(true); setConnected(false); setSnapshot(null); }
+  }, [runtimeResources.snapshot.job?.id, runtimeResources.snapshot.job?.state, resourceSwitching]);
   const filtered = useMemo(() => apps.filter(app => (filter === 'all' || app.execution === filter) && `${app.name} ${app.id}`.toLowerCase().includes(query.toLowerCase())), [apps, query, filter]);
 
   useEffect(() => { localStorage.setItem('theme', dark ? 'dark' : 'light'); document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
@@ -124,7 +138,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand"><div className="brand-mark">Z</div><div><strong>绝区零一条龙</strong><span>Rust · 原生自动化</span></div></div>
         <div className="workspace-label">工作台</div>
-        <nav aria-label="主导航">{pages.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'selected' : ''}`} onClick={() => setPage(item.id)} aria-current={page === item.id ? 'page' : undefined}>{item.icon}<span>{item.label}</span>{page === item.id && <ChevronRight20Regular />}</button>)}</nav>
+        <nav aria-label="主导航">{pages.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'selected' : ''}`} onClick={() => { setPage(item.id); if (item.id === 'runtime_resources') setResourcesVisited(true); }} aria-current={page === item.id ? 'page' : undefined}>{item.icon}<span>{item.label}</span>{page === item.id && <ChevronRight20Regular />}</button>)}</nav>
         <div className="sidebar-note"><Code24Regular/><strong>迁移原型 · v0.1</strong><p>邮件主流程通过，边界继续验收；账号区服与应用组每日计划已接通。</p><Badge appearance="tint" color="brand">M3 进行中</Badge></div>
         <div className="sidebar-footer"><span><i className={`status-dot ${connected && snapshot?.sdk.ready ? 'ready' : ''}`}/>{status}</span><Tooltip content="切换明暗主题" relationship="label"><Button appearance="subtle" icon={dark ? <WeatherSunny20Regular/> : <WeatherMoon20Regular/>} onClick={() => setDark(!dark)} aria-label="切换明暗主题"/></Tooltip></div>
       </aside>
@@ -192,6 +206,9 @@ export default function App() {
             <Card><div className="card-title"><h2>Pipeline 健康检查</h2><div className="button-row"><Button appearance="primary" icon={<Play20Regular/>} disabled={!snapshot?.window || !connected || recoveryRequired || busy || active} onClick={() => act(async () => { const value = await request({ type: 'start_probe' }); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); })}>运行检查</Button><Button icon={<Stop20Regular/>} disabled={!active || !connected || snapshot?.run?.app_id !== 'prototype.health_check' || snapshot?.run?.state === 'stopping'} onClick={() => act(async () => { if (snapshot?.run) await request({ type: 'stop', params: { run_id: snapshot.run.id } }); })}>停止</Button></div></div><p>执行固定的 DirectHit / DoNothing 节点，不产生游戏点击或按键。停止后等待原生任务与队列完成收尾。</p>{active && snapshot?.run?.app_id === 'prototype.health_check' && <div className="running-indicator"><Spinner size="tiny" label={snapshot?.run?.state === 'stopping' ? '正在等待停止完成' : '原生 Pipeline 运行中'}/><ProgressBar/></div>}{snapshot?.run?.app_id === 'prototype.health_check' && <div className="result-line"><Badge appearance="tint">{runNames[snapshot.run.state]}</Badge><code>{snapshot.run.message}</code></div>}</Card>
             <Card className="log-card"><div className="card-title"><h2>引擎日志</h2><Text size={200}>最多保留 256 条 · 已丢弃 {snapshot?.dropped_events ?? 0} 条</Text></div><div className="logs" role="log" aria-label="引擎运行日志">{snapshot?.events.slice(-80).map(event => <div className={`log-line ${event.level}`} key={event.sequence}><time>{new Date(event.at).toLocaleTimeString('zh-CN', { hour12: false })}</time><span>{event.level.toUpperCase()}</span><p>{event.message}</p></div>)}{!snapshot?.events.length && <div className="empty-row">连接引擎后显示诊断日志</div>}</div></Card>
           </>}
+
+          {page === 'resources' && <ModelResources connected={connected && !recoveryRequired} blocked={busy}/>}
+          {page === 'runtime_resources' && <RuntimeResources manager={runtimeResources} blocked={actionBusy || active || recoveryRequired}/>}
 
           {page === 'progress' && <>
             <div className="page-heading"><div><div className="eyebrow">MIGRATION ROADMAP</div><h1>开发与验收</h1><p>阶段完成以验收证据为准，编译与界面预览仅是其中一部分。</p></div><Badge appearance="tint" color="brand">M2 主流程通过，边界待验收 · M3 进行中</Badge></div>

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, ensure};
 use std::path::{Path, PathBuf};
 
+#[derive(Clone)]
 pub struct DesktopLayout {
     pub root: PathBuf,
     pub engine: PathBuf,

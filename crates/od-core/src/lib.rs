@@ -4,10 +4,12 @@ pub mod daily;
 pub mod group_run;
 pub mod mail;
 pub mod map_transport;
+pub mod model_resources;
 pub mod ocr;
 pub mod pipeline;
 pub mod run_history;
 pub mod run_plan;
+pub mod runtime_resources;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

@@ -90,6 +90,16 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    /// 完整运行资源包的本地构建、校验、安装与离线切换；不加载 SDK。
+    RuntimeResources {
+        #[command(subcommand)]
+        command: RuntimeResourceAction,
+    },
+    /// 固定模型包的只读检查与原生准备；不加载 SDK 或连接游戏。
+    ModelResources {
+        #[command(subcommand)]
+        command: ModelResourceAction,
+    },
     RecognitionCompare {
         #[arg(long)]
         cases: PathBuf,
@@ -224,6 +234,85 @@ enum Action {
     },
 }
 
+#[derive(Subcommand)]
+enum ModelResourceAction {
+    Status {
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        #[arg(long = "model")]
+        models: Vec<String>,
+    },
+    Prepare {
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        #[arg(long = "model")]
+        models: Vec<String>,
+        #[arg(long)]
+        offline: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum RuntimeResourceAction {
+    Catalog,
+    PreviewChange(ResourceChangeArgs),
+    ApplyChange(ResourceChangeArgs),
+    Pack {
+        #[arg(long)]
+        source: PathBuf,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    Check {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        sha256: String,
+    },
+    Install {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        sha256: String,
+    },
+    Status,
+    Activate {
+        #[arg(long)]
+        id: String,
+    },
+    Rollback,
+}
+
+#[derive(clap::Args)]
+struct ResourceChangeArgs {
+    #[arg(
+        long,
+        required_unless_present = "rollback",
+        conflicts_with = "rollback"
+    )]
+    id: Option<String>,
+    #[arg(long, required_unless_present = "id", conflicts_with = "id")]
+    rollback: bool,
+    #[arg(long)]
+    revision: String,
+}
+
+impl ResourceChangeArgs {
+    fn request(self) -> od_core::runtime_resources::RuntimeResourceRequest {
+        match self.id {
+            Some(id) => od_core::runtime_resources::RuntimeResourceRequest::Activate {
+                id,
+                revision: self.revision,
+            },
+            None => od_core::runtime_resources::RuntimeResourceRequest::Rollback {
+                revision: self.revision,
+            },
+        }
+    }
+}
+
 fn capture(method: Capture) -> CaptureMethod {
     match method {
         Capture::Gdi => CaptureMethod::Gdi,
@@ -242,12 +331,129 @@ fn print(value: impl serde::Serialize) -> Result<()> {
 async fn main() -> Result<()> {
     let args = Args::parse();
     let root = args.root.canonicalize().context("工程或程序根目录不存在")?;
-    let paths = EnginePaths {
+    let explicit_resources = args.resources.is_some();
+    let mut paths = EnginePaths {
         sdk: args.sdk.unwrap_or_else(|| root.join("sdk/maa/bin")),
         resources: args.resources.unwrap_or_else(|| root.join("resources")),
         data: args.data.unwrap_or_else(|| root.join("data")),
     };
+    // 托管服务在取得所有权锁后解析；开发者显式资源路径继续用于离线检查。
+    if !explicit_resources
+        && !matches!(
+            args.command,
+            Action::RuntimeResources { .. }
+                | Action::ModelResources { .. }
+                | Action::Serve { .. }
+                | Action::ServeClient { .. }
+                | Action::RecoverInput { .. }
+                | Action::Applications
+                | Action::Windows
+                | Action::RecognitionCompare { .. }
+                | Action::MapBundleCheck { .. }
+                | Action::CoffeeBundleCheck { .. }
+        )
+    {
+        paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
+    }
     match args.command {
+        Action::RuntimeResources { command } => {
+            use zzz_engine::runtime_resources;
+            return match command {
+                RuntimeResourceAction::Catalog => print(runtime_resources::catalog(&paths.data)?),
+                RuntimeResourceAction::PreviewChange(change) => {
+                    print(runtime_resources::preview_change(
+                        &paths.data,
+                        &paths.resources,
+                        &change.request(),
+                    )?)
+                }
+                RuntimeResourceAction::ApplyChange(change) => {
+                    print(runtime_resources::apply_change(
+                        &paths.data,
+                        &paths.resources,
+                        &change.request(),
+                    )?)
+                }
+                RuntimeResourceAction::Pack {
+                    source,
+                    version,
+                    output,
+                } => print(runtime_resources::pack(&source, &version, &output)?),
+                RuntimeResourceAction::Check { archive, sha256 } => {
+                    print(runtime_resources::check_archive(&archive, &sha256)?)
+                }
+                RuntimeResourceAction::Install { archive, sha256 } => print(
+                    serde_json::json!({"id": runtime_resources::install(&paths.data, &archive, &sha256)?, "activated": false}),
+                ),
+                RuntimeResourceAction::Status => {
+                    print(runtime_resources::status(&paths.data, &paths.resources)?)
+                }
+                RuntimeResourceAction::Activate { id } => print(runtime_resources::activate(
+                    &paths.data,
+                    &paths.resources,
+                    &id,
+                )?),
+                RuntimeResourceAction::Rollback => {
+                    print(runtime_resources::rollback(&paths.data, &paths.resources)?)
+                }
+            };
+        }
+        Action::ModelResources { command } => {
+            use od_platform::model_cache::{self, CacheState, HttpsModelDownloader};
+            match command {
+                ModelResourceAction::Status { cache, models } => {
+                    let cache = cache.unwrap_or_else(|| root.join("sdk/models"));
+                    let models = model_cache::model_cache_status(&cache, &models)?;
+                    return print(serde_json::json!({
+                        "ready": models.iter().all(|model| model.files == CacheState::Valid),
+                        "cache": cache, "models": models,
+                    }));
+                }
+                ModelResourceAction::Prepare {
+                    cache,
+                    models,
+                    offline,
+                } => {
+                    let cache = cache.unwrap_or_else(|| root.join("sdk/models"));
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    let interrupt = cancel.clone();
+                    let signal = tokio::spawn(async move {
+                        if tokio::signal::ctrl_c().await.is_ok() {
+                            interrupt.store(true, std::sync::atomic::Ordering::Release);
+                        }
+                    });
+                    let output_cache = cache.clone();
+                    let result = tokio::task::spawn_blocking(move || {
+                        let mut previous = (String::new(), String::new(), 0_u64);
+                        model_cache::prepare_models(
+                            &cache,
+                            &models,
+                            offline,
+                            &HttpsModelDownloader,
+                            &cancel,
+                            |progress| {
+                                let megabytes = progress.completed_bytes / (1024 * 1024);
+                                if previous.0 != progress.id
+                                    || previous.1 != progress.phase
+                                    || previous.2 != megabytes
+                                {
+                                    eprintln!(
+                                        "{}",
+                                        serde_json::to_string(&progress).expect("资源进度可序列化")
+                                    );
+                                    previous = (progress.id, progress.phase, megabytes);
+                                }
+                            },
+                        )
+                    })
+                    .await;
+                    signal.abort();
+                    return print(
+                        serde_json::json!({"ready": true, "cache": output_cache, "models": result??}),
+                    );
+                }
+            }
+        }
         Action::RecognitionCompare {
             cases,
             fixture_root,

@@ -136,6 +136,7 @@ enum InputOutcome {
 
 #[derive(Clone)]
 pub struct Engine {
+    resources: Arc<crate::model_resources::ModelResourceService>,
     state: Arc<Mutex<State>>,
     sender: mpsc::SyncSender<Work>,
     fixture: bool,
@@ -186,12 +187,23 @@ impl Engine {
     }
 
     fn with_factory(
-        paths: EnginePaths,
+        mut paths: EnginePaths,
         factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
     ) -> anyhow::Result<Self> {
         let fixture = factory.is_some();
+        let resources = Arc::new(crate::model_resources::ModelResourceService::new(
+            paths.data.join("model-cache"),
+        )?);
         let config = ConfigStore::new(&paths.data)?;
         let config_owner = Arc::new(config.acquire_owner()?);
+        let resource_id = if !fixture {
+            let (directory, id) =
+                crate::runtime_resources::select_for_engine(&paths.data, &paths.resources)?;
+            paths.resources = directory;
+            id
+        } else {
+            None
+        };
         config.read()?;
         let history = RunStore::new(&paths.data)?;
         std::fs::create_dir_all(paths.data.join("runs"))?;
@@ -204,7 +216,7 @@ impl Engine {
                 expected_version: maa_adapter::SDK_VERSION.into(),
                 binding_version: maa_adapter::BINDING_VERSION.into(),
                 directory: paths.sdk.display().to_string(),
-                message: "正在校验并加载 Maa SDK".into(),
+                message: "正在校验运行资源并加载 Maa SDK".into(),
             },
             window: None,
             capture_method: None,
@@ -224,9 +236,10 @@ impl Engine {
             .name("maa-worker".into())
             .spawn(move || {
                 let _owner = worker_owner;
-                worker(paths, worker_state, receiver, factory);
+                worker(paths, worker_state, receiver, factory, resource_id);
             })?;
         Ok(Self {
+            resources,
             state,
             sender,
             fixture,
@@ -241,6 +254,7 @@ impl Engine {
     }
 
     pub fn cancel_active(&self) {
+        self.resources.close();
         let mut state = self.state.lock().expect("运行状态锁失效");
         if let Some(cancel) = &state.cancel {
             cancel.store(true, Ordering::Release);
@@ -268,15 +282,33 @@ impl Engine {
     pub async fn shutdown(&self) -> Result<(), ApiError> {
         self.cancel_active();
         let (tx, rx) = oneshot::channel();
-        self.sender
-            .try_send(Work::Shutdown(tx))
-            .map_err(|_| ApiError::new("worker_unavailable", "工作线程无法接收退出请求"))?;
-        rx.await
-            .map_err(|_| ApiError::new("worker_unavailable", "工作线程已异常退出"))
+        let native = match self.sender.try_send(Work::Shutdown(tx)) {
+            Ok(()) => rx
+                .await
+                .map_err(|_| ApiError::new("worker_unavailable", "工作线程已异常退出")),
+            Err(_) => Err(ApiError::new(
+                "worker_unavailable",
+                "工作线程无法接收退出请求",
+            )),
+        };
+        self.resources.shutdown().await;
+        native
     }
 
     pub async fn execute(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
+            Command::ModelResources => Ok(Payload::ModelResources(self.resources.snapshot())),
+            Command::StartModelResources {
+                kind,
+                models,
+                offline,
+            } => self
+                .resources
+                .start(kind, models, offline)
+                .map(Payload::ModelResources),
+            Command::CancelModelResources { job_id } => {
+                self.resources.cancel(job_id).map(Payload::ModelResources)
+            }
             Command::RetryRunSave => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 if let Some(record) = &state.failed_save {
@@ -902,9 +934,23 @@ fn worker(
     state: Arc<Mutex<State>>,
     receiver: mpsc::Receiver<Work>,
     factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
+    resource_id: Option<String>,
 ) {
     {
-        let result = maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"));
+        let result = (|| -> anyhow::Result<SdkStatus> {
+            if let Some(id) = resource_id {
+                crate::runtime_resources::validate_directory(&paths.resources, Some(&id))?;
+                state.lock().expect("运行状态锁失效").event(
+                    None,
+                    "info",
+                    format!(
+                        "运行资源校验通过：{id}，目录：{}",
+                        paths.resources.display()
+                    ),
+                );
+            }
+            maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"))
+        })();
         let mut state = state.lock().expect("运行状态锁失效");
         match result {
             Ok(sdk) => {

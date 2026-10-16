@@ -35,6 +35,11 @@ export async function runtimeResourceState(): Promise<DesktopRuntimeResources> {
   return invoke<DesktopRuntimeResources>('runtime_resource_state');
 }
 
+export async function pickRuntimeResourceArchive(): Promise<string | null> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke<string | null>('pick_runtime_resource_archive');
+}
+
 export async function startRuntimeResourceJob(request: RuntimeResourceRequest): Promise<DesktopRuntimeResources> {
   if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
   return invoke<DesktopRuntimeResources>('start_runtime_resource_job', { request });

@@ -542,7 +542,9 @@ pub fn preview_change(
     let expected = match request {
         RuntimeResourceRequest::Activate { revision, .. }
         | RuntimeResourceRequest::Rollback { revision } => revision,
-        RuntimeResourceRequest::Refresh => anyhow::bail!("刷新不是版本切换"),
+        RuntimeResourceRequest::Refresh | RuntimeResourceRequest::Install { .. } => {
+            anyhow::bail!("该操作不是版本切换")
+        }
     };
     ensure!(
         revision(&selection)? == *expected,
@@ -562,7 +564,7 @@ pub fn preview_change(
             target(&root, bundled, selection.previous.as_deref())?;
             std::mem::swap(&mut selection.current, &mut selection.previous);
         }
-        RuntimeResourceRequest::Refresh => unreachable!(),
+        RuntimeResourceRequest::Refresh | RuntimeResourceRequest::Install { .. } => unreachable!(),
     }
     Ok(selection)
 }

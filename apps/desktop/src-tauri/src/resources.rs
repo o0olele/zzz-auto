@@ -80,7 +80,7 @@ impl ResourceManager {
 
     pub fn switching(&self) -> bool {
         self.snapshot().job.is_some_and(|job| {
-            job.state == RuntimeResourceJobState::Running && job.request.changes_selection()
+            job.state == RuntimeResourceJobState::Running && job.request.requires_engine_exit()
         })
     }
 
@@ -88,12 +88,12 @@ impl ResourceManager {
         let state = self.state.lock().expect("资源管理状态锁失效");
         if state.closed
             || state.snapshot.job.as_ref().is_some_and(|job| {
-                job.state == RuntimeResourceJobState::Running && job.request.changes_selection()
+                job.state == RuntimeResourceJobState::Running && job.request.requires_engine_exit()
             })
         {
             return Err(ApiError::new(
                 "resource_busy",
-                "运行资源正在切换或桌面正在退出，请等待收尾",
+                "运行资源正在安装、切换或桌面正在退出，请等待收尾",
             ));
         }
         Ok(())
@@ -133,7 +133,7 @@ impl ResourceManager {
         self.done.send_replace(false);
         let manager = self.clone();
         tokio::spawn(async move {
-            let result = if request.changes_selection() {
+            let result = if request.requires_engine_exit() {
                 manager.change(&layout, &request).await
             } else {
                 Ok(())
@@ -195,7 +195,16 @@ impl ResourceManager {
             current.reload_recovery(layout)?;
         }
         RecoveryJournal::open(&layout.data)?.require_clean()?;
-        let verification = helper(layout, "preview-change", Some(request));
+        let installing = matches!(request, RuntimeResourceRequest::Install { .. });
+        let verification = helper(
+            layout,
+            if installing {
+                "check"
+            } else {
+                "preview-change"
+            },
+            Some(request),
+        );
         tokio::pin!(verification);
         loop {
             tokio::select! {
@@ -208,17 +217,28 @@ impl ResourceManager {
             }
         }
         if self.state.lock().expect("资源管理状态锁失效").closed {
-            return Err(ApiError::new("resource_closed", "桌面正在退出，未切换资源"));
+            return Err(ApiError::new(
+                "resource_closed",
+                "桌面正在退出，未安装或切换资源",
+            ));
         }
         self.phase("stopping_engine");
         if let Some(current) = session.as_mut() {
             current.shutdown().await?;
         }
         session.take();
-        self.phase("applying");
-        let changed = helper(layout, "apply-change", Some(request))
-            .await
-            .map(|_| ());
+        self.phase(if installing { "installing" } else { "applying" });
+        let changed = helper(
+            layout,
+            if installing {
+                "install"
+            } else {
+                "apply-change"
+            },
+            Some(request),
+        )
+        .await
+        .map(|_| ());
         let closing = self.state.lock().expect("资源管理状态锁失效").closed;
         if !closing {
             self.phase("starting_engine");
@@ -234,12 +254,15 @@ impl ResourceManager {
                     "resource_restart_failed",
                     format!(
                         "{}；引擎重新连接失败：{}。请手动重连",
-                        changed
-                            .as_ref()
-                            .err()
-                            .map_or("版本选择已保存".to_owned(), |error| error
-                                .message
-                                .clone()),
+                        changed.as_ref().err().map_or(
+                            if installing {
+                                "资源包已安装，当前选择保持不变"
+                            } else {
+                                "版本选择已保存"
+                            }
+                            .to_owned(),
+                            |error| error.message.clone()
+                        ),
                         error.message
                     ),
                 ));
@@ -284,6 +307,13 @@ async fn helper(
             .arg(&layout.data)
             .args(["runtime-resources", operation]);
         match request {
+            Some(RuntimeResourceRequest::Install { archive, sha256 }) => {
+                command
+                    .arg("--archive")
+                    .arg(archive)
+                    .arg("--sha256")
+                    .arg(sha256);
+            }
             Some(RuntimeResourceRequest::Activate { id, revision }) => {
                 command.args(["--id", &id, "--revision", &revision]);
             }

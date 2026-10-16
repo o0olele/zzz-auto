@@ -31,12 +31,17 @@ pub struct RuntimeResourceCatalog {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RuntimeResourceRequest {
     Refresh,
+    Install { archive: String, sha256: String },
     Activate { id: String, revision: String },
     Rollback { revision: String },
 }
 
 impl RuntimeResourceRequest {
     pub fn changes_selection(&self) -> bool {
+        matches!(self, Self::Activate { .. } | Self::Rollback { .. })
+    }
+
+    pub fn requires_engine_exit(&self) -> bool {
         !matches!(self, Self::Refresh)
     }
 
@@ -49,13 +54,30 @@ impl RuntimeResourceRequest {
         };
         let valid = match self {
             Self::Refresh => true,
+            Self::Install { archive, sha256 } => {
+                let path = std::path::Path::new(archive);
+                archive.len() <= 32768
+                    && !archive.contains('\0')
+                    && path.is_absolute()
+                    && matches!(path.components().next(), Some(std::path::Component::Prefix(prefix))
+                        if matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)))
+                    && path.components().skip(1).all(|component| match component {
+                        std::path::Component::Normal(name) => !name.to_string_lossy().contains(':'),
+                        std::path::Component::ParentDir => false,
+                        _ => true,
+                    })
+                    && path
+                        .extension()
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+                    && hash(sha256)
+            }
             Self::Activate { id, revision } => hash(id) && hash(revision),
             Self::Rollback { revision } => hash(revision),
         };
         if valid {
             Ok(())
         } else {
-            Err("资源版本编号或选择修订无效，请刷新后重试")
+            Err("资源参数无效：请选择本地 ZIP 并填写 64 位小写 SHA-256，或刷新版本后重试")
         }
     }
 }

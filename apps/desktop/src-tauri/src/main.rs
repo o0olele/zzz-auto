@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod archive_picker;
 mod host;
 mod resources;
 mod session;
@@ -72,6 +73,19 @@ async fn recover_inputs(
 }
 
 #[tauri::command]
+async fn pick_runtime_resource_archive(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+) -> Result<Option<String>, ApiError> {
+    main_window(&window)?;
+    state.resources.require_available()?;
+    let owner = window.hwnd().map_err(session::offline)?.0 as isize;
+    tokio::task::spawn_blocking(move || archive_picker::pick(owner))
+        .await
+        .map_err(session::offline)?
+}
+
+#[tauri::command]
 fn runtime_resource_state(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, Host>,
@@ -114,6 +128,7 @@ fn main() {
             elevate_engine,
             recover_inputs,
             runtime_resource_state,
+            pick_runtime_resource_archive,
             start_runtime_resource_job,
             subscribe_engine
         ])

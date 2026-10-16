@@ -189,7 +189,7 @@ impl NativeSession {
         )
     }
 
-    fn run_pipeline_detailed(
+    pub(crate) fn run_pipeline_detailed(
         &mut self,
         entry: &str,
         inputs: &PipelineInputPlan,

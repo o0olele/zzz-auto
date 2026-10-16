@@ -33,7 +33,7 @@ pub async fn serve_managed(engine: Engine, name: &str, token: &str, parent_pid: 
             MAX_RESPONSE_BYTES,
         )
         .await?;
-        serve_requests(&engine, &mut pipe).await
+        serve_requests(&engine, &mut pipe, None).await
     }
     .await;
     engine.cancel_active();
@@ -44,13 +44,26 @@ pub async fn serve_managed(engine: Engine, name: &str, token: &str, parent_pid: 
 // Tokio ClientOptions 默认 SECURITY_IDENTIFICATION，禁止服务端模拟提升后的客户端。
 pub async fn serve_connected(paths: EnginePaths, name: &str, parent_pid: u32) -> Result<()> {
     let (mut pipe, greeting) = pair_client(name, parent_pid).await?;
-    // 身份检查完成后才初始化 SDK / 数据；不会接收任意程序或路径命令。
-    let engine = Engine::new(paths)?;
-    let session = async {
-        write_frame(&mut pipe, &greeting, MAX_REQUEST_BYTES).await?;
-        serve_requests(&engine, &mut pipe).await
-    }
-    .await;
+    // 候选引擎先完成配对，桌面退出旧引擎后才发送首个请求并接管数据目录。
+    // 取消 UAC 时旧引擎保持可用；未收到请求的进程不会初始化 SDK 或数据。
+    write_frame(&mut pipe, &greeting, MAX_REQUEST_BYTES).await?;
+    let first: Request = tokio::time::timeout(
+        Duration::from_secs(45),
+        read_frame(&mut pipe, MAX_REQUEST_BYTES),
+    )
+    .await??;
+    let engine = match Engine::new(paths) {
+        Ok(engine) => engine,
+        Err(error) => {
+            let response = Response::from_result(
+                first.id,
+                Err(ApiError::new("engine_init_failed", format!("{error:#}"))),
+            );
+            write_frame(&mut pipe, &response, MAX_RESPONSE_BYTES).await?;
+            return Err(error);
+        }
+    };
+    let session = serve_requests(&engine, &mut pipe, Some(first)).await;
     engine.cancel_active();
     let _ = engine.shutdown().await;
     session
@@ -117,15 +130,21 @@ pub async fn recover_connected(name: &str, parent_pid: u32) -> Result<()> {
 async fn serve_requests(
     engine: &Engine,
     pipe: &mut (impl AsyncRead + AsyncWrite + Unpin),
+    mut first: Option<Request>,
 ) -> Result<()> {
     let mut cache: HashMap<uuid::Uuid, (String, Response)> = HashMap::new();
     let mut order = VecDeque::new();
     loop {
-        let request: Request = tokio::time::timeout(
-            Duration::from_secs(45),
-            read_frame(&mut *pipe, MAX_REQUEST_BYTES),
-        )
-        .await??;
+        let request = match first.take() {
+            Some(request) => request,
+            None => {
+                tokio::time::timeout(
+                    Duration::from_secs(45),
+                    read_frame(&mut *pipe, MAX_REQUEST_BYTES),
+                )
+                .await??
+            }
+        };
         let fingerprint = serde_json::to_string(&request.command)?;
         let shutdown = matches!(request.command, Command::Shutdown);
         let response = if request.version != PROTOCOL_VERSION {

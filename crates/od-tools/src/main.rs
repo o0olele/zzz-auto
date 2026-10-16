@@ -12,6 +12,17 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// 只读预览旧配置；--apply 必须同时提供上次预览的 --preview-id。
+    ImportConfig {
+        #[arg(long)]
+        source: PathBuf,
+        #[arg(long)]
+        data: PathBuf,
+        #[arg(long, requires = "preview_id")]
+        apply: bool,
+        #[arg(long, requires = "apply")]
+        preview_id: Option<String>,
+    },
     MailBundle {
         #[arg(long)]
         reference: PathBuf,
@@ -60,6 +71,29 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::ImportConfig {
+            source,
+            data,
+            apply,
+            preview_id,
+        } => {
+            if apply {
+                let config = od_tools::config_import::apply(
+                    &source,
+                    &data,
+                    preview_id.as_deref().expect("clap 已检查预览指纹"),
+                )?;
+                println!("{}", serde_json::to_string_pretty(&config)?);
+            } else {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&od_tools::config_import::preview(
+                        &source, &data
+                    )?)?
+                );
+            }
+            Ok(())
+        }
         Tool::MailBundle {
             reference,
             models,
@@ -96,6 +130,11 @@ fn main() -> Result<()> {
         }
         Tool::Types { output } => {
             let declarations = [
+                od_core::config::GroupApp::decl(),
+                od_core::config::AppGroup::decl(),
+                od_core::config::AccountInstance::decl(),
+                od_core::config::AccountConfig::decl(),
+                od_core::config::ConfigChange::decl(),
                 od_core::AppDefinition::decl(),
                 od_core::RunState::decl(),
                 od_core::mail::MailConfig::decl(),

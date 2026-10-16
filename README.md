@@ -1,6 +1,6 @@
 # 绝区零一条龙 · Rust 原型
 
-按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，M1 集成原型待验证，M2 进行中：邮件 Pipeline 已接入桌面试运行、共享运行槽、暂停继续及持久输入恢复登记，详见[邮件试运行说明](docs/develop/mail-pipeline.md)。真实游戏行为仍待验收，30 个游戏应用仍显示“待迁移”，尚不能代替旧一条龙。
+按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，M1 集成原型待验证，M2 **主流程通过，边界待验收**，M3 已开始。邮件大世界和菜单起点已获实机测试通过反馈，详见[邮件试运行说明](docs/develop/mail-pipeline.md)；M3 首批推进[账号、配置导入与应用组基础](docs/develop/account-config.md)。暂停、异常收尾等场景继续验收，30 个游戏应用的正式可用标记仍待验收，尚不能代替旧一条龙。
 
 界面采用 React、TypeScript、Vite 与 Fluent UI React v9；自动化运行在独立 Rust 进程中。运行程序不启动 Python 或 Node 服务。前端构建需要 Node，Rust 和 MSVC 用于开发；正式发行的完整验收属于 M7。
 
@@ -47,7 +47,7 @@ CLI `input-probe` 使用同一实现，指定 `--hwnd`、`--key`、`--hold-ms`�
 cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode background --key 87 --hold-ms 1000 --start-delay-ms 3000 --cancel-after-ms 3200 --allow-input
 ```
 
-CLI 键盘使用 Win32 VK，可选 `--mode foreground-legacy` 或 `background-post` 对照 Maa 的兼容方式；手柄参数、计时边界和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。首轮未提供权限自动提升、声音闪避、暂停恢复、HTTP、MCP、旧配置导入与游戏应用运行。
+CLI 键盘使用 Win32 VK，可选 `--mode foreground-legacy` 或 `background-post` 对照 Maa 的兼容方式；手柄参数、计时边界和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。邮件暂停 / 继续见[试运行说明](docs/develop/mail-pipeline.md)，旧配置的账号与应用组导入见[M3 使用说明](docs/develop/account-config.md#使用)。声音闪避、HTTP、MCP、通用设置转换及正式游戏应用调度继续迁移。
 
 新动作使用 `--action mouse|stick|trigger`，其余停止、确认与计时参数相同。示例中的句柄需要替换为 `windows` 命令返回的游戏句柄：
 

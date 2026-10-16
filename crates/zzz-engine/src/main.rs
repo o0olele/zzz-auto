@@ -90,6 +90,11 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    /// 固定模型包的只读检查与原生准备；不加载 SDK 或连接游戏。
+    ModelResources {
+        #[command(subcommand)]
+        command: ModelResourceAction,
+    },
     RecognitionCompare {
         #[arg(long)]
         cases: PathBuf,
@@ -224,6 +229,24 @@ enum Action {
     },
 }
 
+#[derive(Subcommand)]
+enum ModelResourceAction {
+    Status {
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        #[arg(long = "model")]
+        models: Vec<String>,
+    },
+    Prepare {
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        #[arg(long = "model")]
+        models: Vec<String>,
+        #[arg(long)]
+        offline: bool,
+    },
+}
+
 fn capture(method: Capture) -> CaptureMethod {
     match method {
         Capture::Gdi => CaptureMethod::Gdi,
@@ -248,6 +271,62 @@ async fn main() -> Result<()> {
         data: args.data.unwrap_or_else(|| root.join("data")),
     };
     match args.command {
+        Action::ModelResources { command } => {
+            use od_platform::model_cache::{self, CacheState, HttpsModelDownloader};
+            match command {
+                ModelResourceAction::Status { cache, models } => {
+                    let cache = cache.unwrap_or_else(|| root.join("sdk/models"));
+                    let models = model_cache::model_cache_status(&cache, &models)?;
+                    return print(serde_json::json!({
+                        "ready": models.iter().all(|model| model.files == CacheState::Valid),
+                        "cache": cache, "models": models,
+                    }));
+                }
+                ModelResourceAction::Prepare {
+                    cache,
+                    models,
+                    offline,
+                } => {
+                    let cache = cache.unwrap_or_else(|| root.join("sdk/models"));
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    let interrupt = cancel.clone();
+                    let signal = tokio::spawn(async move {
+                        if tokio::signal::ctrl_c().await.is_ok() {
+                            interrupt.store(true, std::sync::atomic::Ordering::Release);
+                        }
+                    });
+                    let output_cache = cache.clone();
+                    let result = tokio::task::spawn_blocking(move || {
+                        let mut previous = (String::new(), "", 0_u64);
+                        model_cache::prepare_models(
+                            &cache,
+                            &models,
+                            offline,
+                            &HttpsModelDownloader,
+                            &cancel,
+                            |progress| {
+                                let megabytes = progress.completed_bytes / (1024 * 1024);
+                                if previous.0 != progress.id
+                                    || previous.1 != progress.phase
+                                    || previous.2 != megabytes
+                                {
+                                    eprintln!(
+                                        "{}",
+                                        serde_json::to_string(&progress).expect("资源进度可序列化")
+                                    );
+                                    previous = (progress.id, progress.phase, megabytes);
+                                }
+                            },
+                        )
+                    })
+                    .await;
+                    signal.abort();
+                    return print(
+                        serde_json::json!({"ready": true, "cache": output_cache, "models": result??}),
+                    );
+                }
+            }
+        }
         Action::RecognitionCompare {
             cases,
             fixture_root,

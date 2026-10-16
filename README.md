@@ -71,6 +71,8 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 
 ## 离线模型对照
 
+固定模型包已提供 Rust 原生资源管理：`cargo run -p zzz-engine --locked -- model-resources status` 只读检查缓存，`model-resources prepare` 下载并校验，`--offline` 只使用本地缓存，`--model ppocrv5` 可选择模型。已有有效模型直接复用；下载失败与取消不会启用半包。开发脚本已复用同一实现，完整用法和范围见[模型资源下载](docs/develop/model-resources.md)。桌面资源页及运行资源包在线切换继续后续迁移。
+
 准备固定的旧版 PP-OCRv5、闪光及两种 YOLO 模型，再运行同一批固定图的 CPU / DirectML 对照：
 
 ```powershell

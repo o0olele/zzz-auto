@@ -130,6 +130,12 @@ fn main() -> Result<()> {
         }
         Tool::Types { output } => {
             let declarations = [
+                od_core::run_plan::RunContext::decl(),
+                od_core::run_plan::AppAvailability::decl(),
+                od_core::run_plan::PlannedApp::decl(),
+                od_core::run_plan::GroupPlan::decl(),
+                od_core::run_history::HistoryItem::decl(),
+                od_core::run_history::RunHistory::decl(),
                 od_core::config::GroupApp::decl(),
                 od_core::config::AppGroup::decl(),
                 od_core::config::AccountInstance::decl(),

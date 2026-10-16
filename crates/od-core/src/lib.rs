@@ -2,6 +2,8 @@ pub mod config;
 pub mod mail;
 pub mod ocr;
 pub mod pipeline;
+pub mod run_history;
+pub mod run_plan;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -59,6 +61,9 @@ pub struct RunRecord {
     #[ts(type = "string | null")]
     pub finished_at: Option<DateTime<Utc>>,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub context: Option<run_plan::RunContext>,
     #[serde(default)]
     pub input_probe: Option<InputProbeResult>,
     #[serde(default)]
@@ -298,6 +303,21 @@ pub struct RunSlot {
 }
 
 impl RunSlot {
+    pub fn begin_group_mail(
+        &mut self,
+        config: mail::MailConfig,
+        context: run_plan::RunContext,
+    ) -> Result<RunRecord, &'static str> {
+        context.validate()?;
+        if context.app_ids != ["email"] {
+            return Err("当前应用组试运行只支持邮件一项");
+        }
+        self.begin_mail(config)?;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        run.context = Some(context);
+        Ok(run.clone())
+    }
+
     pub fn begin_mail(&mut self, config: mail::MailConfig) -> Result<RunRecord, &'static str> {
         config.validate()?;
         self.begin("email")?;
@@ -390,6 +410,7 @@ impl RunSlot {
             started_at: Utc::now(),
             finished_at: None,
             message: "任务已启动".into(),
+            context: None,
             input_probe: None,
             input_pipeline: None,
             mail: None,
@@ -558,6 +579,9 @@ impl CaptureMethod {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Snapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub record_error: Option<String>,
     pub engine_version: String,
     pub sdk: SdkStatus,
     pub window: Option<WindowInfo>,

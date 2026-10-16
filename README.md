@@ -1,6 +1,6 @@
 # 绝区零一条龙 · Rust 原型
 
-按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，M1 集成原型待验证，M2 **主流程通过，边界待验收**，M3 已开始。邮件大世界和菜单起点已获实机测试通过反馈，详见[邮件试运行说明](docs/develop/mail-pipeline.md)；M3 首批推进[账号、配置导入与应用组基础](docs/develop/account-config.md)。暂停、异常收尾等场景继续验收，30 个游戏应用的正式可用标记仍待验收，尚不能代替旧一条龙。
+按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，M1 集成原型待验证，M2 **主流程通过，边界待验收**，M3 进行中。邮件大世界和菜单起点已获实机测试通过反馈，详见[邮件试运行说明](docs/develop/mail-pipeline.md)；M3 已实现[账号、配置导入与应用组基础](docs/develop/account-config.md)，并接通[应用组邮件试运行与账号记录](docs/develop/group-runs.md)。暂停、异常收尾等场景继续验收，30 个游戏应用的正式可用标记仍待验收，尚不能代替旧一条龙。
 
 界面采用 React、TypeScript、Vite 与 Fluent UI React v9；自动化运行在独立 Rust 进程中。运行程序不启动 Python 或 Node 服务。前端构建需要 Node，Rust 和 MSVC 用于开发；正式发行的完整验收属于 M7。
 

@@ -176,12 +176,20 @@ impl EngineSession {
             Command::StartMail {
                 allow_input: true,
                 ..
+            } | Command::StartGroupTrial {
+                allow_input: true,
+                ..
             }
         );
         let input = match &command {
             Command::StartMail {
                 config,
                 allow_input: true,
+            }
+            | Command::StartGroupTrial {
+                config,
+                allow_input: true,
+                ..
             } => {
                 config
                     .validate()
@@ -260,6 +268,10 @@ impl EngineSession {
         } else if !matches!(
             command,
             Command::Snapshot
+                | Command::AccountConfig
+                | Command::PreviewGroup { .. }
+                | Command::RunHistory { .. }
+                | Command::RetryRunSave
                 | Command::Stop { .. }
                 | Command::Pause { .. }
                 | Command::Events { .. }

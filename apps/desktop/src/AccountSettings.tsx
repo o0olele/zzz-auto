@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
-import type { AccountConfig, AppDefinition, ConfigChange } from './generated/protocol';
+import type { AccountConfig, AppDefinition, Command, ConfigChange, Snapshot } from './generated/protocol';
 import { errorMessage, request } from './bridge';
+import { GroupRuns } from './GroupRuns';
 
-export function AccountSettings({ connected, active, blocked, apps }: { connected: boolean; active: boolean; blocked: boolean; apps: AppDefinition[] }) {
+export function AccountSettings({ connected, active, blocked, apps, snapshot, onCommand }: { connected: boolean; active: boolean; blocked: boolean; apps: AppDefinition[]; snapshot: Snapshot | null; onCommand: (command: Command) => Promise<void> }) {
   const [config, setConfig] = useState<AccountConfig | null>(null);
   const [instanceId, setInstanceId] = useState(0);
   const [groupId, setGroupId] = useState('one_dragon');
@@ -101,6 +102,7 @@ export function AccountSettings({ connected, active, blocked, apps }: { connecte
           </div>;
         })}</div>
       </Card>}
+      {instance && group && <GroupRuns instanceId={instance.id} groupId={group.id} revision={config.revision} snapshot={snapshot} connected={connected} blocked={blocked} onCommand={onCommand}/>}
     </>}
   </>;
 }

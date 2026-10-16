@@ -110,4 +110,12 @@ p { color: var(--muted); font-size: 13px; line-height: 1.85; margin: 0; }
 .account-create>div { flex: 1; max-width: 360px; }
 .account-apps { max-height: 520px; overflow: auto; }
 .account-app { display: grid; grid-template-columns: minmax(130px, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.group-plan, .account-history { max-height: 360px; overflow: auto; }
+.group-run-card>button { align-self: flex-start; }
+.group-plan { padding-left: 24px; }
+.group-plan li { padding: 6px 4px; }
+.group-plan li>span:first-child { margin-right: 12px; }
+.group-blocker { color: var(--muted); margin: 8px 0; }
+.history-item { padding: 14px 0; border-top: 1px solid var(--line); }
+.history-item p, .history-item code { overflow-wrap: anywhere; font-size: 11px; }
 @media (max-width: 1050px) { .sidebar { width: 200px; } .main { margin-left: 200px; width: calc(100% - 200px); } .content { padding: 25px; } .topbar { padding: 0 25px; } .home-grid { grid-template-columns: 1fr; } .filter-row { justify-content: flex-start; } }

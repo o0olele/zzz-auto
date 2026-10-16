@@ -19,7 +19,7 @@ export function MailDiagnostics({ snapshot, connected, busy, onCommand }: {
   const disabled = !connected || busy || active;
   useEffect(() => { setConfirmed(false); }, [connected, snapshot?.window?.hwnd, snapshot?.window?.pid, snapshot?.capture_method]);
   return <Card className="mail-diagnostics">
-    <div className="card-title"><h2>邮件流程试运行</h2><Badge appearance="outline">M2 · 待实机验收</Badge></div>
+    <div className="card-title"><h2>邮件流程试运行</h2><Badge appearance="outline">主流程通过 · 边界待验收</Badge></div>
     <p>从大世界、菜单或邮件列表开始，领取附件后返回大世界。只支持前台键鼠；启动或继续后，请在延时期间切回游戏并保持前台。</p>
     <MessageBar intent="info"><MessageBarBody>暂停会等待输入释放并保留本次领取进度；暂停期间仍占用运行槽。引擎退出后不会自动继续领取。</MessageBarBody></MessageBar>
     <div className="input-fields">

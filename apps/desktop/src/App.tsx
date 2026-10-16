@@ -38,7 +38,7 @@ const milestones = [
   ['M0', '清单与基线', '清单与基线已完成，参考模型已按用户决定接受。'],
   ['M1', 'Maa 集成原型', '原生 SDK、独立引擎、桌面通信与截图入口正在验证。'],
   ['M2', '首个日常 Pipeline', '主流程通过，边界待验收；暂停、异常恢复等继续验证。'],
-  ['M3', '应用与桌面基础', '进行中：账号导入、应用组和配置修订；后续推进首批日常与运行记录。'],
+  ['M3', '应用与桌面基础', '进行中：账号导入、应用组预检、邮件试运行与账号历史；后续推进通用设置和首批日常。'],
   ['M4', 'Rust 自动战斗', '状态时间窗、动作抢占、声音闪避和输入释放。'],
   ['M5', '剩余游戏应用', '探索、路径、经营及剩余应用逐项迁移。'],
   ['M6', '工具与外部能力', '图像与路线编辑器、HTTP、MCP 和 Rust Agent。'],
@@ -162,12 +162,12 @@ export default function App() {
             </Card>
             <div className="home-grid">
               <Card className="connect-card"><div className="card-title"><h2>连接游戏</h2><Badge appearance="tint" color={snapshot?.window ? 'success' : 'informative'}>{snapshot?.window ? '已连接' : '尚未连接'}</Badge></div><p>启动绝区零并设置 1920 × 1080 客户区，再选择游戏窗口。</p><Field label="游戏窗口"><Select value={hwnd} onChange={(_, data) => setHwnd(data.value)} disabled={busy || active}><option value="">{windows.length ? '选择游戏窗口' : '尚未发现窗口'}</option>{windows.map(window => <option key={window.hwnd} value={window.hwnd}>{window.title} · PID {window.pid} · {window.width}×{window.height}</option>)}</Select></Field>{captureSelect}<div className="button-row"><Button disabled={!connected || busy || active} icon={<ArrowClockwise20Regular/>} onClick={() => act(scanWindows)}>扫描窗口</Button><Button appearance="primary" disabled={!hwnd || !connected || recoveryRequired || busy || active} icon={<PlugConnected24Regular/>} onClick={() => act(() => connectWindow())}>连接窗口</Button></div><Divider/><div className="connection-detail"><Text size={200}>SDK 状态</Text><p>{snapshot?.sdk.message ?? '桌面启动后自动校验随附 SDK 与引擎。'}</p></div></Card>
-              <Card className="next-card"><div className="card-title"><h2>当前阶段</h2><Badge appearance="tint" color="brand">M3 进行中</Badge></div><h3>账号与应用组基础</h3><p>M2 主流程通过，边界待验收；M3 已开始旧配置导入、账号隔离与应用组编辑。</p><div className="milestone-mini"><CheckmarkCircle20Regular/><span>邮件大世界 / 菜单起点主流程通过</span></div><div className="milestone-mini"><div className="step-dot"/><span>账号、配置修订与应用组</span></div><div className="milestone-mini muted"><div className="step-dot hollow"/><span>首批日常、运行记录与资源下载</span></div><Button appearance="subtle" icon={<ArrowRight20Regular/>} iconPosition="after" onClick={() => setPage('accounts')}>管理账号与应用组</Button></Card>
+              <Card className="next-card"><div className="card-title"><h2>当前阶段</h2><Badge appearance="tint" color="brand">M3 进行中</Badge></div><h3>应用组试运行与账号记录</h3><p>M2 主流程通过，边界待验收；M3 已接入账号配置、应用组邮件试运行与账号历史。</p><div className="milestone-mini"><CheckmarkCircle20Regular/><span>邮件大世界 / 菜单起点主流程通过</span></div><div className="milestone-mini"><div className="step-dot"/><span>应用组预检、修订核对与按账号记录</span></div><div className="milestone-mini muted"><div className="step-dot hollow"/><span>通用设置、首批日常与资源下载</span></div><Button appearance="subtle" icon={<ArrowRight20Regular/>} iconPosition="after" onClick={() => setPage('accounts')}>管理账号与应用组</Button></Card>
             </div>
             <Card><div className="card-title"><h2>最近运行</h2><Badge appearance="tint" color={active ? 'brand' : 'informative'}>{snapshot?.run ? runNames[snapshot.run.state] : '空闲'}</Badge></div>{snapshot?.run ? <><strong>{['prototype.input_probe', 'prototype.input_pipeline'].includes(snapshot.run.app_id) ? '真实输入诊断' : snapshot.run.app_id === 'email' ? '邮件试运行' : 'Maa 原生健康检查'}</strong><p className="run-message">{snapshot.run.message}</p><Text size={200}>运行 ID：{snapshot.run.id}</Text></> : <div className="empty-row"><Play20Regular/><span>尚无运行记录。连接窗口后可在原生诊断中执行健康检查。</span></div>}</Card>
           </>}
 
-          {page === 'accounts' && <AccountSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} apps={apps}/>}
+          {page === 'accounts' && <AccountSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} apps={apps} snapshot={snapshot} onCommand={command => act(async () => { const value = await request(command); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); else if (value.type === 'snapshot') setSnapshot(value.data); })}/>}
 
           {page === 'apps' && <>
             <div className="page-heading"><div><div className="eyebrow">APPLICATION CATALOG</div><h1>应用迁移</h1><p>保留现有应用 ID，逐项记录实现与验收状态。</p></div><Badge appearance="tint" color="brand">{apps.length} 个已登记</Badge></div>

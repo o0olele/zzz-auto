@@ -54,6 +54,7 @@ pub type SharedSession = Arc<AsyncMutex<Option<EngineSession>>>;
 struct State {
     snapshot: DesktopRuntimeResources,
     closed: bool,
+    maintenance: bool,
     cancel: Arc<AtomicBool>,
 }
 
@@ -72,6 +73,7 @@ impl ResourceManager {
             state: Arc::new(Mutex::new(State {
                 snapshot: DesktopRuntimeResources::default(),
                 closed: false,
+                maintenance: false,
                 cancel: Arc::new(AtomicBool::new(false)),
             })),
             done,
@@ -89,21 +91,24 @@ impl ResourceManager {
     }
 
     pub fn switching(&self) -> bool {
-        self.snapshot().job.is_some_and(|job| {
-            job.state == RuntimeResourceJobState::Running && job.request.requires_engine_exit()
-        })
+        let state = self.state.lock().expect("资源管理状态锁失效");
+        state.maintenance
+            || state.snapshot.job.as_ref().is_some_and(|job| {
+                job.state == RuntimeResourceJobState::Running && job.request.requires_engine_exit()
+            })
     }
 
     pub fn require_available(&self) -> Result<(), ApiError> {
         let state = self.state.lock().expect("资源管理状态锁失效");
         if state.closed
+            || state.maintenance
             || state.snapshot.job.as_ref().is_some_and(|job| {
                 job.state == RuntimeResourceJobState::Running && job.request.requires_engine_exit()
             })
         {
             return Err(ApiError::new(
                 "resource_busy",
-                "运行资源正在安装、切换或桌面正在退出，请等待收尾",
+                "配置正在离线恢复、运行资源正在切换或桌面正在退出，请等待收尾",
             ));
         }
         Ok(())
@@ -151,6 +156,7 @@ impl ResourceManager {
             .map_err(|error| ApiError::new("invalid_resources", error))?;
         let mut state = self.state.lock().expect("资源管理状态锁失效");
         if state.closed
+            || state.maintenance
             || state
                 .snapshot
                 .job
@@ -388,6 +394,52 @@ impl ResourceManager {
 
     pub fn reopen(&self) {
         self.state.lock().expect("资源管理状态锁失效").closed = false;
+    }
+
+    // 离线配置恢复复用资源任务的生命周期栅栏；独立测试可能只复用资源管理部分。
+    #[allow(dead_code)]
+    pub fn maintenance(&self) -> Result<MaintenanceGuard, ApiError> {
+        let mut state = self.state.lock().expect("资源管理状态锁失效");
+        if state.closed
+            || state.maintenance
+            || state
+                .snapshot
+                .job
+                .as_ref()
+                .is_some_and(|job| !job.state.is_terminal())
+        {
+            return Err(ApiError::new(
+                "resource_busy",
+                "已有配置恢复、运行资源任务或桌面正在退出，请等待收尾",
+            ));
+        }
+        state.maintenance = true;
+        self.done.send_replace(false);
+        Ok(MaintenanceGuard(self.clone()))
+    }
+}
+
+pub struct MaintenanceGuard(ResourceManager);
+
+impl MaintenanceGuard {
+    #[allow(dead_code)]
+    pub fn require_open(&self) -> Result<(), ApiError> {
+        if self.0.state.lock().expect("资源管理状态锁失效").closed {
+            Err(ApiError::new(
+                "config_recovery_closed",
+                "桌面正在退出，未开始新的恢复步骤",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for MaintenanceGuard {
+    fn drop(&mut self) {
+        let mut state = self.0.state.lock().expect("资源管理状态锁失效");
+        state.maintenance = false;
+        self.0.done.send_replace(true);
     }
 }
 

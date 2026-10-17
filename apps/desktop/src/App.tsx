@@ -21,6 +21,7 @@ import { RunLogs } from './RunLogs';
 import { ModelResources } from './ModelResources';
 import { RuntimeResources, useRuntimeResources } from './RuntimeResources';
 import { CoffeeDiagnostics } from './CoffeeDiagnostics';
+import { OfflineConfigRecovery, useConfigRecovery } from './OfflineConfigRecovery';
 import { captureNames, captureHints } from './captureSettings';
 
 type Page = 'home' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'logs' | 'apps' | 'native' | 'progress';
@@ -65,8 +66,10 @@ export default function App() {
   const [actionBusy, setBusy] = useState(false);
   const [resourcesVisited, setResourcesVisited] = useState(false);
   const runtimeResources = useRuntimeResources(resourcesVisited);
+  const configRecovery = useConfigRecovery();
   const resourceSwitching = runtimeResources.snapshot.job?.state === 'running' && ['install', 'activate', 'rollback'].includes(runtimeResources.snapshot.job.request.type);
-  const busy = actionBusy || resourceSwitching;
+  const configRecovering = configRecovery.submitting || configRecovery.snapshot.job?.state === 'running';
+  const busy = actionBusy || resourceSwitching || configRecovering;
   const [connected, setConnected] = useState(false);
   const [privilege, setPrivilege] = useState<EnginePrivilege | null>(null);
   const [elevating, setElevating] = useState(false);
@@ -76,6 +79,11 @@ export default function App() {
   const [selected, setSelected] = useState<AppDefinition | null>(null);
 
   const active = !!snapshot?.run && ['running', 'pausing', 'paused', 'stopping'].includes(snapshot.run.state);
+  useEffect(() => {
+    const job = configRecovery.snapshot.job;
+    if (job?.reconnected) { setError(''); setSnapshot(null); setConnected(false); setScreenshot(null); setWindows([]); setHwnd(''); }
+    if (job?.error_code?.startsWith('input_recovery')) { setRecoveryRequired(true); setConnected(false); setSnapshot(null); }
+  }, [configRecovery.snapshot.job?.id, configRecovery.snapshot.job?.state]);
   useEffect(() => {
     const job = runtimeResources.snapshot.job;
     if (resourceSwitching || job?.reconnected) { setScreenshot(null); setWindows([]); setHwnd(''); }
@@ -167,6 +175,7 @@ export default function App() {
 
           {page === 'home' && <>
             <div className="page-heading"><div><div className="eyebrow">AUTOMATION WORKSPACE</div><h1>控制台</h1><p>连接游戏窗口，查看引擎状态与迁移进展。</p></div><Button icon={<ArrowClockwise20Regular/>} disabled={!desktop || busy || active || recoveryRequired} onClick={() => act(async () => { await reconnect(); await scanWindows(); })}>重连引擎</Button></div>
+            {(!connected || configRecovery.snapshot.job) && <OfflineConfigRecovery manager={configRecovery} connected={connected} blocked={recoveryRequired || resourceSwitching || actionBusy || active} apps={apps}/>}
             <div className="stats-grid">
               <Card className="stat"><span className="stat-label">原生引擎<PlugConnected24Regular/></span><strong>{snapshot?.sdk.ready ? '已就绪' : '等待连接'}</strong><span>{snapshot?.sdk.version ? `MaaFramework ${snapshot.sdk.version}` : 'Rust + MaaFramework'}</span></Card>
               <Card className="stat"><span className="stat-label">游戏窗口<Desktop24Regular/></span><strong>{snapshot?.window ? '已连接' : '未连接'}</strong><span>{snapshot?.window ? `${snapshot.window.width} × ${snapshot.window.height}` : '1080p 基准 · 客户区'}</span></Card>
@@ -218,7 +227,7 @@ export default function App() {
           </>}
 
           {page === 'resources' && <ModelResources connected={connected && !recoveryRequired} blocked={busy}/>}
-          {page === 'runtime_resources' && <RuntimeResources manager={runtimeResources} blocked={actionBusy || active || recoveryRequired}/>}
+          {page === 'runtime_resources' && <RuntimeResources manager={runtimeResources} blocked={actionBusy || active || recoveryRequired || configRecovering} maintenance={configRecovering}/>}
 
           {page === 'progress' && <>
             <div className="page-heading"><div><div className="eyebrow">MIGRATION ROADMAP</div><h1>开发与验收</h1><p>阶段完成以验收证据为准，编译与界面预览仅是其中一部分。</p></div><Badge appearance="tint" color="brand">M2 主流程通过，边界待验收 · M3 进行中</Badge></div>

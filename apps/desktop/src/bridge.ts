@@ -3,6 +3,16 @@ import type { ApiError, Command, DesktopUpdate, Payload, DesktopRuntimeResources
 
 export const desktop = isTauri();
 
+export async function configRecoveryState(): Promise<import('./generated/protocol').DesktopConfigRecovery> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('config_recovery_state');
+}
+
+export async function startConfigRecovery(request: import('./generated/protocol').ConfigRecoveryRequest): Promise<import('./generated/protocol').DesktopConfigRecovery> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('start_config_recovery', { request });
+}
+
 export async function desktopLogs(sessionId: string | null): Promise<import('./generated/protocol').DesktopLogs> {
   if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
   return invoke('desktop_logs', { sessionId });

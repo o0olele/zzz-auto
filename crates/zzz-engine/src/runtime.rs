@@ -231,7 +231,7 @@ impl Engine {
         } else {
             None
         };
-        config.read()?;
+        config.read_for_startup()?;
         let history = RunStore::new(&paths.data)?;
         std::fs::create_dir_all(paths.data.join("runs"))?;
         let state = Arc::new(Mutex::new(State {

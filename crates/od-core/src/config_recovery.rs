@@ -2,7 +2,7 @@ use super::backups::{backup_revision, read_backup};
 use super::{
     AccountConfig, CONFIG_SCHEMA, ConfigBackup, ConfigError, ConfigStore, invalid, reject_links,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
@@ -10,12 +10,13 @@ use std::{
     io::Write,
     path::Path,
 };
+use ts_rs::TS;
 use uuid::Uuid;
 
 const LIST_LIMIT: usize = 50;
 const SCAN_BYTES_LIMIT: u64 = 64 * 1024 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigRecoveryState {
     Missing,
@@ -24,14 +25,14 @@ pub enum ConfigRecoveryState {
     Unsupported,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ConfigRecoveryCurrent {
     pub state: ConfigRecoveryState,
     pub bytes: Option<u32>,
     pub sha256: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ConfigRecoveryCatalog {
     pub data_directory: String,
     pub current: ConfigRecoveryCurrent,
@@ -40,7 +41,7 @@ pub struct ConfigRecoveryCatalog {
     pub unavailable: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ConfigRecoveryPreview {
     pub data_directory: String,
     pub id: String,
@@ -51,12 +52,86 @@ pub struct ConfigRecoveryPreview {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ConfigRecoveryResult {
     pub config: AccountConfig,
     // 相对数据目录的固定归档位置；不返回损坏文件的内容。
     pub preserved_file: Option<String>,
     pub recovered_backup: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ConfigRecoveryRequest {
+    List,
+    Preview {
+        id: String,
+    },
+    Restore {
+        id: String,
+        preview_id: String,
+        #[serde(default)]
+        confirm: bool,
+    },
+}
+
+impl ConfigRecoveryRequest {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        match self {
+            Self::List => Ok(()),
+            Self::Preview { id } => backup_revision(id).map(|_| ()),
+            Self::Restore {
+                id,
+                preview_id,
+                confirm,
+            } => {
+                backup_revision(id)?;
+                if !confirm {
+                    return Err(invalid("请先核对预览并确认恢复配置"));
+                }
+                validate_preview_id(preview_id)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigRecoveryJobState {
+    Running,
+    Succeeded,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ConfigRecoveryJob {
+    pub id: Uuid,
+    pub request: ConfigRecoveryRequest,
+    pub state: ConfigRecoveryJobState,
+    pub phase: String,
+    pub reconnected: bool,
+    pub reconnect_error: Option<String>,
+    pub error: Option<String>,
+    pub error_code: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, TS)]
+pub struct DesktopConfigRecovery {
+    pub job: Option<ConfigRecoveryJob>,
+    pub catalog: Option<ConfigRecoveryCatalog>,
+    pub preview: Option<ConfigRecoveryPreview>,
+    pub restored: Option<ConfigRecoveryResult>,
+}
+
+fn validate_preview_id(preview_id: &str) -> Result<(), ConfigError> {
+    if preview_id.len() != 64
+        || !preview_id
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    {
+        return Err(invalid("请先预览并提供有效的离线恢复指纹"));
+    }
+    Ok(())
 }
 
 /// 独占数据目录的离线工具；整个预览 / 恢复期间不允许引擎取得所有权。
@@ -327,13 +402,7 @@ impl ConfigRecovery {
     }
 
     pub fn restore(&self, id: &str, preview_id: &str) -> Result<ConfigRecoveryResult, ConfigError> {
-        if preview_id.len() != 64
-            || !preview_id
-                .bytes()
-                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-        {
-            return Err(invalid("请先预览并提供有效的离线恢复指纹"));
-        }
+        validate_preview_id(preview_id)?;
         let _lock = self.store.lock()?;
         let plan = self.plan(id)?;
         if plan.preview.preview_id != preview_id {

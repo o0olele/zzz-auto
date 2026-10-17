@@ -61,7 +61,7 @@ function validHttps(value: string) {
   } catch { return false; }
 }
 
-export function RuntimeResources({ manager, blocked }: { manager: ReturnType<typeof useRuntimeResources>; blocked: boolean }) {
+export function RuntimeResources({ manager, blocked, maintenance = false }: { manager: ReturnType<typeof useRuntimeResources>; blocked: boolean; maintenance?: boolean }) {
   const { snapshot, error, readError, submitting, start, download, cancel } = manager;
   const { catalog, job } = snapshot;
   const [archive, setArchive] = useState('');
@@ -75,7 +75,7 @@ export function RuntimeResources({ manager, blocked }: { manager: ReturnType<typ
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const active = isActive(job?.state);
   const disabled = !desktop || blocked || submitting || active || picking || !!readError;
-  const downloadDisabled = !desktop || submitting || active || picking || !!readError;
+  const downloadDisabled = !desktop || maintenance || submitting || active || picking || !!readError;
   const validBytes = /^\d+$/.test(bytes) && Number.isSafeInteger(Number(bytes)) && Number(bytes) >= 1 && Number(bytes) <= 536870912;
   const validDownload = validHttps(url) && validBytes && /^[0-9a-f]{64}$/.test(downloadHash);
   const validHash = /^[0-9a-f]{64}$/.test(sha256);

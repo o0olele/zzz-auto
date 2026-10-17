@@ -14,8 +14,9 @@ pub use backups::{ConfigBackup, ConfigBackupPreview, ConfigBackups};
 #[path = "config_recovery.rs"]
 mod recovery;
 pub use recovery::{
-    ConfigRecovery, ConfigRecoveryCatalog, ConfigRecoveryCurrent, ConfigRecoveryPreview,
-    ConfigRecoveryResult, ConfigRecoveryState,
+    ConfigRecovery, ConfigRecoveryCatalog, ConfigRecoveryCurrent, ConfigRecoveryJob,
+    ConfigRecoveryJobState, ConfigRecoveryPreview, ConfigRecoveryRequest, ConfigRecoveryResult,
+    ConfigRecoveryState, DesktopConfigRecovery,
 };
 
 pub const CONFIG_SCHEMA: u32 = 1;
@@ -523,6 +524,22 @@ impl ConfigStore {
             .map_err(|_| invalid("账号配置损坏或包含不支持的字段，请从备份恢复"))?;
         config.validate()?;
         Ok(config)
+    }
+
+    // 首次启动可以使用默认值；已有备份而主文件丢失时不能冒充新数据目录。
+    // 调用方须先持有目录所有权锁，恢复工具仍可只读检查缺失的原文件。
+    pub fn read_for_startup(&self) -> Result<AccountConfig, ConfigError> {
+        let path = self.directory.join("accounts.yml");
+        reject_links(&path)?;
+        if !path.try_exists()? {
+            let (backups, unavailable) = self.scan_backups()?;
+            if !backups.is_empty() || unavailable > 0 {
+                return Err(invalid(
+                    "账号配置文件丢失，检测到已有备份，请在总览使用离线配置恢复",
+                ));
+            }
+        }
+        self.read()
     }
 
     pub fn update(

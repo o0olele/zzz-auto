@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 pub struct Host {
     session: crate::resources::SharedSession,
     pub resources: crate::resources::ResourceManager,
+    pub config_recovery: crate::config_recovery::ConfigRecoveryManager,
     pub channel: std::sync::Mutex<Option<tauri::ipc::Channel<od_protocol::DesktopUpdate>>>,
     pub shortcuts: crate::shortcuts::DesktopShortcuts,
     pub logs: std::sync::Mutex<od_core::run_logs::LogBook>,
@@ -35,11 +36,15 @@ fn layout(app: &AppHandle) -> Result<od_platform::DesktopLayout, ApiError> {
 impl Host {
     pub fn new() -> Self {
         let session = std::sync::Arc::new(Mutex::new(None));
+        let runtime = tauri::async_runtime::handle().inner().clone();
+        let resources = crate::resources::ResourceManager::new(session.clone(), runtime.clone());
         Self {
-            resources: crate::resources::ResourceManager::new(
+            config_recovery: crate::config_recovery::ConfigRecoveryManager::new(
+                resources.clone(),
                 session.clone(),
-                tauri::async_runtime::handle().inner().clone(),
+                runtime,
             ),
+            resources,
             session,
             channel: std::sync::Mutex::new(None),
             shortcuts: crate::shortcuts::DesktopShortcuts::new(),
@@ -277,5 +282,13 @@ impl Host {
         source: od_core::runtime_resources::RuntimeDownloadSource,
     ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
         self.resources.start_download(layout(app)?, source)
+    }
+
+    pub fn start_config_recovery(
+        &self,
+        app: &AppHandle,
+        request: od_core::config::ConfigRecoveryRequest,
+    ) -> Result<od_core::config::DesktopConfigRecovery, ApiError> {
+        self.config_recovery.start(layout(app)?, request)
     }
 }

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod archive_picker;
+mod config_recovery;
 mod host;
 mod resources;
 mod session;
@@ -93,6 +94,26 @@ fn runtime_resource_state(
 ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
     main_window(&window)?;
     Ok(state.resources.snapshot())
+}
+
+#[tauri::command]
+fn config_recovery_state(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+) -> Result<od_core::config::DesktopConfigRecovery, ApiError> {
+    main_window(&window)?;
+    Ok(state.config_recovery.snapshot())
+}
+
+#[tauri::command]
+fn start_config_recovery(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+    request: od_core::config::ConfigRecoveryRequest,
+) -> Result<od_core::config::DesktopConfigRecovery, ApiError> {
+    main_window(&window)?;
+    state.start_config_recovery(&app, request)
 }
 
 #[tauri::command]
@@ -193,6 +214,8 @@ fn main() {
             elevate_engine,
             recover_inputs,
             runtime_resource_state,
+            config_recovery_state,
+            start_config_recovery,
             pick_runtime_resource_archive,
             pick_config_import_source,
             start_runtime_resource_job,

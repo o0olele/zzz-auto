@@ -133,6 +133,7 @@ p { color: var(--muted); font-size: 13px; line-height: 1.85; margin: 0; }
 .resource-actions { flex-wrap: wrap; }
 .resource-options { padding: 22px !important; gap: 14px !important; }
 .account-create { display: flex; align-items: flex-end; gap: 12px; }
+.backup-comparison { overflow-wrap: anywhere; }
 .account-create>div { flex: 1; max-width: 360px; }
 .account-apps { max-height: 520px; overflow: auto; }
 .account-app { display: grid; grid-template-columns: minmax(130px, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }

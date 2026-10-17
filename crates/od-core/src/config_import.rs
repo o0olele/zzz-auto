@@ -460,6 +460,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let preview_id = hex::encode(hash.finalize());
     let config = AccountConfig {
+        reserved_instance_ids: Vec::new(),
         schema: CONFIG_SCHEMA,
         revision: 0,
         general,

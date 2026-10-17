@@ -108,12 +108,12 @@ enum Work {
 }
 
 // 即使请求方断线或取消等待，也要等文件工作结束后再开放任务。
-struct ConfigImportGuard {
+struct ConfigWorkGuard {
     state: Arc<Mutex<State>>,
     _owner: Arc<std::fs::File>,
 }
 
-impl Drop for ConfigImportGuard {
+impl Drop for ConfigWorkGuard {
     fn drop(&mut self) {
         if let Ok(mut state) = self.state.lock() {
             state.native_pending = false;
@@ -443,6 +443,9 @@ impl Engine {
                 .map(Payload::AccountConfig)
                 .map_err(config_error),
             Command::PreviewConfigImport { source } => self.import_config(source, None).await,
+            command @ (Command::ConfigBackups
+            | Command::PreviewConfigBackup { .. }
+            | Command::RestoreConfigBackup { .. }) => self.backup_config(command).await,
             Command::ApplyConfigImport { source, preview_id } => {
                 self.import_config(source, Some(preview_id)).await
             }
@@ -1002,17 +1005,13 @@ impl Engine {
         Ok(Payload::Run(record))
     }
 
-    async fn import_config(
-        &self,
-        source: String,
-        preview_id: Option<String>,
-    ) -> Result<Payload, ApiError> {
+    fn config_work_guard(&self) -> Result<ConfigWorkGuard, ApiError> {
         {
             let mut state = self.state.lock().expect("运行状态锁失效");
             if state.slot.busy() || state.native_pending {
                 return Err(ApiError::new(
                     "busy",
-                    "请先停止任务并等待输入收尾，再导入配置",
+                    "请先停止任务并等待输入收尾，再操作配置文件",
                 ));
             }
             if state.record_error.is_some() {
@@ -1043,10 +1042,67 @@ impl Engine {
             }
             state.native_pending = true;
         }
-        let pending = ConfigImportGuard {
+        Ok(ConfigWorkGuard {
             state: self.state.clone(),
             _owner: self._config_owner.clone(),
-        };
+        })
+    }
+
+    async fn backup_config(&self, command: Command) -> Result<Payload, ApiError> {
+        if matches!(
+            &command,
+            Command::RestoreConfigBackup { confirm: false, .. }
+        ) {
+            return Err(ApiError::new(
+                "config_restore_not_confirmed",
+                "请先预览并确认恢复配置",
+            ));
+        }
+        let pending = self.config_work_guard()?;
+        let store = self.config.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = match command {
+                Command::ConfigBackups => store.backups().map(Payload::ConfigBackups),
+                Command::PreviewConfigBackup { revision, id } => store
+                    .preview_backup(revision, &id)
+                    .map(Payload::ConfigBackupPreview),
+                Command::RestoreConfigBackup {
+                    revision,
+                    id,
+                    preview_id,
+                    ..
+                } => store
+                    .restore_backup(revision, &id, &preview_id)
+                    .map(Payload::AccountConfig),
+                _ => unreachable!(),
+            }
+            .map_err(config_error);
+            if let Ok(Payload::AccountConfig(config)) = &result {
+                pending.state.lock().expect("运行状态锁失效").event(
+                    None,
+                    "info",
+                    format!("配置已从备份恢复，修订 {}", config.revision),
+                );
+            }
+            // 请求方取消等待时，互斥仍由文件工作线程持有至结果落盘。
+            drop(pending);
+            result
+        })
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                "config_error",
+                "配置备份线程异常退出，请重新读取配置确认结果",
+            )
+        })?
+    }
+
+    async fn import_config(
+        &self,
+        source: String,
+        preview_id: Option<String>,
+    ) -> Result<Payload, ApiError> {
+        let pending = self.config_work_guard()?;
         let store = self.config.clone();
         tokio::task::spawn_blocking(move || {
             let _pending = pending;

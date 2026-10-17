@@ -8,6 +8,10 @@ use std::{
 use ts_rs::TS;
 use uuid::Uuid;
 
+#[path = "config_backups.rs"]
+mod backups;
+pub use backups::{ConfigBackup, ConfigBackupPreview, ConfigBackups};
+
 pub const CONFIG_SCHEMA: u32 = 1;
 const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -99,6 +103,10 @@ pub struct AccountConfig {
     pub active_instance: u32,
     pub instances: Vec<AccountInstance>,
     pub import_id: Option<String>,
+    // 恢复旧配置移除的账号仍有历史记录，编号不能再分配给新账号。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<u32>>", optional)]
+    pub reserved_instance_ids: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -199,6 +207,7 @@ impl Default for AccountConfig {
                 groups: vec![default_group()],
             }],
             import_id: None,
+            reserved_instance_ids: Vec::new(),
         }
     }
 }
@@ -209,6 +218,15 @@ impl AccountConfig {
             return Err(invalid("账号配置版本不支持"));
         }
         self.general.validate()?;
+        let mut reserved = HashSet::new();
+        if self.reserved_instance_ids.len() > 9999
+            || self
+                .reserved_instance_ids
+                .iter()
+                .any(|id| !(1..=9999).contains(id) || !reserved.insert(id))
+        {
+            return Err(invalid("保留的账号编号无效或重复"));
+        }
         if self.instances.is_empty() || self.instances.len() > 128 {
             return Err(invalid("账号数量必须为 1..128"));
         }
@@ -330,7 +348,10 @@ impl AccountConfig {
             ConfigChange::CreateInstance { name } => {
                 validate_name(&name)?;
                 let id = (1..=9999)
-                    .find(|id| !self.instances.iter().any(|i| i.id == *id))
+                    .find(|id| {
+                        !self.instances.iter().any(|i| i.id == *id)
+                            && !self.reserved_instance_ids.contains(id)
+                    })
                     .ok_or_else(|| invalid("没有可用的账号编号"))?;
                 self.instances.push(AccountInstance {
                     id,

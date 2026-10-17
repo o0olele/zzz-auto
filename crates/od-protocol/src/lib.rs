@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v19 增加应用组管理与可选展示名称；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 19;
+// v20 增加配置备份列表、预览及确认恢复；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 20;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -72,6 +72,18 @@ pub enum Command {
     },
     RetryRunSave,
     AccountConfig,
+    ConfigBackups,
+    PreviewConfigBackup {
+        revision: u32,
+        id: String,
+    },
+    RestoreConfigBackup {
+        revision: u32,
+        id: String,
+        preview_id: String,
+        #[serde(default)]
+        confirm: bool,
+    },
     PreviewConfigImport {
         source: String,
     },
@@ -144,6 +156,8 @@ pub enum Payload {
     GroupPlan(od_core::run_plan::GroupPlan),
     RunHistory(od_core::run_history::RunHistory),
     AccountConfig(od_core::config::AccountConfig),
+    ConfigBackups(od_core::config::ConfigBackups),
+    ConfigBackupPreview(od_core::config::ConfigBackupPreview),
     ConfigImportPreview(od_core::config_import::ImportPreview),
     Snapshot(Box<Snapshot>),
     Applications(Vec<AppDefinition>),

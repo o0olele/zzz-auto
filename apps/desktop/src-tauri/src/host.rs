@@ -9,6 +9,7 @@ pub struct Host {
     pub resources: crate::resources::ResourceManager,
     pub channel: std::sync::Mutex<Option<tauri::ipc::Channel<od_protocol::DesktopUpdate>>>,
     pub shortcuts: crate::shortcuts::DesktopShortcuts,
+    pub logs: std::sync::Mutex<od_core::run_logs::LogBook>,
 }
 
 fn layout(app: &AppHandle) -> Result<od_platform::DesktopLayout, ApiError> {
@@ -42,6 +43,7 @@ impl Host {
             session,
             channel: std::sync::Mutex::new(None),
             shortcuts: crate::shortcuts::DesktopShortcuts::new(),
+            logs: std::sync::Mutex::new(od_core::run_logs::LogBook::default()),
         }
     }
 
@@ -91,11 +93,11 @@ impl Host {
         self.resources.require_available()?;
         let mut state = self.session.lock().await;
         self.resources.require_available()?;
-        let result = state
+        let session = state
             .as_mut()
-            .ok_or_else(|| offline("引擎未连接，使用“重连引擎”重新启动"))?
-            .request(command)
-            .await;
+            .ok_or_else(|| offline("引擎未连接，使用“重连引擎”重新启动"))?;
+        let result = session.request(command).await;
+        self.observe_logs(session.id, &result);
         self.shortcuts.observe(&result);
         if let Ok(Payload::AccountConfig(config)) = &result {
             self.shortcuts
@@ -162,6 +164,7 @@ impl Host {
         // 快照与权限来自同一会话，不能跨权限切换混合读取。
         let privilege = session.privilege.clone();
         let result = session.request(Command::Snapshot).await;
+        self.observe_logs(session.id, &result);
         self.shortcuts.observe(&result);
         if result.is_ok() {
             if let Ok(Payload::AccountConfig(config)) =
@@ -209,6 +212,41 @@ impl Host {
         {
             let _ = channel.send(od_protocol::DesktopUpdate::Offline(error));
         }
+    }
+
+    fn observe_logs(&self, session_id: uuid::Uuid, result: &Result<Payload, ApiError>) {
+        if let Ok(Payload::Snapshot(snapshot)) = result
+            && let Ok(mut logs) = self.logs.lock()
+        {
+            logs.observe(session_id, snapshot);
+        }
+    }
+
+    pub fn log_state(
+        &self,
+        session_id: Option<uuid::Uuid>,
+    ) -> Result<od_core::run_logs::DesktopLogs, ApiError> {
+        self.logs
+            .lock()
+            .map_err(|_| ApiError::new("log_error", "日志缓存不可用"))?
+            .view(session_id)
+            .map_err(|error| ApiError::new("log_error", error.to_string()))
+    }
+
+    pub async fn export_logs(
+        &self,
+        app: &AppHandle,
+        session_id: uuid::Uuid,
+    ) -> Result<od_core::run_logs::LogExport, ApiError> {
+        let session = self
+            .log_state(Some(session_id))?
+            .selected
+            .ok_or_else(|| ApiError::new("log_error", "该会话没有可导出的日志"))?;
+        let data = layout(app)?.data;
+        tokio::task::spawn_blocking(move || od_core::run_logs::export(&data, &session))
+            .await
+            .map_err(|error| ApiError::new("log_export_failed", error.to_string()))?
+            .map_err(|error| ApiError::new("log_export_failed", format!("{error:#}")))
     }
 
     pub async fn shutdown(&self) -> Result<(), ApiError> {

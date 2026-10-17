@@ -3,6 +3,16 @@ import type { ApiError, Command, DesktopUpdate, Payload, DesktopRuntimeResources
 
 export const desktop = isTauri();
 
+export async function desktopLogs(sessionId: string | null): Promise<import('./generated/protocol').DesktopLogs> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('desktop_logs', { sessionId });
+}
+
+export async function exportLogSession(sessionId: string): Promise<import('./generated/protocol').LogExport> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('export_log_session', { sessionId });
+}
+
 export async function retryShortcuts(): Promise<import('./generated/protocol').ShortcutStatus> {
   if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
   return invoke('retry_shortcuts');

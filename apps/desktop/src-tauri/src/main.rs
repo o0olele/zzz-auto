@@ -163,6 +163,27 @@ async fn retry_shortcuts(
     state.retry_shortcuts().await
 }
 
+#[tauri::command]
+fn desktop_logs(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+    session_id: Option<uuid::Uuid>,
+) -> Result<od_core::run_logs::DesktopLogs, ApiError> {
+    main_window(&window)?;
+    state.log_state(session_id)
+}
+
+#[tauri::command]
+async fn export_log_session(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+    session_id: uuid::Uuid,
+) -> Result<od_core::run_logs::LogExport, ApiError> {
+    main_window(&window)?;
+    state.export_logs(&app, session_id).await
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .manage(Host::new())
@@ -178,7 +199,9 @@ fn main() {
             start_runtime_resource_download,
             cancel_runtime_resource_download,
             subscribe_engine,
-            retry_shortcuts
+            retry_shortcuts,
+            desktop_logs,
+            export_log_session
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {

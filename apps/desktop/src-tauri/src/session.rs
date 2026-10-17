@@ -48,6 +48,8 @@ pub fn require_idle(payload: Payload) -> Result<(), ApiError> {
 }
 
 pub struct EngineSession {
+    #[allow(dead_code)] // 桌面日志使用；独立通信专项复用本文件时可能不读取。
+    pub id: Uuid,
     pipe: Option<NamedPipeServer>,
     process: EngineProcess,
     pub privilege: EnginePrivilege,
@@ -151,6 +153,7 @@ impl EngineSession {
             .await
             .map_err(|_| offline("引擎配对超时，未启动游戏任务"))??;
         Ok(Self {
+            id: Uuid::new_v4(),
             pipe: Some(pipe),
             process,
             privilege,

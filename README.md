@@ -122,6 +122,8 @@ cargo run -p zzz-engine --locked -- --resources resources/generated/recognition 
 
 ## 工程与数据
 
+桌面“运行日志”页支持按引擎会话、运行 ID、级别和文字筛选，断线后仍可查看最近四个会话，并将保留日志导出到本机数据目录。缓存与导出范围见[运行日志说明](docs/develop/run-logs.md)。
+
 已转换的邮件、地图、咖啡及基础运行资源可由原生 CLI 打成独立版本包，通过显式 HTTPS 下载或选择本地 ZIP 安装。桌面“运行资源”页可刷新已安装版本，预检后退出并重启引擎以启用或回滚；同样保留离线 CLI 入口。用法见[运行资源包](docs/develop/runtime-resources.md)。联网版本发现与签名发布继续待实现。
 
 已增加旧版闪光、OCR 和 YOLO 实际输出采样及纯 Rust 的 `recognition-compare` 命令，支持核对同一批固定图的概率、候选、文字、框与分数；OCR 同时比较过滤前结果。旧版采样环境单独放在忽略的 SDK 缓存中，仅用于迁移取证；新程序和正式回归不依赖 Python。命令见[闪光旧版输出说明](docs/develop/recognition-validation.md#旧版实际输出与自动比较)及 [OCR / YOLO 对照说明](docs/develop/recognition-validation.md#ocr-与-yolo-旧版对照)。比较结果与人工标注分别报告，不能把新旧共有的漏检当成人工预期通过。

@@ -172,4 +172,6 @@ npm test
 
 在 `apps/desktop/` 执行 `npm run tauri build`，配置会构建 release 引擎、生成协议、构建 Web 资源，再打包 NSIS。`npm run tauri build -- --debug --no-bundle` 用于本机桌面原型构建；普通 debug 版本的引擎与资源定位到当前工程，不能作为发行包。当前已提供便携测试 ZIP；更新签名、模型完整包、便携版自动更新、资源回滚与干净系统验收尚未实现。
 
+账号配置损坏无法读取，或文件丢失需要找回配置时，可退出程序后使用原生引擎的 `config-recovery` 命令查看、预览并从自动备份恢复；需显式指定实际数据目录和确认指纹，损坏原文独立保留。步骤及范围见[离线配置恢复](docs/develop/config-recovery.md)。
+
 代码与参考资源遵循 GPL-3.0-or-later；MaaFramework / 官方 Rust 绑定为 LGPL-3.0。SDK 保留独立动态库，发行时保留其许可证和对应源码来源。依赖许可证与来源见 [第三方说明](docs/migration/third-party.md)。

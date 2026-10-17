@@ -90,6 +90,11 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    /// 引擎无法读取账号配置时的离线备份恢复；必须显式指定 --data。
+    ConfigRecovery {
+        #[command(subcommand)]
+        command: ConfigRecoveryAction,
+    },
     /// 完整运行资源包的本地构建、校验、安装与离线切换；不加载 SDK。
     RuntimeResources {
         #[command(subcommand)]
@@ -265,6 +270,26 @@ enum ModelResourceAction {
 }
 
 #[derive(Subcommand)]
+enum ConfigRecoveryAction {
+    /// 查看配置状态和最多 50 份备份，不改写配置。
+    List,
+    /// 预览指定备份的恢复内容和本次确认指纹。
+    Preview {
+        #[arg(long)]
+        id: String,
+    },
+    /// 复验指纹、保留损坏原文并恢复；须先退出使用该目录的桌面和引擎。
+    Restore {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        preview_id: String,
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum RuntimeResourceAction {
     Catalog,
     /// 桌面内部流式入口：来源经标准输入提交，EOF 或后续输入请求取消。
@@ -358,6 +383,25 @@ fn print(value: impl serde::Serialize) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    if let Action::ConfigRecovery { command } = args.command {
+        // 在资源选择、SDK、游戏控制与 Engine 初始化之前分流。
+        let data = args
+            .data
+            .context("离线恢复必须显式提供 --data <绝对数据目录>")?;
+        let recovery = od_core::config::ConfigRecovery::new(&data)?;
+        return match command {
+            ConfigRecoveryAction::List => print(recovery.catalog()?),
+            ConfigRecoveryAction::Preview { id } => print(recovery.preview(&id)?),
+            ConfigRecoveryAction::Restore {
+                id,
+                preview_id,
+                confirm,
+            } => {
+                ensure!(confirm, "离线恢复须提供 --confirm");
+                print(recovery.restore(&id, &preview_id)?)
+            }
+        };
+    }
     let root = args.root.canonicalize().context("工程或程序根目录不存在")?;
     let explicit_resources = args.resources.is_some();
     let mut paths = EnginePaths {

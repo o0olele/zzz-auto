@@ -11,6 +11,12 @@ use uuid::Uuid;
 #[path = "config_backups.rs"]
 mod backups;
 pub use backups::{ConfigBackup, ConfigBackupPreview, ConfigBackups};
+#[path = "config_recovery.rs"]
+mod recovery;
+pub use recovery::{
+    ConfigRecovery, ConfigRecoveryCatalog, ConfigRecoveryCurrent, ConfigRecoveryPreview,
+    ConfigRecoveryResult, ConfigRecoveryState,
+};
 
 pub const CONFIG_SCHEMA: u32 = 1;
 const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;

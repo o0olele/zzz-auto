@@ -36,7 +36,7 @@ pub struct ConfigBackupPreview {
     pub backup: AccountConfig,
 }
 
-fn backup_revision(id: &str) -> Result<u32, ConfigError> {
+pub(super) fn backup_revision(id: &str) -> Result<u32, ConfigError> {
     let (revision, uuid) = id
         .strip_prefix("accounts-r")
         .and_then(|value| value.strip_suffix(".yml"))
@@ -50,7 +50,7 @@ fn backup_revision(id: &str) -> Result<u32, ConfigError> {
     Ok(number)
 }
 
-fn read_backup(path: &Path) -> Result<Vec<u8>, ConfigError> {
+pub(super) fn read_backup(path: &Path) -> Result<Vec<u8>, ConfigError> {
     reject_links(path)?;
     let file = File::open(path)?;
     let metadata = file.metadata()?;
@@ -79,17 +79,24 @@ fn fingerprint(id: &str, current: &AccountConfig, bytes: &[u8]) -> Result<String
 impl ConfigStore {
     pub fn backups(&self) -> Result<ConfigBackups, ConfigError> {
         let revision = self.read()?.revision;
+        let (mut items, unavailable) = self.scan_backups()?;
+        let omitted = items.len().saturating_sub(LIST_LIMIT) as u32;
+        items.truncate(LIST_LIMIT);
+        Ok(ConfigBackups {
+            revision,
+            items,
+            omitted,
+            unavailable,
+        })
+    }
+
+    pub(super) fn scan_backups(&self) -> Result<(Vec<ConfigBackup>, u32), ConfigError> {
         let path = self.directory.join("backups");
         reject_links(&path)?;
         let entries = match fs::read_dir(path) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(ConfigBackups {
-                    revision,
-                    items: Vec::new(),
-                    omitted: 0,
-                    unavailable: 0,
-                });
+                return Ok((Vec::new(), 0));
             }
             Err(error) => return Err(error.into()),
         };
@@ -129,14 +136,7 @@ impl ConfigStore {
                 .then(b.modified_at.cmp(&a.modified_at))
                 .then(a.id.cmp(&b.id))
         });
-        let omitted = items.len().saturating_sub(LIST_LIMIT) as u32;
-        items.truncate(LIST_LIMIT);
-        Ok(ConfigBackups {
-            revision,
-            items,
-            omitted,
-            unavailable,
-        })
+        Ok((items, unavailable))
     }
 
     pub fn preview_backup(

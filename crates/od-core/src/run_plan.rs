@@ -59,6 +59,7 @@ impl RunContext {
 #[serde(rename_all = "snake_case")]
 pub enum AppAvailability {
     MailTrial,
+    CoffeeTrial,
     Unmigrated,
     Unknown,
 }
@@ -86,6 +87,7 @@ pub struct PlannedApp {
 pub struct GroupPlan {
     pub context: RunContext,
     pub mail_config: crate::mail::MailConfig,
+    pub coffee_config: crate::coffee_run::CoffeeConfig,
     pub items: Vec<PlannedApp>,
     pub blockers: Vec<String>,
     pub executable: bool,
@@ -149,6 +151,7 @@ pub fn plan_group_at(
         // 是否有执行器由业务实现决定，登记的 implemented 标记不能开放未知运行入口。
         let availability = match (definition.is_some(), item.app_id.as_str()) {
             (true, "email") => AppAvailability::MailTrial,
+            (true, "coffee") => AppAvailability::CoffeeTrial,
             (true, _) => AppAvailability::Unmigrated,
             (false, _) => AppAvailability::Unknown,
         };
@@ -157,7 +160,7 @@ pub fn plan_group_at(
         if item.enabled {
             app_ids.push(item.app_id.clone());
             match availability {
-                AppAvailability::MailTrial => {
+                AppAvailability::MailTrial | AppAvailability::CoffeeTrial => {
                     completed_run_id = completed
                         .and_then(|index| index.apps.get(&item.app_id))
                         .copied();
@@ -201,6 +204,7 @@ pub fn plan_group_at(
         run_policy: group.run_policy,
         warnings,
         mail_config: config.general.mail,
+        coffee_config: group.coffee,
         context: RunContext {
             instance_id,
             instance_name: instance.name.clone(),

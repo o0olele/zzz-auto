@@ -96,7 +96,7 @@ impl RunStore {
     pub fn save(&self, record: &RunRecord) -> Result<(), HistoryError> {
         let (directory, bytes) = if let Some(context) = &record.context {
             context.validate().map_err(HistoryError::Invalid)?;
-            if !context.app_ids.contains(&record.app_id) {
+            if !record.matches_account_context() {
                 return Err(HistoryError::Invalid("运行结果不属于保存的应用组计划"));
             }
             (
@@ -180,13 +180,79 @@ impl RunStore {
         game_day.validate().map_err(HistoryError::Invalid)?;
         let mut successes: BTreeMap<String, (DateTime<Utc>, Uuid)> = BTreeMap::new();
         let (_, unreadable) = self.scan_records(instance_id, |record| {
+            if let Some(group) = &record.group {
+                let Some(context) = &record.context else {
+                    return;
+                };
+                if !record.matches_account_context()
+                    || group.state != record.state
+                    || (record.state.is_terminal() && group.current_index.is_some())
+                    || record.state.is_terminal() != record.finished_at.is_some()
+                    || group.current_index.is_some_and(|index| {
+                        group.steps.get(index).is_none_or(|step| {
+                            step.state != crate::group_run::GroupStepState::Running
+                        })
+                    })
+                    || context.game_day.as_ref() != Some(&game_day)
+                    || !group
+                        .steps
+                        .iter()
+                        .map(|s| &s.app_id)
+                        .eq(context.app_ids.iter())
+                {
+                    return;
+                }
+                for step in &group.steps {
+                    let Some((start, end)) = step.started_at.zip(step.finished_at) else {
+                        continue;
+                    };
+                    if step.state != crate::group_run::GroupStepState::Succeeded
+                        || !step.inputs_released
+                        || start < record.started_at
+                        || start > end
+                        || end > now
+                        || record.finished_at.is_some_and(|finished| end > finished)
+                        || !game_day.contains(start)
+                        || !game_day.contains(end)
+                    {
+                        continue;
+                    }
+                    let proof = match step.app_id.as_str() {
+                        "email" => record.mail.as_ref().is_some_and(|p| {
+                            p.state == MailState::Succeeded
+                                && p.phase == MailPhase::Done
+                                && p.inputs_released
+                        }),
+                        "coffee" => record.coffee.as_ref().is_some_and(|p| {
+                            p.state == crate::coffee_run::CoffeeState::Succeeded
+                                && p.phase == crate::coffee_run::CoffeePhase::Done
+                                && p.order_attempted
+                                && p.energy_seen
+                                && p.inputs_released
+                                && p.approach.as_ref().is_some_and(|a| {
+                                    a.phase == crate::coffee_approach::CoffeeApproachPhase::Done
+                                })
+                        }),
+                        _ => false,
+                    };
+                    if proof {
+                        let entry = successes
+                            .entry(step.app_id.clone())
+                            .or_insert((end, record.id));
+                        if (end, record.id) > *entry {
+                            *entry = (end, record.id);
+                        }
+                    }
+                }
+                return;
+            }
             let Some(finished) = record.finished_at else {
                 return;
             };
             let Some(context) = &record.context else {
                 return;
             };
-            // 目前仅邮件有经过验证的应用完成与释放契约；登记表不能充当执行证明。
+            // 兼容没有分项进度的旧邮件记录；咖啡必须使用上面的分项完成证明。
             if record.app_id != "email"
                 || record.state != RunState::Succeeded
                 || context.game_day.as_ref() != Some(&game_day)
@@ -307,7 +373,7 @@ fn read_record(path: &Path, instance_id: u32) -> Result<RunRecord, HistoryError>
     if stored.version != 1
         || stored.record.id != id
         || context.instance_id != instance_id
-        || !context.app_ids.contains(&stored.record.app_id)
+        || !stored.record.matches_account_context()
     {
         return Err(HistoryError::Invalid("运行记录版本、账号或运行 ID 不匹配"));
     }

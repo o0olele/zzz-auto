@@ -74,6 +74,8 @@ pub struct AppGroup {
     pub name: Option<String>,
     #[serde(default)]
     pub run_policy: crate::daily::RunPolicy,
+    #[serde(default)]
+    pub coffee: crate::coffee_run::CoffeeConfig,
     pub apps: Vec<GroupApp>,
 }
 
@@ -119,6 +121,11 @@ pub struct AccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConfigChange {
+    SaveCoffee {
+        instance_id: u32,
+        group_id: String,
+        settings: crate::coffee_run::CoffeeConfig,
+    },
     SetGameRegion {
         instance_id: u32,
         game_region: crate::daily::GameRegion,
@@ -204,6 +211,7 @@ pub fn default_group() -> AppGroup {
         id: "one_dragon".into(),
         name: None,
         run_policy: crate::daily::RunPolicy::default(),
+        coffee: crate::coffee_run::CoffeeConfig::default(),
         apps: apps
             .into_iter()
             .filter(|app| app.default_group)
@@ -269,6 +277,7 @@ impl AccountConfig {
             }
             let mut groups = HashSet::new();
             for group in &instance.groups {
+                group.coffee.validate().map_err(invalid)?;
                 if !valid_identifier(&group.id) || !groups.insert(&group.id) {
                     return Err(invalid("应用组标识无效或重复"));
                 }
@@ -294,6 +303,18 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::SaveCoffee {
+                instance_id,
+                group_id,
+                settings,
+            } => {
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .coffee = settings;
+            }
             ConfigChange::CopyInstance { instance_id, name } => {
                 validate_name(&name)?;
                 let id = self.new_instance_id()?;

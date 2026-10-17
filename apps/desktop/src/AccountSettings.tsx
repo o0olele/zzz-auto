@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
 import type { AccountConfig, AppDefinition, AppGroup, Command, ConfigChange, GameRegion, RunPolicy, Snapshot } from './generated/protocol';
-import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
+import { coffeeDefaultConfig, gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { errorMessage, request } from './bridge';
 import { GroupRuns } from './GroupRuns';
 import { ConfigImport } from './ConfigImport';
 import { ConfigBackups } from './ConfigBackups';
+import { CoffeeSettings } from './CoffeeSettings';
 
 const groupName = (group: AppGroup) => group.name ?? (group.id === 'one_dragon' ? '一条龙' : group.id);
 const validName = (name: string) => !!name.trim() && [...name].length <= 80 && !/[\u0000-\u001f\u007f-\u009f]/.test(name);
@@ -97,6 +98,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       } else if (change.type === 'delete_instance') setMessage('账号配置已删除，历史、导入原文和账号编号已保留。');
       else if (change.type === 'reorder_instances') setMessage('账号顺序已保存，当前账号保持不变。');
       else if (change.type === 'reorder_groups') setMessage('应用组顺序已保存。');
+      else if (change.type === 'save_coffee') setMessage('咖啡设置已保存，可在原生诊断中采用所选组参数。');
       if (change.type === 'create_group') {
         const before = config.instances.find(item => item.id === change.instance_id)?.groups ?? [];
         const created = result.data.instances.find(item => item.id === change.instance_id)?.groups.find(item => !before.some(old => old.id === item.id));
@@ -211,6 +213,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
           </div>;
         })}</div>
       </Card>}
+      {instance && group && <CoffeeSettings key={`${instance.id}/${group.id}/${config.revision}`} settings={group.coffee ?? coffeeDefaultConfig} disabled={disabled} onSave={settings => void update({ type: 'save_coffee', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <GroupRuns instanceId={instance.id} groupId={group.id} revision={config.revision} snapshot={snapshot} connected={connected} blocked={blocked || importBusy || backupBusy || busy} onCommand={onCommand}/>}
     </>}
   </>;

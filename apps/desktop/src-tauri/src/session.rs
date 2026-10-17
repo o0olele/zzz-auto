@@ -188,9 +188,6 @@ impl EngineSession {
             Command::StartMail {
                 allow_input: true,
                 ..
-            } | Command::StartGroupTrial {
-                allow_input: true,
-                ..
             }
         );
         let input = match &command {
@@ -232,7 +229,7 @@ impl EngineSession {
             }
             Command::StartGroupTrial {
                 allow_input: true, ..
-            } => Some(od_core::mail::MailConfig::recovery_inputs().to_vec()),
+            } => Some(od_core::group_run::recovery_inputs()),
             Command::StartInputProbe {
                 config,
                 allow_input: true,
@@ -267,7 +264,9 @@ impl EngineSession {
                 .window
                 .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
             let plan = od_platform::InputRecoveryPlan {
-                version: if matches!(command, Command::StartCoffeeFromWorld { .. }) {
+                version: if matches!(command, Command::StartGroupTrial { .. }) {
+                    6
+                } else if matches!(command, Command::StartCoffeeFromWorld { .. }) {
                     5
                 } else if matches!(command, Command::StartCoffee { .. }) {
                     4
@@ -305,7 +304,9 @@ impl EngineSession {
                     "流程尚未确认暂停或运行 ID 已过期",
                 ));
             }
-            let version = if snapshot
+            let version = if snapshot.run.as_ref().is_some_and(|run| run.group.is_some()) {
+                6
+            } else if snapshot
                 .run
                 .as_ref()
                 .and_then(|run| run.coffee.as_ref())

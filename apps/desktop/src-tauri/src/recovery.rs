@@ -140,7 +140,13 @@ impl RecoveryJournal {
         if let (Some(plan), Some(run)) = (&self.plan, run)
             && plan.run_id.as_deref() == Some(run.id.to_string().as_str())
             && run.state.is_terminal()
-            && (if plan.version == 2 {
+            && (if plan.version == 6 {
+                run.group
+                    .as_ref()
+                    .is_some_and(|group| group.state == run.state && group.current_index.is_none())
+                    && run.matches_account_context()
+                    && run.inputs_released()
+            } else if plan.version == 2 {
                 run.app_id == "email"
                     && run
                         .mail

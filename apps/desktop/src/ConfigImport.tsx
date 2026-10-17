@@ -4,6 +4,7 @@ import type { AccountConfig, AppDefinition, ImportPreview } from './generated/pr
 import { gameRegionOptions } from './generated/protocol';
 import { errorMessage, pickConfigImportSource, request } from './bridge';
 import { captureNames } from './captureSettings';
+import { coffeeSummary } from './CoffeeSettings';
 
 export function ConfigImport({ connected, active, blocked, current, apps, onImported, onBusy }: {
   connected: boolean; active: boolean; blocked: boolean; current: AccountConfig | null; apps: AppDefinition[];
@@ -82,6 +83,7 @@ export function ConfigImport({ connected, active, blocked, current, apps, onImpo
         <p>编号 {instance.id} · {gameRegionOptions.find(option => option.value === instance.game_region)?.label} · {instance.active_in_od ? '参与一条龙' : '不参与一条龙'}</p>
         {instance.groups.map(group => <details key={group.id}>
           <summary>{group.id === 'one_dragon' ? '一条龙' : group.id} · {group.apps.filter(app => app.enabled).length} 项启用 / {group.apps.length} 项</summary>
+          <p>咖啡默认值：{coffeeSummary(group.coffee)}。旧动态选单未转换，请导入后核对。</p>
           <ol>{group.apps.map(app => <li key={app.app_id}>{apps.find(item => item.id === app.app_id)?.name ?? app.app_id} · {app.enabled ? '启用' : '禁用'}</li>)}</ol>
         </details>)}
       </div>)}

@@ -88,7 +88,7 @@ pub struct InputRecoveryPlan {
 
 impl InputRecoveryPlan {
     pub fn validate(&self) -> Result<()> {
-        ensure!(matches!(self.version, 1..=5), "输入恢复记录版本不支持");
+        ensure!(matches!(self.version, 1..=6), "输入恢复记录版本不支持");
         if self.version == 1 {
             ensure!(self.additional_inputs.is_empty(), "v1 恢复记录不能增加输入");
         } else if self.version == 2 {
@@ -98,6 +98,12 @@ impl InputRecoveryPlan {
                     && self.config == expected[0]
                     && self.additional_inputs[0] == expected[1],
                 "v2 邮件恢复仅允许释放 Alt 和鼠标左键"
+            );
+        } else if self.version == 6 {
+            let expected = od_core::group_run::recovery_inputs();
+            ensure!(
+                self.config == expected[0] && self.additional_inputs == expected[1..],
+                "v6 应用组恢复仅允许释放 Alt、鼠标左键、N 和 F"
             );
         } else if self.version == 5 {
             let expected = od_core::coffee_approach::recovery_inputs();

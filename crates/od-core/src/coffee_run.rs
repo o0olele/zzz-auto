@@ -11,6 +11,13 @@ pub enum CoffeeKind {
     Espresso,
 }
 impl CoffeeKind {
+    pub fn options() -> Value {
+        json!([
+            {"value": Self::Tinman, "label": Self::Tinman.name()},
+            {"value": Self::Espresso, "label": Self::Espresso.name()}
+        ])
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Tinman => "汀曼特调",
@@ -19,7 +26,7 @@ impl CoffeeKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct CoffeeConfig {
     pub kind: CoffeeKind,
@@ -36,8 +43,21 @@ impl Default for CoffeeConfig {
     }
 }
 impl CoffeeConfig {
+    pub const MAX_TIMEOUT_MS: u32 = 60_000;
+    pub const MAX_START_DELAY_MS: u32 = 10_000;
+
+    pub fn fields() -> Value {
+        json!([
+            {"key": "kind", "kind": "select", "label": "默认咖啡", "options": CoffeeKind::options()},
+            {"key": "timeout_ms", "kind": "integer", "label": "默认咖啡超时（ms）", "min": 1, "max": Self::MAX_TIMEOUT_MS},
+            {"key": "start_delay_ms", "kind": "integer", "label": "默认咖啡启动 / 继续延时（ms）", "min": 0, "max": Self::MAX_START_DELAY_MS}
+        ])
+    }
+
     pub fn validate(self) -> Result<(), &'static str> {
-        if !(1..=60000).contains(&self.timeout_ms) || self.start_delay_ms > 10000 {
+        if !(1..=Self::MAX_TIMEOUT_MS).contains(&self.timeout_ms)
+            || self.start_delay_ms > Self::MAX_START_DELAY_MS
+        {
             return Err("咖啡超时须为 1..60000ms，启动 / 继续延时须为 0..10000ms");
         }
         Ok(())

@@ -36,7 +36,7 @@ cargo build -p zzz-engine --locked
 cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --locked --test runtime_resources -- --test-threads=1
 ```
 
-首批 CLI 和后续桌面资源管理使用协议 v15；2026 年 10 月 17 日咖啡试运行为 v16，桌面旧配置导入为 v17，全局任务快捷键为 v18。包含 `generated/coffee-run` 时打包为 schema 2，共 26 个文件，含三份锁定 OCR；没有咖啡时仍可打包 schema 1 的 20 个邮件地图基础文件。咖啡自动路线接入后的当前协议为 v22，兼容 schema 1 / 协议 15..22 及 schema 2 / 协议 16..22 的资源包，其他引擎、SDK、绑定和固定流程仍严格校验；兼容专项包含旧协议至 v21 和当前 v22，未知协议拒绝。旧包缺少咖啡时拒绝咖啡启动；v1 咖啡仍可使用原点单入口，自动路线要求 v2，不从另一版本补读。战斗资源和咖啡只读预览不随包分发。完整步骤及当前包哈希见[咖啡说明](coffee-and-groups.md)。
+首批 CLI 和后续桌面资源管理使用协议 v15；2026 年 10 月 17 日咖啡试运行为 v16，桌面旧配置导入为 v17，全局任务快捷键为 v18。包含 `generated/coffee-run` 时打包为 schema 2，共 26 个文件，含三份锁定 OCR；没有咖啡时仍可打包 schema 1 的 20 个邮件地图基础文件。咖啡应用组接入后的当前协议为 v24，兼容 schema 1 / 协议 15..24 及 schema 2 / 协议 16..24 的资源包，其他引擎、SDK、绑定和固定流程仍严格校验；兼容专项包含旧协议至 v23 和当前 v24，未知协议拒绝。旧包缺少咖啡时拒绝咖啡启动；v1 咖啡仍可使用原点单入口，自动路线要求 v2，不从另一版本补读。战斗资源和咖啡只读预览不随包分发。完整步骤及当前包哈希见[咖啡说明](coffee-and-groups.md)。
 
 ## 桌面版本管理
 

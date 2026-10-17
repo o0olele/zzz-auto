@@ -92,6 +92,40 @@ pub struct RunRecord {
     pub group: Option<group_run::GroupProgress>,
 }
 
+impl RunRecord {
+    pub fn inputs_released(&self) -> bool {
+        self.input_probe.as_ref().is_none_or(|p| p.released)
+            && self
+                .input_pipeline
+                .as_ref()
+                .is_none_or(|p| p.pipeline.released)
+            && self.mail.as_ref().is_none_or(|p| p.inputs_released)
+            && self.coffee.as_ref().is_none_or(|p| p.inputs_released)
+            && self.map.as_ref().is_none_or(|p| p.inputs_released)
+            && self
+                .group
+                .as_ref()
+                .is_none_or(|g| g.steps.iter().all(|s| s.inputs_released))
+    }
+
+    pub fn matches_account_context(&self) -> bool {
+        let Some(context) = &self.context else {
+            return false;
+        };
+        if self.app_id == "application_group" {
+            self.group.as_ref().is_some_and(|group| {
+                group
+                    .steps
+                    .iter()
+                    .map(|s| &s.app_id)
+                    .eq(context.app_ids.iter())
+            })
+        } else {
+            context.app_ids.contains(&self.app_id)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum InputMode {
@@ -331,15 +365,78 @@ impl RunSlot {
     ) -> Result<RunRecord, &'static str> {
         let mut schedule = group_run::GroupSchedule::new(plan)?;
         let permit = schedule.start_next(Utc::now())?.ok_or("应用组无需执行")?;
-        // 生产执行器仍限邮件；通用调度能力不自动开放其他应用。
-        if schedule.current_app() != Some("email") || plan.context.app_ids != ["email"] {
-            return Err("当前执行器仅支持邮件");
+        if plan
+            .context
+            .app_ids
+            .iter()
+            .any(|id| !matches!(id.as_str(), "email" | "coffee"))
+        {
+            return Err("当前执行器仅支持邮件和咖啡");
         }
-        self.begin_group_mail(config, plan.context.clone())?;
+        config.validate()?;
+        plan.coffee_config.validate()?;
+        self.begin(if plan.context.app_ids == ["email"] {
+            "email"
+        } else {
+            "application_group"
+        })?;
+        self.current.as_mut().expect("运行已创建").context = Some(plan.context.clone());
+        self.current.as_mut().expect("运行已创建").started_at = schedule
+            .progress()
+            .steps
+            .iter()
+            .find_map(|step| step.started_at)
+            .expect("首项已开始");
         debug_assert!(schedule.permitted_app(&permit).is_none());
         self.current.as_mut().expect("运行已创建").group = Some(schedule.progress().clone());
         self.group_schedule = Some(schedule);
+        self.prepare_group_app(config, plan.coffee_config)?;
         Ok(self.current.as_ref().expect("运行已创建").clone())
+    }
+
+    fn prepare_group_app(
+        &mut self,
+        mail: mail::MailConfig,
+        coffee: coffee_run::CoffeeConfig,
+    ) -> Result<(), &'static str> {
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        match self.group_schedule.as_ref().and_then(|s| s.current_app()) {
+            Some("email") => run.mail = Some(mail::MailProgress::new(mail)),
+            Some("coffee") => {
+                let mut progress = coffee_run::CoffeeProgress::new(coffee);
+                progress.approach = Some(coffee_approach::CoffeeApproachProgress::default());
+                run.coffee = Some(progress);
+            }
+            _ => return Err("当前分项没有执行器"),
+        }
+        Ok(())
+    }
+
+    pub fn advance_group(&mut self, plan: &run_plan::GroupPlan) -> Result<RunRecord, &'static str> {
+        if self.current.as_ref().and_then(|run| run.context.as_ref()) != Some(&plan.context) {
+            return Err("后继计划与冻结的账号或应用组不符");
+        }
+        let schedule = self.group_schedule.as_mut().ok_or("当前没有应用组")?;
+        schedule.start_next(Utc::now())?.ok_or("应用组已经结束")?;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        run.group = Some(schedule.progress().clone());
+        self.prepare_group_app(plan.mail_config, plan.coffee_config)?;
+        Ok(self.current.as_ref().expect("运行存在").clone())
+    }
+
+    pub fn pause_group_boundary(&mut self, message: String) -> Result<RunRecord, &'static str> {
+        let schedule = self.group_schedule.as_mut().ok_or("当前没有应用组")?;
+        if schedule.current_app().is_some() {
+            return Err("当前分项仍在执行");
+        }
+        if schedule.progress().state == RunState::Running {
+            schedule.request_pause()?;
+        }
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        run.state = schedule.progress().state;
+        run.group = Some(schedule.progress().clone());
+        run.message = message;
+        Ok(run.clone())
     }
 
     pub fn confirm_group_saved(&mut self, record: &RunRecord) -> Result<(), &'static str> {
@@ -460,13 +557,21 @@ impl RunSlot {
         if run.id != id || run.coffee.is_none() || run.state.is_terminal() {
             return Err("咖啡运行 ID 已过期或结束");
         }
+        if self
+            .group_schedule
+            .as_ref()
+            .is_some_and(|s| s.current_app() != Some("coffee"))
+        {
+            return Err("咖啡不是当前分项");
+        }
         if matches!(progress.state, CoffeeState::Paused | CoffeeState::Succeeded)
             && !progress.inputs_released
         {
             return Err("咖啡输入尚未释放");
         }
         if progress.state == CoffeeState::Succeeded
-            && (!progress.order_attempted
+            && (progress.phase != coffee_run::CoffeePhase::Done
+                || !progress.order_attempted
                 || !progress.energy_seen
                 || progress
                     .approach
@@ -485,7 +590,7 @@ impl RunSlot {
         if run.state == RunState::Stopping && progress.state == CoffeeState::Succeeded {
             progress.state = CoffeeState::Stopped;
         }
-        run.state = match progress.state {
+        let next = match progress.state {
             CoffeeState::Running => run.state,
             CoffeeState::Paused if run.state == RunState::Stopping => RunState::Stopping,
             CoffeeState::Paused => RunState::Paused,
@@ -493,6 +598,27 @@ impl RunSlot {
             CoffeeState::Failed | CoffeeState::TimedOut => RunState::Failed,
             CoffeeState::Stopped => RunState::Stopped,
         };
+        if let Some(schedule) = &mut self.group_schedule {
+            if progress.state == CoffeeState::Paused && next != RunState::Stopping {
+                schedule.acknowledge_pause(progress.inputs_released)?;
+            } else if next.is_terminal() {
+                schedule.complete_current(
+                    "coffee",
+                    match next {
+                        RunState::Succeeded => group_run::AppOutcome::Succeeded,
+                        RunState::Stopped => group_run::AppOutcome::Stopped,
+                        _ => group_run::AppOutcome::Failed,
+                    },
+                    progress.inputs_released,
+                    Utc::now(),
+                )?;
+            }
+            run.group = Some(schedule.progress().clone());
+        }
+        run.state = self
+            .group_schedule
+            .as_ref()
+            .map_or(next, |s| s.progress().state);
         run.coffee = Some(progress);
         run.message = message;
         if run.state.is_terminal() {
@@ -513,7 +639,15 @@ impl RunSlot {
             schedule.request_pause()?;
             run.group = Some(schedule.progress().clone());
         }
-        run.state = RunState::Pausing;
+        run.state = if run
+            .group
+            .as_ref()
+            .is_some_and(|g| g.current_index.is_none())
+        {
+            RunState::Paused
+        } else {
+            RunState::Pausing
+        };
         run.message = "已请求暂停，正在等待队列静止与输入释放".into();
         Ok(run.clone())
     }
@@ -531,7 +665,10 @@ impl RunSlot {
             run.group = Some(schedule.progress().clone());
         }
         run.state = RunState::Running;
-        if let Some(progress) = &mut run.mail {
+        let current_app = self.group_schedule.as_ref().and_then(|s| s.current_app());
+        if let Some(progress) = &mut run.mail
+            && (run.group.is_none() || current_app == Some("email"))
+        {
             progress.inputs_released = false;
             progress.state = mail::MailState::Running;
         }
@@ -540,7 +677,9 @@ impl RunSlot {
             progress.state = map_transport::MapState::Running;
         }
         run.message = "准备继续流程，延时后重新识别画面".into();
-        if let Some(progress) = &mut run.coffee {
+        if let Some(progress) = &mut run.coffee
+            && (run.group.is_none() || current_app == Some("coffee"))
+        {
             progress.state = coffee_run::CoffeeState::Running;
             progress.inputs_released = false;
         }
@@ -557,6 +696,13 @@ impl RunSlot {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
         if run.id != id || run.mail.is_none() || run.state.is_terminal() {
             return Err("邮件运行 ID 已过期或已结束");
+        }
+        if self
+            .group_schedule
+            .as_ref()
+            .is_some_and(|s| s.current_app() != Some("email"))
+        {
+            return Err("邮件不是当前分项");
         }
         if progress.state == MailState::Paused && !progress.inputs_released {
             return Err("输入尚未释放，不能确认暂停");
@@ -612,6 +758,13 @@ impl RunSlot {
     }
 
     pub fn begin(&mut self, app_id: &str) -> Result<RunRecord, &'static str> {
+        if self
+            .current
+            .as_ref()
+            .is_some_and(|run| run.group.is_some() && !run.inputs_released())
+        {
+            return Err("上次应用组输入尚未确认释放，请先恢复遗留输入");
+        }
         if self.busy() {
             return Err("已有任务占用游戏控制权，请先等待停止完成");
         }
@@ -645,7 +798,18 @@ impl RunSlot {
                 schedule.request_stop();
                 run.group = Some(schedule.progress().clone());
             }
-            run.state = RunState::Stopping;
+            run.state = if run
+                .group
+                .as_ref()
+                .is_some_and(|g| g.current_index.is_none())
+            {
+                RunState::Stopped
+            } else {
+                RunState::Stopping
+            };
+            if run.state.is_terminal() {
+                run.finished_at = Some(Utc::now());
+            }
             run.message = "已请求停止，正在等待原生队列及输入释放".into();
         }
         Ok(run.clone())

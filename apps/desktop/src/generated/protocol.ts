@@ -4,9 +4,9 @@ export type RunPolicy = "always" | "skip_daily_success";
 export type GameDay = { region: GameRegion, date: string, };
 export type RunContext = { instance_id: number, instance_name: string, group_id: string, group_name?: string, config_revision: number, app_ids: Array<string>, game_day?: GameDay, };
 export type PlanDecision = "disabled" | "run" | "already_done" | "blocked";
-export type AppAvailability = "mail_trial" | "unmigrated" | "unknown";
+export type AppAvailability = "mail_trial" | "coffee_trial" | "unmigrated" | "unknown";
 export type PlannedApp = { app_id: string, name: string, enabled: boolean, availability: AppAvailability, decision: PlanDecision, completed_run_id: string | null, };
-export type GroupPlan = { context: RunContext, mail_config: MailConfig, items: Array<PlannedApp>, blockers: Array<string>, executable: boolean, all_done: boolean, game_day: GameDay, run_policy: RunPolicy, warnings: Array<string>, valid_until: string, };
+export type GroupPlan = { context: RunContext, mail_config: MailConfig, coffee_config: CoffeeConfig, items: Array<PlannedApp>, blockers: Array<string>, executable: boolean, all_done: boolean, game_day: GameDay, run_policy: RunPolicy, warnings: Array<string>, valid_until: string, };
 export type HistoryItem = { record: RunRecord, interrupted: boolean, };
 export type RunHistory = { instance_id: number, items: Array<HistoryItem>, unreadable: number, has_more: boolean, };
 export type GroupApp = { app_id: string, enabled: boolean, };
@@ -14,7 +14,7 @@ export type GeneralSettings = { capture_method: CaptureMethod, mail: MailConfig,
 export type ShortcutKey = "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11";
 export type ShortcutSettings = { pause_resume: ShortcutKey | null, stop: ShortcutKey | null, };
 export type ShortcutStatus = { active: ShortcutSettings | null, registration_error: string | null, action_error: string | null, };
-export type AppGroup = { id: string, name?: string, run_policy: RunPolicy, apps: Array<GroupApp>, };
+export type AppGroup = { id: string, name?: string, run_policy: RunPolicy, coffee: CoffeeConfig, apps: Array<GroupApp>, };
 export type AccountInstance = { id: number, name: string, active_in_od: boolean, game_region: GameRegion, groups: Array<AppGroup>, };
 export type AccountConfig = { schema: number, revision: number, general: GeneralSettings, active_instance: number, instances: Array<AccountInstance>, import_id: string | null, reserved_instance_ids?: Array<number>, };
 export type ConfigBackup = { id: string, revision: number, bytes: number, modified_at: string | null, };
@@ -29,7 +29,7 @@ export type ConfigRecoveryRequest = { "type": "list" } | { "type": "preview", id
 export type ConfigRecoveryJobState = "running" | "succeeded" | "failed";
 export type ConfigRecoveryJob = { id: string, request: ConfigRecoveryRequest, state: ConfigRecoveryJobState, phase: string, reconnected: boolean, reconnect_error: string | null, error: string | null, error_code: string | null, };
 export type DesktopConfigRecovery = { job: ConfigRecoveryJob | null, catalog: ConfigRecoveryCatalog | null, preview: ConfigRecoveryPreview | null, restored: ConfigRecoveryResult | null, };
-export type ConfigChange = { "type": "set_game_region", instance_id: number, game_region: GameRegion, } | { "type": "set_run_policy", instance_id: number, group_id: string, run_policy: RunPolicy, } | { "type": "save_general", settings: GeneralSettings, } | { "type": "create_instance", name: string, } | { "type": "copy_instance", instance_id: number, name: string, } | { "type": "delete_instance", instance_id: number, confirm: boolean, } | { "type": "reorder_instances", instance_ids: Array<number>, } | { "type": "reorder_groups", instance_id: number, group_ids: Array<string>, } | { "type": "update_instance", instance_id: number, name: string, active_in_od: boolean, } | { "type": "switch_instance", instance_id: number, } | { "type": "save_group", instance_id: number, group_id: string, apps: Array<GroupApp>, } | { "type": "create_group", instance_id: number, name: string, source_group_id: string | null, } | { "type": "rename_group", instance_id: number, group_id: string, name: string, } | { "type": "delete_group", instance_id: number, group_id: string, };
+export type ConfigChange = { "type": "save_coffee", instance_id: number, group_id: string, settings: CoffeeConfig, } | { "type": "set_game_region", instance_id: number, game_region: GameRegion, } | { "type": "set_run_policy", instance_id: number, group_id: string, run_policy: RunPolicy, } | { "type": "save_general", settings: GeneralSettings, } | { "type": "create_instance", name: string, } | { "type": "copy_instance", instance_id: number, name: string, } | { "type": "delete_instance", instance_id: number, confirm: boolean, } | { "type": "reorder_instances", instance_ids: Array<number>, } | { "type": "reorder_groups", instance_id: number, group_ids: Array<string>, } | { "type": "update_instance", instance_id: number, name: string, active_in_od: boolean, } | { "type": "switch_instance", instance_id: number, } | { "type": "save_group", instance_id: number, group_id: string, apps: Array<GroupApp>, } | { "type": "create_group", instance_id: number, name: string, source_group_id: string | null, } | { "type": "rename_group", instance_id: number, group_id: string, name: string, } | { "type": "delete_group", instance_id: number, group_id: string, };
 export type ImportFile = { path: string, sha256: string, disposition: string, };
 export type ImportPreview = { preview_id: string, config: AccountConfig, files: Array<ImportFile>, warnings: Array<string>, };
 export type AppDefinition = { id: string, name: string, execution: string, reason: string, factory: string, configs: Array<string>, settings: Array<string>, run_records: Array<string>, source_files: Array<string>, priority: number, default_group: boolean, implemented: boolean, };
@@ -194,3 +194,39 @@ export const shortcutKeys = [
   "f10",
   "f11"
 ] as const;
+export const coffeeSettingsFields = [
+  {
+    "key": "kind",
+    "kind": "select",
+    "label": "默认咖啡",
+    "options": [
+      {
+        "label": "汀曼特调",
+        "value": "tinman"
+      },
+      {
+        "label": "浓缩咖啡",
+        "value": "espresso"
+      }
+    ]
+  },
+  {
+    "key": "timeout_ms",
+    "kind": "integer",
+    "label": "默认咖啡超时（ms）",
+    "max": 60000,
+    "min": 1
+  },
+  {
+    "key": "start_delay_ms",
+    "kind": "integer",
+    "label": "默认咖啡启动 / 继续延时（ms）",
+    "max": 10000,
+    "min": 0
+  }
+] as const;
+export const coffeeDefaultConfig = {
+  "kind": "tinman",
+  "timeout_ms": 60000,
+  "start_delay_ms": 3000
+} as const;

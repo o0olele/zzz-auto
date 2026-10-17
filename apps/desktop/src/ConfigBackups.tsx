@@ -4,6 +4,7 @@ import type { AccountConfig, AppDefinition, AppGroup, ConfigBackups as BackupLis
 import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { errorMessage, request } from './bridge';
 import { captureNames } from './captureSettings';
+import { coffeeSummary } from './CoffeeSettings';
 
 const label = (group: AppGroup) => group.name ?? (group.id === 'one_dragon' ? '一条龙' : group.id);
 const same = (before: unknown, after: unknown) => JSON.stringify(before) === JSON.stringify(after);
@@ -43,6 +44,7 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
       return <option key={id} value={id}>{label((next ?? old)!)}（{changeName(old, next)}）</option>;
     })}</Select></Field>
     <p>组名：{oldGroup ? label(oldGroup) : '无此组'} → {newGroup ? label(newGroup) : '无此组'}；运行策略：{policy(oldGroup)} → {policy(newGroup)}。</p>
+    <p>咖啡设置：{oldGroup ? coffeeSummary(oldGroup.coffee) : '无此组'} → {newGroup ? coffeeSummary(newGroup.coffee) : '无此组'}。</p>
     <div className="input-fields">{[{ group: oldGroup, title: '当前应用顺序' }, { group: newGroup, title: '恢复后应用顺序' }].map(({ group, title }) => {
       return <div role="group" aria-label={title} key={title}><h3>{title}</h3>{group ? <ol className="group-plan">{group.apps.map(item => <li key={item.app_id}>{apps.find(app => app.id === item.app_id)?.name ?? item.app_id} · {item.enabled ? '启用' : '禁用'}</li>)}</ol> : <p>无此组</p>}</div>;
     })}</div>

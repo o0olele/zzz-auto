@@ -6,6 +6,16 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub fn recovery_inputs() -> Vec<crate::InputProbeConfig> {
+    let mut inputs = crate::mail::MailConfig::recovery_inputs().to_vec();
+    for input in crate::coffee_approach::recovery_inputs() {
+        if !inputs.contains(&input) {
+            inputs.push(input);
+        }
+    }
+    inputs
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum GroupStepState {

@@ -1,7 +1,10 @@
 use crate::coffee::CoffeeRun;
+#[path = "group_runtime.rs"]
+mod group_runtime;
 use crate::mail::{MailRun, MailState};
 use crate::map_transport::{MapRun, MapState};
 use chrono::Utc;
+use group_runtime::{GroupWork, run_group_work};
 use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, NativeSession};
 use od_core::coffee_run::{CoffeeConfig, CoffeeState};
 use od_core::config::{ConfigError, ConfigStore};
@@ -85,6 +88,7 @@ impl State {
 }
 
 enum Work {
+    Group(Box<GroupWork>),
     Mail(MailWork),
     Map(MapWork),
     Coffee(CoffeeWork),
@@ -224,6 +228,10 @@ impl Engine {
                 let map = resources.join("generated/map-preview");
                 let mut session =
                     NativeSession::for_custom_controller(callback, &map, InputMode::Foreground)?;
+                let mail = resources.join("generated/mail");
+                if mail.exists() {
+                    session.load_mail_bundle(&mail)?;
+                }
                 session.load_map_bundle(&map)?;
                 session.load_coffee_run_bundle(&resources.join("generated/coffee-run"))?;
                 Ok(session)
@@ -499,6 +507,12 @@ impl Engine {
             }
             Command::Resume { run_id } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
+                if state.record_error.is_some() {
+                    return Err(ApiError::new(
+                        "history_error",
+                        "请先重试保存运行记录，再继续应用组",
+                    ));
+                }
                 let current = state
                     .slot
                     .current()
@@ -621,6 +635,8 @@ impl Engine {
                     if !was_stopping {
                         let _ = self.sender.try_send(Work::PipelineControl(run_id, false));
                     }
+                } else if record.group.is_some() && !was_stopping {
+                    let _ = self.sender.try_send(Work::PipelineControl(run_id, false));
                 }
                 Ok(Payload::Run(record))
             }
@@ -722,6 +738,11 @@ impl Engine {
             .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
         if state.native_pending {
             return Err(ApiError::new("busy", "截图或连接操作尚未完成"));
+        }
+        if let Some(plan) = &plan
+            && plan.context.app_ids != ["email"]
+        {
+            return self.start_group_work(&mut state, plan.clone(), window);
         }
         let record = match plan {
             Some(plan) => state.slot.begin_group_plan(config, &plan),
@@ -1264,8 +1285,10 @@ fn worker(
     let mut paused_mail: Option<MailWork> = None;
     let mut paused_map: Option<MapWork> = None;
     let mut paused_coffee: Option<CoffeeWork> = None;
+    let mut paused_group: Option<Box<GroupWork>> = None;
     for command in receiver {
         match command {
+            Work::Group(work) => paused_group = run_group_work(work, &paths, &state, &mut native),
             Work::Mail(work) => {
                 paused_mail = run_mail_work(work, &paths, &state, &mut native);
             }
@@ -1276,6 +1299,11 @@ fn worker(
                 paused_map = run_map_work(work, &paths, &state, &mut native);
             }
             Work::PipelineControl(id, resume) => {
+                if paused_group.as_ref().is_some_and(|work| work.id() == id) {
+                    let mut work = paused_group.take().expect("已有暂停应用组");
+                    work.control(resume);
+                    paused_group = run_group_work(work, &paths, &state, &mut native);
+                }
                 if paused_coffee.as_ref().is_some_and(|work| work.run.id == id) {
                     let mut work = paused_coffee.take().expect("已有暂停咖啡任务");
                     if resume
@@ -1615,6 +1643,10 @@ fn worker(
                 state.cancel = None;
             }
             Work::Shutdown(reply) => {
+                if let Some(mut work) = paused_group.take() {
+                    work.control(false);
+                    let _ = run_group_work(work, &paths, &state, &mut native);
+                }
                 if let Some(work) = paused_coffee.take() {
                     work.run.control().stop();
                     let _ = run_coffee_work(work, &paths, &state, &mut native);
@@ -1632,6 +1664,10 @@ fn worker(
                 return;
             }
         }
+    }
+    if let Some(mut work) = paused_group.take() {
+        work.control(false);
+        let _ = run_group_work(work, &paths, &state, &mut native);
     }
     if let Some(work) = paused_mail.take() {
         work.run.control().stop();

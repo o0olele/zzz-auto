@@ -86,6 +86,13 @@ struct LegacyGameAccount {
     game_region: Option<crate::daily::GameRegion>,
 }
 
+#[derive(Deserialize)]
+struct LegacyCoffee {
+    transport_point: Option<String>,
+    #[serde(default)]
+    run_charge_plan_afterwards: bool,
+}
+
 pub fn preview(source: &Path, data: &Path) -> Result<ImportPreview> {
     let files = scan(source, data)?;
     plan(&files)
@@ -347,6 +354,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                     id: parts[0].into(),
                     name: None,
                     run_policy: crate::daily::RunPolicy::default(),
+                    coffee: crate::coffee_run::CoffeeConfig::default(),
                     apps: group
                         .app_list
                         .into_iter()
@@ -364,6 +372,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 id: "one_dragon".into(),
                 name: None,
                 run_policy: crate::daily::RunPolicy::default(),
+                coffee: crate::coffee_run::CoffeeConfig::default(),
                 apps: Vec::new(),
             };
             if let Some(file) = files
@@ -400,6 +409,35 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 group.apps.push(app);
             }
         }
+        // 旧版按应用组保存，组内文件优先；没有组内文件才读取早期账号级文件。
+        for group in &groups {
+            let grouped = format!("{prefix}{}/coffee.yml", group.id);
+            let old = format!("{prefix}coffee.yml");
+            let coffee = files
+                .iter()
+                .find(|file| file.relative == grouped)
+                .or_else(|| files.iter().find(|file| file.relative == old));
+            let enabled = group
+                .apps
+                .iter()
+                .any(|app| app.app_id == "coffee" && app.enabled);
+            if let Some(file) = coffee {
+                let legacy: LegacyCoffee = parse(file)?;
+                converted.insert(file.relative.clone());
+                if legacy.transport_point.as_deref() != Some("澄辉坪 - 汀曼咖啡") {
+                    warnings.push(format!("账号 {} 的 {} 组旧咖啡地点不适用当前固定路线，原值只归档；诊断仅支持澄辉坪 → 汀曼咖啡，请核对后再使用。", item.idx, group.id));
+                }
+                if legacy.run_charge_plan_afterwards {
+                    warnings.push(format!(
+                        "账号 {} 的 {} 组咖啡后体力计划尚未迁移，原值只归档，不自动运行。",
+                        item.idx, group.id
+                    ));
+                }
+            }
+            if coffee.is_some() || enabled {
+                warnings.push(format!("账号 {} 的 {} 组旧咖啡选择由体力计划动态决定，未转换为固定咖啡；采用汀曼特调、60000ms 超时、3000ms 延时，请导入后核对。咖啡为试运行，完整领取仍待实机验收。", item.idx, group.id));
+            }
+        }
         instances.push(AccountInstance {
             id: item.idx,
             name: item.name,
@@ -434,7 +472,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v4\0");
+    hash.update(b"zzz-auto-config-import-v5\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());
@@ -446,6 +484,8 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             sha256: hex::encode(Sha256::digest(&file.bytes)),
             disposition: if file.relative == "env.yml" {
                 "已检查截图与任务快捷键；其他环境字段仅归档，待迁移"
+            } else if file.relative.ends_with("/coffee.yml") && converted.contains(&file.relative) {
+                "已检查咖啡地点与后续计划；旧动态选单未转换，完整原文归档"
             } else if file.relative.ends_with("/game_account.yml")
                 && converted.contains(&file.relative)
             {

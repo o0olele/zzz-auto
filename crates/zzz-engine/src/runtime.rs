@@ -450,25 +450,7 @@ impl Engine {
                 self.import_config(source, Some(preview_id)).await
             }
             Command::UpdateAccountConfig { revision, change } => {
-                let mut state = self.state.lock().expect("运行状态锁失效");
-                if state.native_pending
-                    || state
-                        .slot
-                        .current()
-                        .is_some_and(|run| !run.state.is_terminal())
-                {
-                    return Err(ApiError::new(
-                        "busy",
-                        "请先停止任务并等待原生请求与输入收尾，再修改配置",
-                    ));
-                }
-                let config = self.config.update(revision, change).map_err(config_error)?;
-                state.event(
-                    None,
-                    "info",
-                    format!("配置已保存，修订 {}", config.revision),
-                );
-                Ok(Payload::AccountConfig(config))
+                self.update_config(revision, change).await
             }
             Command::StartMail {
                 config,
@@ -1046,6 +1028,34 @@ impl Engine {
             state: self.state.clone(),
             _owner: self._config_owner.clone(),
         })
+    }
+
+    async fn update_config(
+        &self,
+        revision: u32,
+        change: od_core::config::ConfigChange,
+    ) -> Result<Payload, ApiError> {
+        let pending = self.config_work_guard()?;
+        let store = self.config.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = store.update(revision, change).map_err(config_error);
+            if let Ok(config) = &result {
+                pending.state.lock().expect("运行状态锁失效").event(
+                    None,
+                    "info",
+                    format!("配置已保存，修订 {}", config.revision),
+                );
+            }
+            drop(pending);
+            result.map(Payload::AccountConfig)
+        })
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                "config_error",
+                "配置保存线程异常退出，请重新读取配置确认结果",
+            )
+        })?
     }
 
     async fn backup_config(&self, command: Command) -> Result<Payload, ApiError> {

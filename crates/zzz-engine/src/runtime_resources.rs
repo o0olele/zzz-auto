@@ -166,10 +166,10 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
             && manifest.sdk_version == maa_adapter::SDK_VERSION
             && manifest.binding_version == maa_adapter::BINDING_VERSION
             && (manifest.protocol_version == od_protocol::PROTOCOL_VERSION
-                || (od_protocol::PROTOCOL_VERSION == 20
+                || (od_protocol::PROTOCOL_VERSION == 21
                     && matches!(
                         (manifest.schema_version, manifest.protocol_version),
-                        (1, 15..=19) | (2, 16..=19)
+                        (1, 15..=20) | (2, 16..=20)
                     ))),
         "运行资源包与当前引擎、SDK、绑定或协议不兼容"
     );

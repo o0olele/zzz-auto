@@ -134,6 +134,22 @@ pub enum ConfigChange {
     CreateInstance {
         name: String,
     },
+    CopyInstance {
+        instance_id: u32,
+        name: String,
+    },
+    DeleteInstance {
+        instance_id: u32,
+        #[serde(default)]
+        confirm: bool,
+    },
+    ReorderInstances {
+        instance_ids: Vec<u32>,
+    },
+    ReorderGroups {
+        instance_id: u32,
+        group_ids: Vec<String>,
+    },
     UpdateInstance {
         instance_id: u32,
         name: String,
@@ -278,6 +294,76 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::CopyInstance { instance_id, name } => {
+                validate_name(&name)?;
+                let id = self.new_instance_id()?;
+                let mut copy = self.instance_mut(instance_id)?.clone();
+                copy.id = id;
+                copy.name = name.trim().into();
+                copy.active_in_od = false;
+                // 只复制可公开的编排；新编号隔离历史，当前账号与导入归档保持原值。
+                self.instances.push(copy);
+            }
+            ConfigChange::DeleteInstance {
+                instance_id,
+                confirm,
+            } => {
+                if !confirm {
+                    return Err(invalid("请核对账号并确认删除"));
+                }
+                let index = self
+                    .instances
+                    .iter()
+                    .position(|item| item.id == instance_id)
+                    .ok_or_else(|| invalid("账号不存在"))?;
+                if self.instances.len() <= 1 {
+                    return Err(invalid("至少保留一个账号"));
+                }
+                if self.active_instance == instance_id {
+                    return Err(invalid("不能删除当前账号，请先将另一个账号设为当前账号"));
+                }
+                self.instances.remove(index);
+                if !self.reserved_instance_ids.contains(&instance_id) {
+                    self.reserved_instance_ids.push(instance_id);
+                    self.reserved_instance_ids.sort_unstable();
+                }
+            }
+            ConfigChange::ReorderInstances { instance_ids } => {
+                validate_order(
+                    &self
+                        .instances
+                        .iter()
+                        .map(|item| item.id)
+                        .collect::<Vec<_>>(),
+                    &instance_ids,
+                )?;
+                self.instances.sort_by_key(|item| {
+                    instance_ids
+                        .iter()
+                        .position(|id| *id == item.id)
+                        .expect("已校验完整顺序")
+                });
+            }
+            ConfigChange::ReorderGroups {
+                instance_id,
+                group_ids,
+            } => {
+                let instance = self.instance_mut(instance_id)?;
+                validate_order(
+                    &instance
+                        .groups
+                        .iter()
+                        .map(|item| item.id.clone())
+                        .collect::<Vec<_>>(),
+                    &group_ids,
+                )?;
+                instance.groups.sort_by_key(|item| {
+                    group_ids
+                        .iter()
+                        .position(|id| id == &item.id)
+                        .expect("已校验完整顺序")
+                });
+            }
             ConfigChange::CreateGroup {
                 instance_id,
                 name,
@@ -354,12 +440,7 @@ impl AccountConfig {
             }
             ConfigChange::CreateInstance { name } => {
                 validate_name(&name)?;
-                let id = (1..=9999)
-                    .find(|id| {
-                        !self.instances.iter().any(|i| i.id == *id)
-                            && !self.reserved_instance_ids.contains(id)
-                    })
-                    .ok_or_else(|| invalid("没有可用的账号编号"))?;
+                let id = self.new_instance_id()?;
                 self.instances.push(AccountInstance {
                     id,
                     name,
@@ -410,6 +491,27 @@ impl AccountConfig {
             .find(|i| i.id == id)
             .ok_or_else(|| invalid("账号不存在"))
     }
+
+    fn new_instance_id(&self) -> Result<u32, ConfigError> {
+        if self.instances.len() >= 128 {
+            return Err(invalid("账号数量最多为 128"));
+        }
+        (1..=9999)
+            .find(|id| {
+                !self.instances.iter().any(|item| item.id == *id)
+                    && !self.reserved_instance_ids.contains(id)
+            })
+            .ok_or_else(|| invalid("没有可用的账号编号"))
+    }
+}
+
+fn validate_order<T: Eq + std::hash::Hash>(before: &[T], after: &[T]) -> Result<(), ConfigError> {
+    let previous: HashSet<_> = before.iter().collect();
+    let next: HashSet<_> = after.iter().collect();
+    if before.len() != after.len() || next.len() != after.len() || previous != next {
+        return Err(invalid("排序必须完整保留全部原有项，不能重复、增删或替换"));
+    }
+    Ok(())
 }
 
 fn validate_name(name: &str) -> Result<(), ConfigError> {

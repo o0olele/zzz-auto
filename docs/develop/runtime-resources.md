@@ -1,10 +1,10 @@
 # M3 运行资源包首批
 
-本批把当前邮件、固定地图试运行、健康检查与应用清单组成独立版本的完整运行资源包。模型下载仍只准备来源缓存；运行资源包使用已转换并校验的资源。咖啡真实执行、战斗模型和其他未迁移应用不因此开放。
+本批把当前邮件、固定地图和独立咖啡试运行、健康检查与应用清单组成独立版本的完整运行资源包。模型下载仍只准备来源缓存；运行资源包使用已转换并校验的资源。咖啡仍为实机待验收的诊断入口，战斗模型和其他未迁移应用不因此开放。
 
 ## 版本与启用规则
 
-原生引擎 CLI 提供 `runtime-resources pack|download|check|install|status|activate|rollback`。本地 ZIP 可通过 CLI 或桌面导入，安装必须给出预期 ZIP SHA-256；显式 HTTPS 下载见下方说明，联网发现版本、桌面完整包下载及签名发布后续实现。包记录内容版本、引擎、SDK、Rust 绑定、通信协议和资源格式，当前要求与本引擎精确匹配。逐文件校验之外，继续使用邮件和地图的固定流程及模型校验；健康检查和应用清单与编译时内容一致。
+原生引擎 CLI 提供 `runtime-resources pack|download|check|install|status|activate|rollback`。本地 ZIP 可通过 CLI 或桌面导入，安装必须给出预期 ZIP SHA-256；桌面和 CLI 均支持显式 HTTPS 下载，联网发现版本及签名发布后续实现。包记录内容版本、引擎、SDK、Rust 绑定、通信协议和资源格式，当前要求与本引擎精确匹配。逐文件校验之外，继续使用邮件和地图的固定流程及模型校验；健康检查和应用清单与编译时内容一致。
 
 数据目录的 `runtime-resources/versions/<清单哈希>/` 保存完整版本，`selection.json` 单次替换当前与上一版本。安装仅准备版本，不自动启用；相同清单重复安装只校验复用。内容版本只是展示值，目录由清单哈希决定；已存在但损坏的版本报错并保留，不覆盖。ZIP 不允许额外条目、重复路径、目录链接、越界路径或原生二进制。
 
@@ -36,7 +36,7 @@ cargo build -p zzz-engine --locked
 cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --locked --test runtime_resources -- --test-threads=1
 ```
 
-首批 CLI 未修改前端；后续桌面管理增加宿主命令，未新增引擎 IPC，通信协议保持 v15。完整资源目前指已有执行器需要的 20 个文件，包含两份锁定 OCR；战斗识别生成资源和咖啡只读预览不随本包分发。资源格式与执行器扩展时同步更新文件清单及兼容校验。
+首批 CLI 和后续桌面资源管理使用协议 v15；2026 年 10 月 17 日咖啡试运行新增引擎命令后为 v16，桌面旧配置导入随后升级至 v17。包含 `generated/coffee-run` 时打包为 schema 2，共 26 个文件，含三份锁定 OCR；没有咖啡时仍可打包 schema 1 的 20 个邮件地图基础文件。当前 v17 引擎兼容原 schema 1 / 协议 15 的邮件地图包及 schema 2 / 协议 16 的咖啡包，其他引擎、SDK、绑定和固定流程仍严格校验。旧包缺少咖啡时拒绝咖啡启动；不从另一版本补读。战斗资源和咖啡只读预览不随包分发。完整步骤及当前包哈希见[咖啡说明](coffee-and-groups.md)。
 
 ## 桌面版本管理
 
@@ -46,7 +46,7 @@ cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-di
 
 文件选择器只选本地 ZIP，不改变进程工作目录；取消不创建任务。安装请求校验本机盘符绝对路径、扩展名及 SHA-256，拒绝网络共享、设备路径、相对路径、父目录跳转及备用数据流。仅本地主窗口可调用选择器和安装命令，不接收 URL 或自定义 Pipeline。安装再次核对 ZIP 哈希，检查后文件被替换或已有版本损坏时拒绝覆盖。
 
-桌面“运行资源”页也可查看本机已安装版本、当前和上一选择，启用已安装版本或回滚。桌面完整包联网下载和签名发布继续待办。
+桌面“运行资源”页也可查看本机已安装版本、当前和上一选择，启用已安装版本或回滚。桌面显式 HTTPS 下载见下文，联网版本发现和签名发布继续待办。
 
 页面使用桌面宿主保存的异步任务状态，离开页面再回来继续查询，不重新执行安装或切换。安装完成自动刷新版本列表；刷新只读清单，不重复扫描模型。“清单可用”只表示清单与当前引擎兼容，启用前仍须完整核对文件。损坏或不兼容的版本显示原因，不静默忽略当前版本损坏。
 
@@ -55,6 +55,8 @@ cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-di
 切换后的引擎使用普通权限，不自动连接游戏或运行应用，需要时可手动提升权限。切换期间宿主拒绝启动、重连、提权及恢复等并发请求。退出桌面等待当前资源任务收尾，退出已开始时不再启动新引擎；强制关闭后不自动重放任务，下次重新读取磁盘选择。全部命令仍限定本地主窗口，桌面不加载 Maa DLL。
 
 `catalog` 只读清单与选择修订，至多列出 64 个目录，保留缺失、损坏或不兼容的已选择版本。宿主先调用 `preview-change` 完整验证，再在旧引擎退出后调用 `apply-change`；两次均携带同一选择修订。校验期间定期查询旧引擎快照，维持托管连接。普通状态查询只读宿主保存的快照，不反复扫描磁盘。类型由 `od-core` 生成，页面不自行推断资源兼容性。
+
+同步桌面命令可能运行在没有 Tokio 上下文的 UI 线程。宿主创建资源管理器时显式传入 Tauri 全局运行时的 Tokio handle，刷新、安装、切换与下载统一通过该 handle 启动后台任务；不能在这些同步入口直接调用依赖当前线程运行时的 `tokio::spawn`。2026 年 10 月 17 日用户实机发现此处会导致客户端崩溃，已据此修正。回归须包含普通 `#[test]` 线程发起刷新、安装、启用、回滚与下载，只在等待结果时进入独立测试运行时；全部使用 `#[tokio::test]` 会掩盖这一调用条件。
 
 ```powershell
 cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --locked --test desktop_runtime_resources --test runtime_resources -- --test-threads=1
@@ -95,3 +97,27 @@ cargo build -p zzz-engine --locked
 cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target --locked --test runtime_download --test desktop_runtime_install -- --test-threads=1
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
+
+## 桌面 HTTPS 下载
+
+在“运行资源 → 下载资源包”填写发布方提供的 HTTPS 地址、预期 ZIP 字节数和 64 位小写 SHA-256，点击“下载并校验资源包”。限制与 CLI 相同：大小为 1..536870912 字节，拒绝 HTTP、用户名、密码和 URL 片段。文件固定保存到桌面数据目录的 `runtime-resources/downloads/<ZIP哈希>.zip`，前端不能指定输出路径。相同哈希的完整文件通过全部检查后直接复用，不联网；损坏的同名文件保留并报错。
+
+宿主保存异步任务、阶段、字节进度及终态。切页后回来继续查询同一任务，下载期间引擎和游戏任务可继续运行；运行资源的安装、刷新与版本切换等待下载收尾。点击“取消资源包下载”提交当前任务 ID，进入“正在取消”，直到网络等待与临时文件收尾完成。迟到的取消不会改写已经完成的结果。退出桌面请求取消并等待子进程结束；桌面异常退出后，子进程检测标准输入断开并请求取消。强制终止留下的临时目录不作为完成包，后续不自动恢复下载。
+
+大小、ZIP 哈希、兼容性、逐文件与固定流程检查全部通过后，才显示“安装下载的资源包并重连引擎”。下载完成不安装或启用；安装复用本地 ZIP 的完整预检、任务及输入恢复拦截、退出旧引擎和重连逻辑，安装后仍需另行启用。下载与安装失败各自显示终态，不自动重试。关闭并重新启动桌面后不恢复旧任务快照，重新填写同一发布信息可检查并复用磁盘上的完整 ZIP。
+
+下载工作在独立原生子进程中进行，不加载 Maa SDK，也不取得游戏控制权。来源用有长度上限的标准输入 JSON 提交，地址不进入命令行、可查询快照或进度；提交后界面清空地址。宿主只接收有长度限制的结构化进度和结果，并核对输出路径、大小与哈希。正常取消协作收尾，超过 30 秒未结束或整个子进程超过 180 秒时强制结束并记录失败；此类失败不声称临时文件已经清理。仅本地主窗口可调用下载及取消命令，未增加引擎 IPC，协议保持 v15。
+
+2026 年 10 月 17 日新增 5 个 Rust 综合用例，覆盖提交前参数拒绝、快照不含 URL、真实资源包的完整缓存复用到桌面安装、下载不退出引擎、取消 ID 与迟到取消、损坏缓存保留、TLS 等待期间主动取消和桌面退出、父进程断开及超长标准输入。新增 6 个前端用例覆盖浏览器禁用、元数据校验、进度及切页恢复、校验后安装、取消与失败、读取断线和迟到响应；连同既有下载和本地安装共 14 项 Rust、12 项前端用例通过。测试使用本机端口、受控流及临时目录，正式 HTTPS 完整包发布、签名清单与联网版本发现仍待验收。
+
+```powershell
+cargo build -p zzz-engine --locked
+cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target --locked --test desktop_runtime_download --test desktop_runtime_install --test runtime_download -- --test-threads=1
+npm --prefix zzz-od-test/test/zzz_auto/frontend test -- --reporter=line
+```
+
+## 实机验证进展
+
+2026 年 10 月 17 日，用户在资源管理正常流程试用时发现同步 UI 线程启动任务导致桌面崩溃，修复并重新构建后沿用原测试包重试，反馈“测试成功”。据此前安装、启用、重新连接游戏运行应用组邮件并查看历史的说明，接受本地 ZIP 选择与安装、版本 `m3-mainflow-20261017` 启用，以及启用后邮件正常运行的整体反馈。未提供运行 ID、截图、耗时或逐步提示，不补记这些值。
+
+测试包为 `artifacts/runtime-resources-m3-mainflow-20261017.zip`，ZIP SHA-256 为 `c204de1815fec1e627aa2feddabefdb3190320b53c07a08b33b202158f6302dd`。本次不覆盖正式发行包环境、HTTPS 运行资源下载、联网版本发现、签名发布、回滚及边界场景；这些项目继续待验收。按先验证主要功能的决定，下一项验证桌面固定模型资源准备与文件校验。详细记录见[验收记录](../migration/acceptance.md#2026-年-10-月-17-日-m3-运行资源安装启用与邮件运行实机验证)。

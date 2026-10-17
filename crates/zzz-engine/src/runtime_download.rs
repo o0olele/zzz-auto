@@ -15,6 +15,70 @@ use std::{
 };
 use uuid::Uuid;
 
+/// 来源使用有长度限制的一行 JSON；父进程断开后取消，不在命令行或进度中输出 URL。
+pub fn managed(output: &Path) -> Result<()> {
+    use od_core::runtime_resources::{
+        RuntimeDownloadEvent as Event, RuntimeDownloadProgress, RuntimeDownloadSource,
+        RuntimeDownloadedArchive,
+    };
+    use std::io::{BufRead, Read};
+    use std::sync::{Arc, atomic::Ordering};
+    let mut input = std::io::BufReader::new(std::io::stdin());
+    let mut line = Vec::new();
+    input.by_ref().take(16385).read_until(b'\n', &mut line)?;
+    ensure!(
+        line.len() <= 16384 && line.last() == Some(&b'\n'),
+        "下载请求无效"
+    );
+    let source: RuntimeDownloadSource =
+        serde_json::from_slice(&line).map_err(|_| anyhow::anyhow!("下载请求无效"))?;
+    let source = ResourceDownloadSource {
+        url: source.url,
+        bytes: source.bytes,
+        sha256: source.sha256,
+    };
+    source.validate()?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    let disconnected = cancel.clone();
+    std::thread::spawn(move || {
+        let _ = input.read(&mut [0_u8; 1]);
+        disconnected.store(true, Ordering::Release);
+    });
+    let emit = |event: Event| -> Result<()> {
+        let mut output = std::io::stdout().lock();
+        serde_json::to_writer(&mut output, &event)?;
+        writeln!(output)?;
+        output.flush()?;
+        Ok(())
+    };
+    let mut previous = ("", 0_u64);
+    let result = download(&source, output, &cancel, |progress| {
+        let megabytes = progress.completed_bytes / (1024 * 1024);
+        if previous != (progress.phase, megabytes) {
+            if emit(Event::Progress(RuntimeDownloadProgress {
+                phase: progress.phase.into(),
+                completed_bytes: progress.completed_bytes,
+                total_bytes: progress.total_bytes,
+            }))
+            .is_err()
+            {
+                cancel.store(true, Ordering::Release);
+            }
+            previous = (progress.phase, megabytes);
+        }
+    });
+    match result {
+        Ok(result) => emit(Event::Completed(RuntimeDownloadedArchive {
+            archive: result.archive.display().to_string(),
+            sha256: result.sha256,
+            bytes: result.archive_bytes,
+            reused: result.reused,
+        })),
+        Err(_) if cancel.load(Ordering::Acquire) => emit(Event::Cancelled),
+        Err(error) => emit(Event::Failed(format!("{error:#}"))),
+    }
+}
+
 pub struct ResourceDownloadSource {
     pub url: String,
     pub bytes: u64,
@@ -59,7 +123,7 @@ pub fn download(
     download_with(source, output, &HttpsDownloader, cancel, observer)
 }
 
-/// 只有 CLI 提供来源；桌面宿主不接受任意 URL，测试可以替换传输。
+/// 显式 CLI 或桌面提交来源；测试可以替换传输。
 pub fn download_with(
     source: &ResourceDownloadSource,
     output: &Path,

@@ -23,6 +23,7 @@
       "../../../resources/catalog/": "resources/catalog/",
       "../../../resources/generated/mail/": "resources/generated/mail/",
       "../../../resources/generated/map-preview/": "resources/generated/map-preview/",
+      "../../../resources/generated/coffee-run/": "resources/generated/coffee-run/",
       "../../../resources/sdk-manifest.json": "resources/sdk-manifest.json",
       "../../../resources/licenses/": "licenses/",
       "../../../LICENSE": "licenses/project.LICENSE",

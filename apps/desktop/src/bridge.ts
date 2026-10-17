@@ -1,5 +1,5 @@
 import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
-import type { ApiError, Command, DesktopUpdate, Payload, DesktopRuntimeResources, RuntimeResourceRequest } from './generated/protocol';
+import type { ApiError, Command, DesktopUpdate, Payload, DesktopRuntimeResources, RuntimeResourceRequest, RuntimeDownloadSource } from './generated/protocol';
 
 export const desktop = isTauri();
 
@@ -40,9 +40,24 @@ export async function pickRuntimeResourceArchive(): Promise<string | null> {
   return invoke<string | null>('pick_runtime_resource_archive');
 }
 
+export async function pickConfigImportSource(): Promise<string | null> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke<string | null>('pick_config_import_source');
+}
+
 export async function startRuntimeResourceJob(request: RuntimeResourceRequest): Promise<DesktopRuntimeResources> {
   if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
   return invoke<DesktopRuntimeResources>('start_runtime_resource_job', { request });
+}
+
+export async function startRuntimeResourceDownload(source: RuntimeDownloadSource): Promise<DesktopRuntimeResources> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke<DesktopRuntimeResources>('start_runtime_resource_download', { source });
+}
+
+export async function cancelRuntimeResourceDownload(id: string): Promise<DesktopRuntimeResources> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke<DesktopRuntimeResources>('cancel_runtime_resource_download', { id });
 }
 
 export function errorMessage(error: unknown): string {

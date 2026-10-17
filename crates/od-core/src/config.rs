@@ -349,6 +349,10 @@ pub fn reject_links(path: &Path) -> Result<(), ConfigError> {
 }
 
 impl ConfigStore {
+    pub(crate) fn data_directory(&self) -> &Path {
+        self.directory.parent().expect("配置目录位于数据目录内")
+    }
+
     // 引擎整个生命周期与离线导入互斥；文件句柄关闭或进程退出后自动释放。
     pub fn acquire_owner(&self) -> Result<File, ConfigError> {
         reject_links(&self.directory.join("owner.lock"))?;

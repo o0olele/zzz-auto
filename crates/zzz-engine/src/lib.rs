@@ -1,3 +1,4 @@
+pub mod coffee;
 pub mod legacy_comparison;
 pub mod mail;
 pub mod map_transport;

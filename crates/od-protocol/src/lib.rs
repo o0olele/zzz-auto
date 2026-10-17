@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v15 增加固定模型资源任务、进度及取消；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 15;
+// v17 增加旧配置预览和导入；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 17;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -72,6 +72,13 @@ pub enum Command {
     },
     RetryRunSave,
     AccountConfig,
+    PreviewConfigImport {
+        source: String,
+    },
+    ApplyConfigImport {
+        source: String,
+        preview_id: String,
+    },
     UpdateAccountConfig {
         revision: u32,
         change: od_core::config::ConfigChange,
@@ -83,6 +90,11 @@ pub enum Command {
     },
     StartMap {
         config: od_core::map_transport::MapConfig,
+        #[serde(default)]
+        allow_input: bool,
+    },
+    StartCoffee {
+        config: od_core::coffee_run::CoffeeConfig,
         #[serde(default)]
         allow_input: bool,
     },
@@ -132,6 +144,7 @@ pub enum Payload {
     GroupPlan(od_core::run_plan::GroupPlan),
     RunHistory(od_core::run_history::RunHistory),
     AccountConfig(od_core::config::AccountConfig),
+    ConfigImportPreview(od_core::config_import::ImportPreview),
     Snapshot(Box<Snapshot>),
     Applications(Vec<AppDefinition>),
     Windows(Vec<WindowInfo>),

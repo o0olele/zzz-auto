@@ -146,6 +146,12 @@ impl RecoveryJournal {
                         .mail
                         .as_ref()
                         .is_some_and(|result| result.inputs_released)
+            } else if plan.version == 4 {
+                run.app_id == "prototype.coffee"
+                    && run
+                        .coffee
+                        .as_ref()
+                        .is_some_and(|result| result.inputs_released)
             } else if plan.version == 3 {
                 run.app_id == "prototype.map_transport"
                     && run

@@ -17,6 +17,8 @@ try {
     if (-not $mailCheck.valid -or $mailCheck.engine_version -ne $config.version) { throw '发布引擎版本或邮件资源无效，请重新构建。' }
     & ./target/release/zzz-engine.exe --root $projectRoot map-bundle-check --bundle resources/generated/map-preview
     if ($LASTEXITCODE -ne 0) { throw '地图资源校验失败，请先完成当前源码的 release 构建及 map-bundle 生成。' }
+    & ./target/release/zzz-engine.exe --root $projectRoot coffee-run-bundle-check --bundle resources/generated/coffee-run
+    if ($LASTEXITCODE -ne 0) { throw '咖啡资源校验失败，请先完成当前源码的 release 构建及 coffee-run-bundle 生成。' }
     $packageName = "zzz-auto-$($config.version)-windows-x64-prototype"
     $stagingParent = Join-Path $projectRoot ("target/portable-" + [guid]::NewGuid().ToString('N'))
     $staging = Join-Path $stagingParent $packageName
@@ -27,7 +29,7 @@ try {
     Copy-Item -LiteralPath target/release/zzz-engine.exe -Destination (Join-Path $staging 'zzz-auto-engine.exe')
     Copy-Item -LiteralPath resources/sdk-manifest.json -Destination (Join-Path $staging 'resources/sdk-manifest.json')
     Copy-Item -LiteralPath sdk.lock.json -Destination (Join-Path $staging 'sdk.lock.json')
-    foreach ($resourceFolder in @('resources/pipeline', 'resources/catalog', 'resources/generated/mail', 'resources/generated/map-preview')) {
+    foreach ($resourceFolder in @('resources/pipeline', 'resources/catalog', 'resources/generated/mail', 'resources/generated/map-preview', 'resources/generated/coffee-run')) {
         $sourceFolder = Join-Path $projectRoot $resourceFolder
         foreach ($file in (Get-ChildItem -LiteralPath $sourceFolder -File -Recurse)) {
             $relative = $file.FullName.Substring($sourceFolder.Length + 1)
@@ -48,6 +50,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '复制后的邮件资源包校验失败，已停止打包。' }
     & (Join-Path $staging 'zzz-auto-engine.exe') --root $staging map-bundle-check --bundle (Join-Path $staging 'resources/generated/map-preview')
     if ($LASTEXITCODE -ne 0) { throw '复制后的地图资源包校验失败，已停止打包。' }
+    & (Join-Path $staging 'zzz-auto-engine.exe') --root $staging coffee-run-bundle-check --bundle (Join-Path $staging 'resources/generated/coffee-run')
+    if ($LASTEXITCODE -ne 0) { throw '复制后的咖啡资源包校验失败，已停止打包。' }
     foreach ($binary in $sdkManifest.binaries) {
         $path = Join-Path (Join-Path $projectRoot 'sdk/maa/bin') $binary.path
         if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $binary.sha256) { throw "SDK 文件校验失败：$($binary.path)" }
@@ -92,6 +96,7 @@ try {
         protocol_version = $mailCheck.protocol_version
         mail_resources = [ordered]@{ path = 'resources/generated/mail'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/mail/mail-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         map_resources = [ordered]@{ path = 'resources/generated/map-preview'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/map-preview/map-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
+        coffee_resources = [ordered]@{ path = 'resources/generated/coffee-run'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/coffee-run/coffee-run-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         files = $manifestFiles
     }
     [IO.File]::WriteAllText((Join-Path $staging 'release-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))

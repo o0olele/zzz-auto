@@ -1,4 +1,6 @@
 mod coffee;
+mod coffee_run;
+pub use coffee_run::{CoffeeRunObservation, validate_coffee_run_bundle};
 mod events;
 mod fixture;
 pub mod flash;
@@ -114,6 +116,7 @@ pub struct NativeSession {
     inference_gate: Mutex<()>,
     resource_root: PathBuf,
     map_bundle: Option<PathBuf>,
+    coffee_bundle: Option<PathBuf>,
     inference_device: InferenceDevice,
     raw_cpu_threads: usize,
     controller: fixture::NativeController,
@@ -253,6 +256,7 @@ impl NativeSession {
             inference_gate: Mutex::new(()),
             resource_root: path,
             map_bundle: None,
+            coffee_bundle: None,
             inference_device: device,
             raw_cpu_threads: raw_inference::DEFAULT_RAW_CPU_THREADS,
             controller,

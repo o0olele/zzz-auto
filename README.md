@@ -59,11 +59,11 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 
 桌面“通用设置”可保存默认截图方式、邮件超时和启动 / 继续延时。设置由 Rust 与账号配置一同持久保存，应用组预览显示实际参数，开始时由引擎核对修订并读取。原生诊断可临时调整；完整用法与旧截图配置导入范围见[通用运行设置](docs/develop/general-settings.md)。账号区服、按日跳过及游戏日过期处理见[应用组每日计划](docs/develop/daily-runs.md)。
 
-当前协议为 v15，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline、地图传送试运行、应用组邮件试运行、账号历史及模型资源任务。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
+当前协议为 v17，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline、地图与咖啡点单试运行、应用组邮件试运行、账号历史及模型资源任务。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
 
-咖啡已有只读区域转换和离线截图检查，应用组邮件入口已有顺序调度状态及分项进度。咖啡实际点单和多个游戏应用交接仍待后态素材与实机验证，使用方法与缺口见[咖啡识别与顺序调度](docs/develop/coffee-and-groups.md)。
+咖啡已根据澄辉坪真实截图接通“原生诊断 → 咖啡点单试运行”：手动交互到点单选项，选择汀曼特调或浓缩咖啡，自动等待喝完、确认电量和对应增益并返回大世界。先更新桌面与引擎；若当前启用旧邮件地图包，须安装并启用包含咖啡的新资源包。自动测试已通过，实机待验收，结果只保存为诊断记录；应用组仍只运行邮件。步骤与资源校验值见[咖啡点单与顺序调度](docs/develop/coffee-and-groups.md)。
 
-咖啡前置的“澄辉坪 → 汀曼咖啡”已接入“原生诊断 → 地图传送试运行”。先按 N 打开普通地图，确认本次路线后启动，在延时期间切回游戏；暂停保留检查点，继续前重新识别，停止等待输入释放。地图与其他任务共用运行槽及崩溃输入恢复，结果只保存为诊断记录。`map-bundle` 生成 v2 资源，`map-bundle-check` 校验资源，`map-inspect` 只读检查留档；命令、资源准备及实机待验项见[地图传送说明](docs/develop/map-transport.md)。
+咖啡前置的“澄辉坪 → 汀曼咖啡”已接入“原生诊断 → 地图传送试运行”，2026 年 10 月 17 日获正常传送流程实机通过反馈，暂停、停止及异常恢复等边界继续待验收。先按 N 打开普通地图，确认本次路线后启动，在延时期间切回游戏；暂停保留检查点，继续前重新识别，停止等待输入释放。地图与其他任务共用运行槽及崩溃输入恢复，结果只保存为诊断记录。`map-bundle` 生成 v2 资源，`map-bundle-check` 校验资源，`map-inspect` 只读检查留档；命令、资源准备及实机待验项见[地图传送说明](docs/develop/map-transport.md)。
 
 桌面在发送真实输入探针或输入 Pipeline 前，把恢复计划写入数据目录的 `input-recovery.json`。引擎崩溃、应答丢失或收尾未确认时会阻止重连，请点击“恢复遗留输入”：确认旧进程退出后，由独立进程只发送对应释放；原管理员引擎可能需要再次授权 Windows。恢复后先确认游戏状态，再手动重连，不自动重放任务。桌面重启也保留拦截；失败或取消授权不会清除记录。当前覆盖桌面托管的单次输入、受控 Pipeline、邮件及地图试运行，CLI 和未来业务 Pipeline 须单独接入。真实游戏、跨权限释放与 ViGEm 卸载仍需实机验收，见[实现说明](docs/develop/implementation.md#m1-崩溃后的独立输入恢复)。
 
@@ -71,7 +71,7 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 
 ## 离线模型对照
 
-桌面“模型资源”页可检查固定模型、准备所选项、离线复用、查看进度及取消任务，缓存位于引擎数据目录的 `model-cache/`。任务离开页面后继续，退出或失联时取消；下载完成暂不切换游戏使用的资源包。CLI 的 `cargo run -p zzz-engine --locked -- model-resources status` 只读检查开发缓存，`model-resources prepare` 下载并校验，`--offline` 只用本地缓存，`--model ppocrv5` 可选择模型，`--cache` 可指定与桌面相同的目录。完整用法与范围见[模型资源管理](docs/develop/model-resources.md)。桌面“运行资源”可选择本地 ZIP、填写发布方 SHA-256 后检查并安装，再另行启用或回滚；安装与切换会重连普通权限引擎。原生 CLI `runtime-resources download` 可使用显式 HTTPS 地址、预期字节数和 SHA-256 下载并完整检查 ZIP，支持取消和已完成文件复用；桌面联网发现与签名发布继续待办，详见[运行资源包](docs/develop/runtime-resources.md)。
+桌面“模型资源”页可检查固定模型、准备所选项、离线复用、查看进度及取消任务，缓存位于引擎数据目录的 `model-cache/`。任务离开页面后继续，退出或失联时取消；下载完成暂不切换游戏使用的资源包。CLI 的 `cargo run -p zzz-engine --locked -- model-resources status` 只读检查开发缓存，`model-resources prepare` 下载并校验，`--offline` 只用本地缓存，`--model ppocrv5` 可选择模型，`--cache` 可指定与桌面相同的目录。完整用法与范围见[模型资源管理](docs/develop/model-resources.md)。桌面“运行资源”可选择本地 ZIP、填写发布方 SHA-256 后检查并安装，也可填写显式 HTTPS 地址、预期字节数和 SHA-256 下载并完整校验，支持进度、取消、缓存复用和切页恢复。下载后点击安装，再另行启用或回滚；安装与切换会重连普通权限引擎。CLI `runtime-resources download` 保留相同下载能力；联网版本发现与签名发布继续待办，详见[运行资源包](docs/develop/runtime-resources.md)。
 
 准备固定的旧版 PP-OCRv5、闪光及两种 YOLO 模型，再运行同一批固定图的 CPU / DirectML 对照：
 
@@ -122,7 +122,7 @@ cargo run -p zzz-engine --locked -- --resources resources/generated/recognition 
 
 ## 工程与数据
 
-已转换的邮件、地图及基础运行资源可由原生 CLI 打成独立版本包，校验本地 ZIP 后安装。桌面“运行资源”页可刷新已安装版本，预检后退出并重启引擎以启用或回滚；同样保留离线 CLI 入口。用法见[运行资源包](docs/develop/runtime-resources.md)。完整包联网下载与签名发布继续待实现。
+已转换的邮件、地图、咖啡及基础运行资源可由原生 CLI 打成独立版本包，通过显式 HTTPS 下载或选择本地 ZIP 安装。桌面“运行资源”页可刷新已安装版本，预检后退出并重启引擎以启用或回滚；同样保留离线 CLI 入口。用法见[运行资源包](docs/develop/runtime-resources.md)。联网版本发现与签名发布继续待实现。
 
 已增加旧版闪光、OCR 和 YOLO 实际输出采样及纯 Rust 的 `recognition-compare` 命令，支持核对同一批固定图的概率、候选、文字、框与分数；OCR 同时比较过滤前结果。旧版采样环境单独放在忽略的 SDK 缓存中，仅用于迁移取证；新程序和正式回归不依赖 Python。命令见[闪光旧版输出说明](docs/develop/recognition-validation.md#旧版实际输出与自动比较)及 [OCR / YOLO 对照说明](docs/develop/recognition-validation.md#ocr-与-yolo-旧版对照)。比较结果与人工标注分别报告，不能把新旧共有的漏检当成人工预期通过。
 

@@ -1,7 +1,9 @@
+use crate::coffee::CoffeeRun;
 use crate::mail::{MailRun, MailState};
 use crate::map_transport::{MapRun, MapState};
 use chrono::Utc;
 use maa_adapter::{CaptureMethod, InferenceDevice, InputMode, NativeSession};
+use od_core::coffee_run::{CoffeeConfig, CoffeeState};
 use od_core::config::{ConfigError, ConfigStore};
 use od_core::daily::{GameDay, RunPolicy};
 use od_core::map_transport::MapConfig;
@@ -85,6 +87,7 @@ impl State {
 enum Work {
     Mail(MailWork),
     Map(MapWork),
+    Coffee(CoffeeWork),
     PipelineControl(Uuid, bool),
     Attach(
         String,
@@ -104,6 +107,20 @@ enum Work {
     Shutdown(oneshot::Sender<()>),
 }
 
+// 即使请求方断线或取消等待，也要等文件工作结束后再开放任务。
+struct ConfigImportGuard {
+    state: Arc<Mutex<State>>,
+    _owner: Arc<std::fs::File>,
+}
+
+impl Drop for ConfigImportGuard {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.native_pending = false;
+        }
+    }
+}
+
 struct MailWork {
     fixture: bool,
     run: Box<MailRun>,
@@ -117,6 +134,16 @@ struct MailWork {
 struct MapWork {
     fixture: bool,
     run: Box<MapRun>,
+    window: WindowInfo,
+    capture: CaptureMethod,
+    prepared: bool,
+    events: Option<maa_adapter::PipelineEvents>,
+    dropped: u64,
+}
+
+struct CoffeeWork {
+    fixture: bool,
+    run: Box<CoffeeRun>,
     window: WindowInfo,
     capture: CaptureMethod,
     prepared: bool,
@@ -415,6 +442,10 @@ impl Engine {
                 .read()
                 .map(Payload::AccountConfig)
                 .map_err(config_error),
+            Command::PreviewConfigImport { source } => self.import_config(source, None).await,
+            Command::ApplyConfigImport { source, preview_id } => {
+                self.import_config(source, Some(preview_id)).await
+            }
             Command::UpdateAccountConfig { revision, change } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 if state.native_pending
@@ -444,6 +475,10 @@ impl Engine {
                 config,
                 allow_input,
             } => self.start_map(config, allow_input),
+            Command::StartCoffee {
+                config,
+                allow_input,
+            } => self.start_coffee(config, allow_input),
             Command::Pause { run_id } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 let record = state
@@ -463,7 +498,7 @@ impl Engine {
                     .filter(|run| {
                         run.id == run_id
                             && run.state == RunState::Paused
-                            && (run.mail.is_some() || run.map.is_some())
+                            && (run.mail.is_some() || run.map.is_some() || run.coffee.is_some())
                     })
                     .ok_or_else(|| {
                         ApiError::new("invalid_run_state", "只有已确认暂停的流程可以继续")
@@ -819,6 +854,75 @@ impl Engine {
         Ok(Payload::Run(record))
     }
 
+    fn start_coffee(&self, config: CoffeeConfig, allow_input: bool) -> Result<Payload, ApiError> {
+        if !allow_input {
+            return Err(ApiError::new(
+                "input_not_confirmed",
+                "咖啡点单会操作游戏，请先确认本次咖啡",
+            ));
+        }
+        config
+            .validate()
+            .map_err(|error| ApiError::new("invalid_input", error))?;
+        let mut state = self.state.lock().expect("运行状态锁失效");
+        if state.record_error.is_some() {
+            return Err(ApiError::new(
+                "history_error",
+                "请先修复目录并重试保存运行记录",
+            ));
+        }
+        if !state.sdk.ready {
+            return Err(ApiError::new("sdk_not_ready", state.sdk.message.clone()));
+        }
+        let window = state
+            .window
+            .clone()
+            .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
+        if state.native_pending {
+            return Err(ApiError::new("busy", "原生请求尚未完成"));
+        }
+        let record = state
+            .slot
+            .begin_coffee(config)
+            .map_err(|error| ApiError::new("busy", error))?;
+        let run = CoffeeRun::with_id(record.id, config).map_err(native_error)?;
+        let control = run.control();
+        let work = CoffeeWork {
+            fixture: self.fixture,
+            run: Box::new(run),
+            window,
+            capture: state.capture_method.unwrap_or_default(),
+            prepared: false,
+            events: None,
+            dropped: 0,
+        };
+        if self.sender.try_send(Work::Coffee(work)).is_err() {
+            let mut progress = record.coffee.clone().expect("咖啡进度已创建");
+            progress.state = CoffeeState::Failed;
+            progress.inputs_released = true;
+            if let Ok(failed) =
+                state
+                    .slot
+                    .update_coffee(record.id, progress, "工作线程不可用，未投递输入".into())
+                && let Err(error) = self.history.save(&failed)
+            {
+                state.failed_save = Some(failed);
+                state.record_error = Some(format!("咖啡结果保存失败：{error}"));
+            }
+            return Err(ApiError::new(
+                "worker_unavailable",
+                "工作线程无法接收咖啡任务",
+            ));
+        }
+        state.pipeline_control = Some(control);
+        state.event(
+            Some(record.id),
+            "info",
+            "开始咖啡试运行：请先手动打开澄辉坪咖啡点单选项，并在延时内切回游戏".into(),
+        );
+        Ok(Payload::Run(record))
+    }
+
     fn start_input(
         &self,
         config: InputProbeConfig,
@@ -896,6 +1000,72 @@ impl Engine {
             ),
         );
         Ok(Payload::Run(record))
+    }
+
+    async fn import_config(
+        &self,
+        source: String,
+        preview_id: Option<String>,
+    ) -> Result<Payload, ApiError> {
+        {
+            let mut state = self.state.lock().expect("运行状态锁失效");
+            if state.slot.busy() || state.native_pending {
+                return Err(ApiError::new(
+                    "busy",
+                    "请先停止任务并等待输入收尾，再导入配置",
+                ));
+            }
+            if state.record_error.is_some() {
+                return Err(ApiError::new("history_error", "请先重试保存运行记录"));
+            }
+            if state.slot.current().is_some_and(|run| {
+                run.mail
+                    .as_ref()
+                    .is_some_and(|value| !value.inputs_released)
+                    || run.map.as_ref().is_some_and(|value| !value.inputs_released)
+                    || run
+                        .coffee
+                        .as_ref()
+                        .is_some_and(|value| !value.inputs_released)
+                    || run
+                        .input_probe
+                        .as_ref()
+                        .is_some_and(|value| !value.released)
+                    || run
+                        .input_pipeline
+                        .as_ref()
+                        .is_some_and(|value| !value.pipeline.released)
+            }) {
+                return Err(ApiError::new(
+                    "input_recovery_required",
+                    "输入尚未确认释放，请先恢复遗留输入",
+                ));
+            }
+            state.native_pending = true;
+        }
+        let pending = ConfigImportGuard {
+            state: self.state.clone(),
+            _owner: self._config_owner.clone(),
+        };
+        let store = self.config.clone();
+        tokio::task::spawn_blocking(move || {
+            let _pending = pending;
+            let source = PathBuf::from(source);
+            let result = match preview_id {
+                Some(id) => store.apply_import(&source, &id).map(Payload::AccountConfig),
+                None => store
+                    .preview_import(&source)
+                    .map(Payload::ConfigImportPreview),
+            };
+            result.map_err(|error| ApiError::new("config_import_failed", error.to_string()))
+        })
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                "config_import_failed",
+                "配置导入线程异常退出，请重新读取配置确认结果",
+            )
+        })?
     }
 
     async fn native_request(
@@ -988,15 +1158,37 @@ fn worker(
     }
     let mut paused_mail: Option<MailWork> = None;
     let mut paused_map: Option<MapWork> = None;
+    let mut paused_coffee: Option<CoffeeWork> = None;
     for command in receiver {
         match command {
             Work::Mail(work) => {
                 paused_mail = run_mail_work(work, &paths, &state, &mut native);
             }
+            Work::Coffee(work) => {
+                paused_coffee = run_coffee_work(work, &paths, &state, &mut native);
+            }
             Work::Map(work) => {
                 paused_map = run_map_work(work, &paths, &state, &mut native);
             }
             Work::PipelineControl(id, resume) => {
+                if paused_coffee.as_ref().is_some_and(|work| work.run.id == id) {
+                    let mut work = paused_coffee.take().expect("已有暂停咖啡任务");
+                    if resume
+                        && work.run.interrupt_requested()
+                            != Some(od_core::pipeline::Interrupt::Stop)
+                    {
+                        if let Err(error) = work.run.resume()
+                            && work.run.interrupt_requested()
+                                != Some(od_core::pipeline::Interrupt::Stop)
+                        {
+                            work.run.progress.state = CoffeeState::Failed;
+                            work.run.message = format!("{error:#}");
+                        }
+                    } else {
+                        work.run.control().stop();
+                    }
+                    paused_coffee = run_coffee_work(work, &paths, &state, &mut native);
+                }
                 if paused_map.as_ref().is_some_and(|work| work.run.id == id) {
                     let mut work = paused_map.take().expect("已有暂停地图任务");
                     if resume
@@ -1318,6 +1510,10 @@ fn worker(
                 state.cancel = None;
             }
             Work::Shutdown(reply) => {
+                if let Some(work) = paused_coffee.take() {
+                    work.run.control().stop();
+                    let _ = run_coffee_work(work, &paths, &state, &mut native);
+                }
                 if let Some(work) = paused_map.take() {
                     work.run.control().stop();
                     let _ = run_map_work(work, &paths, &state, &mut native);
@@ -1335,6 +1531,10 @@ fn worker(
     if let Some(work) = paused_mail.take() {
         work.run.control().stop();
         let _ = run_mail_work(work, &paths, &state, &mut native);
+    }
+    if let Some(work) = paused_coffee.take() {
+        work.run.control().stop();
+        let _ = run_coffee_work(work, &paths, &state, &mut native);
     }
     if let Some(work) = paused_map.take() {
         work.run.control().stop();
@@ -1455,6 +1655,127 @@ fn run_map_work(
         );
     }
     if work.run.state == MapState::Paused {
+        Some(work)
+    } else {
+        state.pipeline_control = None;
+        None
+    }
+}
+
+fn run_coffee_work(
+    mut work: CoffeeWork,
+    paths: &EnginePaths,
+    shared: &Arc<Mutex<State>>,
+    native: &mut Option<NativeSession>,
+) -> Option<CoffeeWork> {
+    let result = (|| -> anyhow::Result<()> {
+        if work.run.progress.state.is_terminal() {
+            return Ok(());
+        }
+        if !work.prepared && work.fixture {
+            work.events = Some(
+                native
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("离线咖啡控制器未准备"))?
+                    .pipeline_events(EVENT_CAPACITY)?,
+            );
+            work.prepared = true;
+        }
+        if !work.prepared {
+            if work.run.interrupt_requested().is_some() {
+                if let Some(controller) = native.as_mut() {
+                    controller.release_inputs()?;
+                }
+                work.run.acknowledge_idle();
+                return Ok(());
+            }
+            let bundle = maa_adapter::validate_coffee_run_bundle(
+                &paths.resources.join("generated/coffee-run"),
+            )?;
+            if let Some(controller) = native.as_mut() {
+                controller.release_inputs()?;
+            }
+            native.take();
+            let current = od_platform::parse_game_window(&work.window.hwnd)?;
+            anyhow::ensure!(
+                current.pid == work.window.pid && current.width == 1920 && current.height == 1080,
+                "游戏窗口身份或尺寸已变化，请重连"
+            );
+            let mut controller = NativeSession::for_game(
+                &current,
+                &paths.resources,
+                work.capture,
+                InputMode::Foreground,
+                InferenceDevice::Cpu,
+            )?;
+            controller.load_coffee_run_bundle(&bundle)?;
+            work.events = Some(controller.pipeline_events(EVENT_CAPACITY)?);
+            *native = Some(controller);
+            work.prepared = true;
+        }
+        let controller = native
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("咖啡控制器未连接"))?;
+        let id = work.run.id;
+        let events = work.events.as_ref();
+        let publish = |progress| {
+            let mut state = shared.lock().expect("运行状态锁失效");
+            if let Some(events) = events {
+                for event in events.receiver.try_iter() {
+                    state.event(
+                        Some(id),
+                        "debug",
+                        format!("{} {}", event.message, event.node.as_deref().unwrap_or("")),
+                    );
+                }
+            }
+            let _ = state
+                .slot
+                .update_coffee(id, progress, "咖啡点单试运行中".into());
+        };
+        if work.fixture {
+            work.run.execute(controller, false, publish)
+        } else {
+            work.run.execute(controller, true, publish)
+        }
+    })();
+    if let Err(error) = result {
+        work.run.progress.state = CoffeeState::Failed;
+        work.run.message = format!("咖啡流程失败：{error:#}");
+        work.run.progress.inputs_released = native
+            .as_mut()
+            .is_none_or(|controller| controller.release_inputs().is_ok());
+    }
+    let mut state = shared.lock().expect("运行状态锁失效");
+    if let Some(events) = &work.events {
+        for event in events.receiver.try_iter() {
+            state.event(
+                Some(work.run.id),
+                "debug",
+                format!("{} {}", event.message, event.node.as_deref().unwrap_or("")),
+            );
+        }
+        let dropped = events.dropped();
+        state.dropped += dropped.saturating_sub(work.dropped);
+        work.dropped = dropped;
+    }
+    if let Ok(record) = state.slot.update_coffee(
+        work.run.id,
+        work.run.progress.clone(),
+        work.run.message.clone(),
+    ) {
+        save_run(paths, &mut state, &record);
+        state.event(
+            Some(record.id),
+            if record.state == RunState::Failed {
+                "error"
+            } else {
+                "info"
+            },
+            record.message,
+        );
+    }
+    if work.run.progress.state == CoffeeState::Paused {
         Some(work)
     } else {
         state.pipeline_control = None;

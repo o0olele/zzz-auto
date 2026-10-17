@@ -19,6 +19,9 @@ if (release) {
   cargo(['run', '--locked', '-p', 'od-tools', '--', 'map-bundle', '--reference',
     process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 }
+// 咖啡试运行依赖新提供的模板与固定 Pipeline，开发启动也同步生成。
+cargo(['run', '--locked', '-p', 'od-tools', '--', 'coffee-run-bundle', '--reference',
+  process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['build', '--locked', '-p', 'zzz-engine', ...(release ? ['--release'] : [])]);
 if (release) {
   const check = spawnSync(path.join(root, 'target/release/zzz-engine.exe'),
@@ -29,6 +32,10 @@ if (release) {
     ['--root', root, 'map-bundle-check', '--bundle', path.join(root, 'resources/generated/map-preview')], { cwd: root, stdio: 'inherit', shell: false });
   if (mapCheck.error) throw mapCheck.error;
   if (mapCheck.status !== 0) process.exit(mapCheck.status ?? 1);
+  const coffeeCheck = spawnSync(path.join(root, 'target/release/zzz-engine.exe'),
+    ['--root', root, 'coffee-run-bundle-check', '--bundle', path.join(root, 'resources/generated/coffee-run')], { cwd: root, stdio: 'inherit', shell: false });
+  if (coffeeCheck.error) throw coffeeCheck.error;
+  if (coffeeCheck.status !== 0) process.exit(coffeeCheck.status ?? 1);
 }
 const destination = path.join(root, 'apps/desktop/src-tauri/binaries');
 mkdirSync(destination, { recursive: true });

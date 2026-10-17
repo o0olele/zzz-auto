@@ -1,17 +1,23 @@
 use crate::session::{EngineSession, offline, recovery::RecoveryJournal, require_idle};
 use od_core::runtime_resources::{
-    DesktopRuntimeResources, RuntimeResourceCatalog, RuntimeResourceJob, RuntimeResourceJobState,
-    RuntimeResourceRequest,
+    DesktopRuntimeResources, RuntimeDownloadSource, RuntimeResourceCatalog, RuntimeResourceJob,
+    RuntimeResourceJobState, RuntimeResourceRequest,
 };
 use od_platform::DesktopLayout;
 use od_protocol::{ApiError, Command, Payload};
 use std::{
     os::windows::process::CommandExt,
     process::Command as ProcessCommand,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tokio::sync::{Mutex as AsyncMutex, watch};
 use uuid::Uuid;
+
+#[path = "resource_download.rs"]
+mod download;
 
 pub fn require_switchable(snapshot: Payload) -> Result<(), ApiError> {
     require_idle(snapshot.clone())?;
@@ -48,6 +54,7 @@ pub type SharedSession = Arc<AsyncMutex<Option<EngineSession>>>;
 struct State {
     snapshot: DesktopRuntimeResources,
     closed: bool,
+    cancel: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -55,18 +62,21 @@ pub struct ResourceManager {
     state: Arc<Mutex<State>>,
     done: watch::Sender<bool>,
     session: SharedSession,
+    runtime: tokio::runtime::Handle,
 }
 
 impl ResourceManager {
-    pub fn new(session: SharedSession) -> Self {
+    pub fn new(session: SharedSession, runtime: tokio::runtime::Handle) -> Self {
         let (done, _) = watch::channel(true);
         Self {
             state: Arc::new(Mutex::new(State {
                 snapshot: DesktopRuntimeResources::default(),
                 closed: false,
+                cancel: Arc::new(AtomicBool::new(false)),
             })),
             done,
             session,
+            runtime,
         }
     }
 
@@ -104,6 +114,38 @@ impl ResourceManager {
         layout: DesktopLayout,
         request: RuntimeResourceRequest,
     ) -> Result<DesktopRuntimeResources, ApiError> {
+        if matches!(request, RuntimeResourceRequest::Download { .. }) {
+            return Err(ApiError::new(
+                "invalid_resources",
+                "请使用下载入口提交完整资源包信息",
+            ));
+        }
+        self.begin(layout, request, None)
+    }
+
+    pub fn start_download(
+        &self,
+        layout: DesktopLayout,
+        source: RuntimeDownloadSource,
+    ) -> Result<DesktopRuntimeResources, ApiError> {
+        od_platform::download::validate_https_url(&source.url)
+            .map_err(|error| ApiError::new("invalid_resources", error.to_string()))?;
+        self.begin(
+            layout,
+            RuntimeResourceRequest::Download {
+                bytes: source.bytes,
+                sha256: source.sha256.clone(),
+            },
+            Some(source),
+        )
+    }
+
+    fn begin(
+        &self,
+        layout: DesktopLayout,
+        request: RuntimeResourceRequest,
+        source: Option<RuntimeDownloadSource>,
+    ) -> Result<DesktopRuntimeResources, ApiError> {
         request
             .validate()
             .map_err(|error| ApiError::new("invalid_resources", error))?;
@@ -113,7 +155,7 @@ impl ResourceManager {
                 .snapshot
                 .job
                 .as_ref()
-                .is_some_and(|job| job.state == RuntimeResourceJobState::Running)
+                .is_some_and(|job| !job.state.is_terminal())
         {
             return Err(ApiError::new(
                 "resource_busy",
@@ -128,11 +170,49 @@ impl ResourceManager {
             reconnected: false,
             error: None,
             error_code: None,
+            progress: None,
+            downloaded: None,
         });
+        state.cancel = Arc::new(AtomicBool::new(false));
+        let cancel = state.cancel.clone();
         let initial = state.snapshot.clone();
         self.done.send_replace(false);
         let manager = self.clone();
-        tokio::spawn(async move {
+        // 同步 Tauri 命令可以来自没有 Tokio 上下文的 UI 线程。
+        self.runtime.spawn(async move {
+            if let Some(source) = source {
+                let worker = manager.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    download::run(&layout, &source, &cancel, |progress| {
+                        let mut state = worker.state.lock().expect("资源管理状态锁失效");
+                        if let Some(job) = &mut state.snapshot.job {
+                            job.phase = progress.phase.clone();
+                            job.progress = Some(progress);
+                        }
+                    })
+                })
+                .await
+                .map_err(offline)
+                .and_then(|result| result);
+                let mut state = manager.state.lock().expect("资源管理状态锁失效");
+                if let Some(job) = &mut state.snapshot.job {
+                    job.phase = "finished".into();
+                    match result {
+                        Ok(Some(archive)) => {
+                            job.downloaded = Some(archive);
+                            job.state = RuntimeResourceJobState::Succeeded;
+                        }
+                        Ok(None) => job.state = RuntimeResourceJobState::Cancelled,
+                        Err(error) => {
+                            job.state = RuntimeResourceJobState::Failed;
+                            job.error = Some(error.message);
+                            job.error_code = Some(error.code);
+                        }
+                    }
+                }
+                manager.done.send_replace(true);
+                return;
+            }
             let result = if request.requires_engine_exit() {
                 manager.change(&layout, &request).await
             } else {
@@ -167,6 +247,23 @@ impl ResourceManager {
             manager.done.send_replace(true);
         });
         Ok(initial)
+    }
+
+    pub fn cancel_download(&self, id: Uuid) -> Result<DesktopRuntimeResources, ApiError> {
+        let mut state = self.state.lock().expect("资源管理状态锁失效");
+        let job = state
+            .snapshot
+            .job
+            .as_mut()
+            .filter(|job| {
+                job.id == id && matches!(job.request, RuntimeResourceRequest::Download { .. })
+            })
+            .ok_or_else(|| ApiError::new("resource_job_changed", "下载任务已变化，请刷新后重试"))?;
+        if !job.state.is_terminal() {
+            job.state = RuntimeResourceJobState::Cancelling;
+            state.cancel.store(true, Ordering::Release);
+        }
+        Ok(state.snapshot.clone())
     }
 
     fn phase(&self, phase: &str) {
@@ -277,7 +374,11 @@ impl ResourceManager {
 
     pub async fn close_and_wait(&self) {
         let mut done = self.done.subscribe();
-        self.state.lock().expect("资源管理状态锁失效").closed = true;
+        {
+            let mut state = self.state.lock().expect("资源管理状态锁失效");
+            state.closed = true;
+            state.cancel.store(true, Ordering::Release);
+        }
         while !*done.borrow_and_update() {
             if done.changed().await.is_err() {
                 break;
@@ -320,6 +421,7 @@ async fn helper(
             Some(RuntimeResourceRequest::Rollback { revision }) => {
                 command.args(["--rollback", "--revision", &revision]);
             }
+            Some(RuntimeResourceRequest::Download { .. }) => return Err(offline("下载入口无效")),
             Some(RuntimeResourceRequest::Refresh) | None => {}
         }
         let output = command.output().map_err(offline)?;

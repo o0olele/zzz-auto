@@ -12,6 +12,14 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    CoffeeRunBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/coffee-run")]
+        output: PathBuf,
+    },
     MapBundle {
         #[arg(long)]
         reference: PathBuf,
@@ -87,6 +95,15 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::CoffeeRunBundle {
+            reference,
+            models,
+            output,
+        } => {
+            od_tools::coffee_run::build_bundle(&reference, &models, &output)?;
+            println!("已生成咖啡试运行资源：{}", output.display());
+            Ok(())
+        }
         Tool::MapBundle {
             reference,
             models,
@@ -180,6 +197,8 @@ fn main() -> Result<()> {
                 od_core::config::AccountInstance::decl(),
                 od_core::config::AccountConfig::decl(),
                 od_core::config::ConfigChange::decl(),
+                od_core::config_import::ImportFile::decl(),
+                od_core::config_import::ImportPreview::decl(),
                 od_core::AppDefinition::decl(),
                 od_core::RunState::decl(),
                 od_core::group_run::GroupStepState::decl(),
@@ -193,6 +212,11 @@ fn main() -> Result<()> {
                 od_core::map_transport::MapState::decl(),
                 od_core::map_transport::MapPhase::decl(),
                 od_core::map_transport::MapProgress::decl(),
+                od_core::coffee_run::CoffeeKind::decl(),
+                od_core::coffee_run::CoffeeConfig::decl(),
+                od_core::coffee_run::CoffeeState::decl(),
+                od_core::coffee_run::CoffeePhase::decl(),
+                od_core::coffee_run::CoffeeProgress::decl(),
                 od_core::InputMode::decl(),
                 od_core::InputSide::decl(),
                 od_core::MouseButton::decl(),
@@ -226,6 +250,9 @@ fn main() -> Result<()> {
                 od_core::runtime_resources::RuntimeResourceRequest::decl(),
                 od_core::runtime_resources::RuntimeResourceJobState::decl(),
                 od_core::runtime_resources::RuntimeResourceJob::decl(),
+                od_core::runtime_resources::RuntimeDownloadSource::decl(),
+                od_core::runtime_resources::RuntimeDownloadProgress::decl(),
+                od_core::runtime_resources::RuntimeDownloadedArchive::decl(),
                 od_core::runtime_resources::DesktopRuntimeResources::decl(),
                 od_core::Screenshot::decl(),
                 od_protocol::Command::decl(),

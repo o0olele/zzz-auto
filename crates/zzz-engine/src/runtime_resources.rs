@@ -42,6 +42,21 @@ const FILES: &[&str] = &[
     "generated/map-preview/pipeline/map.json",
     "pipeline/health.json",
 ];
+const COFFEE_FILES: &[&str] = &[
+    "generated/coffee-run/coffee-run-manifest.json",
+    "generated/coffee-run/pipeline/coffee-run.json",
+    "generated/coffee-run/image/coffee/world_function.png",
+    "generated/coffee-run/model/ocr/ppocrv5/det.onnx",
+    "generated/coffee-run/model/ocr/ppocrv5/rec.onnx",
+    "generated/coffee-run/model/ocr/ppocrv5/keys.txt",
+];
+fn resource_files(schema: u32) -> Vec<&'static str> {
+    FILES
+        .iter()
+        .chain(if schema == 2 { COFFEE_FILES } else { &[] })
+        .copied()
+        .collect()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -146,11 +161,16 @@ fn copy_hash_cancellable(
 
 fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
     ensure!(
-        manifest.schema_version == 1
+        matches!(manifest.schema_version, 1 | 2)
             && manifest.engine_version == env!("CARGO_PKG_VERSION")
             && manifest.sdk_version == maa_adapter::SDK_VERSION
             && manifest.binding_version == maa_adapter::BINDING_VERSION
-            && manifest.protocol_version == od_protocol::PROTOCOL_VERSION,
+            && (manifest.protocol_version == od_protocol::PROTOCOL_VERSION
+                || (od_protocol::PROTOCOL_VERSION == 17
+                    && matches!(
+                        (manifest.schema_version, manifest.protocol_version),
+                        (1, 15) | (2, 16)
+                    ))),
         "运行资源包与当前引擎、SDK、绑定或协议不兼容"
     );
     ensure!(
@@ -162,11 +182,12 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
                 .all(|byte| byte.is_ascii_alphanumeric() || b"-._".contains(&byte)),
         "内容版本须为 1..64 位字母、数字或 -._"
     );
+    let files = resource_files(manifest.schema_version);
     let mut paths = BTreeSet::new();
     let mut total = 0_u64;
     for file in &manifest.files {
         ensure!(
-            FILES.contains(&file.path.as_str()) && paths.insert(file.path.as_str()),
+            files.contains(&file.path.as_str()) && paths.insert(file.path.as_str()),
             "资源文件未登记或重复"
         );
         ensure!(
@@ -176,7 +197,7 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
         total += file.bytes;
     }
     ensure!(
-        paths == FILES.iter().copied().collect() && total <= MAX_ARCHIVE,
+        paths == files.iter().copied().collect() && total <= MAX_ARCHIVE,
         "运行资源包不完整或过大"
     );
     Ok(())
@@ -185,6 +206,9 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
 fn validate_semantics(root: &Path) -> Result<()> {
     maa_adapter::validate_mail_bundle(&root.join("generated/mail"))?;
     maa_adapter::validate_map_bundle(&root.join("generated/map-preview"))?;
+    if root.join("generated/coffee-run").try_exists()? {
+        maa_adapter::validate_coffee_run_bundle(&root.join("generated/coffee-run"))?;
+    }
     for (name, expected) in [
         (
             "pipeline/health.json",
@@ -228,6 +252,7 @@ fn validate_directory_cancellable(
 ) -> Result<ResourceManifest> {
     cancelled(cancel)?;
     let manifest = read_manifest(root, expected_id)?;
+    let files = resource_files(manifest.schema_version);
     for entry in walkdir::WalkDir::new(root).min_depth(1) {
         cancelled(cancel)?;
         let entry = entry?;
@@ -240,14 +265,14 @@ fn validate_directory_cancellable(
             .replace('\\', "/");
         if entry.file_type().is_dir() {
             ensure!(
-                FILES
+                files
                     .iter()
                     .any(|file| file.starts_with(&format!("{name}/"))),
                 "资源包包含多余目录"
             );
         } else {
             ensure!(
-                entry.file_type().is_file() && (name == MANIFEST || FILES.contains(&name.as_str())),
+                entry.file_type().is_file() && (name == MANIFEST || files.contains(&name.as_str())),
                 "资源包包含多余文件"
             );
         }
@@ -307,7 +332,11 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
     ensure!(!output.starts_with(&source), "资源包输出必须位于来源目录外");
     ensure!(!output.try_exists()?, "输出文件已存在，不能覆盖");
     let mut manifest = ResourceManifest {
-        schema_version: 1,
+        schema_version: if source.join("generated/coffee-run").try_exists()? {
+            2
+        } else {
+            1
+        },
         version: version.into(),
         engine_version: env!("CARGO_PKG_VERSION").into(),
         sdk_version: maa_adapter::SDK_VERSION.into(),
@@ -315,12 +344,12 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
         protocol_version: od_protocol::PROTOCOL_VERSION,
         files: Vec::new(),
     };
-    for name in FILES {
+    for name in resource_files(manifest.schema_version) {
         let path = source.join(name);
         check_path(&path)?;
         let (bytes, sha256) = copy_hash(File::open(path)?, std::io::sink(), MAX_FILE)?;
         manifest.files.push(ResourceFile {
-            path: (*name).into(),
+            path: name.into(),
             bytes,
             sha256,
         });
@@ -385,7 +414,10 @@ fn extract(
     ensure!(hash == expected_hash, "ZIP SHA-256 不匹配");
     file.rewind()?;
     let mut zip = ZipArchive::new(file)?;
-    ensure!(zip.len() == FILES.len() + 1, "ZIP 文件数量不匹配");
+    ensure!(
+        (FILES.len() + 1..=FILES.len() + COFFEE_FILES.len() + 1).contains(&zip.len()),
+        "ZIP 文件数量不匹配"
+    );
     let mut names = BTreeSet::new();
     for index in 0..zip.len() {
         cancelled(cancel)?;
@@ -393,7 +425,9 @@ fn extract(
         ensure!(
             !entry.is_dir()
                 && !entry.is_symlink()
-                && (entry.name() == MANIFEST || FILES.contains(&entry.name()))
+                && (entry.name() == MANIFEST
+                    || FILES.contains(&entry.name())
+                    || COFFEE_FILES.contains(&entry.name()))
                 && names.insert(entry.name().to_owned()),
             "ZIP 包含多余、重复或非法条目"
         );
@@ -405,6 +439,10 @@ fn extract(
     ensure!(bytes.len() as u64 <= MAX_MANIFEST, "资源清单过大");
     let manifest: ResourceManifest = serde_json::from_slice(&bytes)?;
     validate_manifest(&manifest)?;
+    ensure!(
+        zip.len() == resource_files(manifest.schema_version).len() + 1,
+        "ZIP 文件数量与资源格式不匹配"
+    );
     let id = hex::encode(Sha256::digest(&bytes));
     let mut manifest_file = OpenOptions::new()
         .create_new(true)
@@ -584,7 +622,9 @@ pub fn preview_change(
     let expected = match request {
         RuntimeResourceRequest::Activate { revision, .. }
         | RuntimeResourceRequest::Rollback { revision } => revision,
-        RuntimeResourceRequest::Refresh | RuntimeResourceRequest::Install { .. } => {
+        RuntimeResourceRequest::Refresh
+        | RuntimeResourceRequest::Download { .. }
+        | RuntimeResourceRequest::Install { .. } => {
             anyhow::bail!("该操作不是版本切换")
         }
     };
@@ -606,7 +646,9 @@ pub fn preview_change(
             target(&root, bundled, selection.previous.as_deref())?;
             std::mem::swap(&mut selection.current, &mut selection.previous);
         }
-        RuntimeResourceRequest::Refresh | RuntimeResourceRequest::Install { .. } => unreachable!(),
+        RuntimeResourceRequest::Refresh
+        | RuntimeResourceRequest::Download { .. }
+        | RuntimeResourceRequest::Install { .. } => unreachable!(),
     }
     Ok(selection)
 }

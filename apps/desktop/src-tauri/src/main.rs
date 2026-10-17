@@ -95,6 +95,19 @@ fn runtime_resource_state(
 }
 
 #[tauri::command]
+async fn pick_config_import_source(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+) -> Result<Option<String>, ApiError> {
+    main_window(&window)?;
+    state.resources.require_available()?;
+    let owner = window.hwnd().map_err(session::offline)?.0 as isize;
+    tokio::task::spawn_blocking(move || archive_picker::pick_config_source(owner))
+        .await
+        .map_err(session::offline)?
+}
+
+#[tauri::command]
 fn start_runtime_resource_job(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -103,6 +116,27 @@ fn start_runtime_resource_job(
 ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
     main_window(&window)?;
     state.start_resources(&app, request)
+}
+
+#[tauri::command]
+fn start_runtime_resource_download(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+    source: od_core::runtime_resources::RuntimeDownloadSource,
+) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+    main_window(&window)?;
+    state.download_resources(&app, source)
+}
+
+#[tauri::command]
+fn cancel_runtime_resource_download(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+    id: uuid::Uuid,
+) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+    main_window(&window)?;
+    state.resources.cancel_download(id)
 }
 
 #[tauri::command]
@@ -129,7 +163,10 @@ fn main() {
             recover_inputs,
             runtime_resource_state,
             pick_runtime_resource_archive,
+            pick_config_import_source,
             start_runtime_resource_job,
+            start_runtime_resource_download,
+            cancel_runtime_resource_download,
             subscribe_engine
         ])
         .on_window_event(|window, event| {

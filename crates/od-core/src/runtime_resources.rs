@@ -31,9 +31,22 @@ pub struct RuntimeResourceCatalog {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RuntimeResourceRequest {
     Refresh,
-    Install { archive: String, sha256: String },
-    Activate { id: String, revision: String },
-    Rollback { revision: String },
+    Download {
+        #[ts(type = "number")]
+        bytes: u64,
+        sha256: String,
+    },
+    Install {
+        archive: String,
+        sha256: String,
+    },
+    Activate {
+        id: String,
+        revision: String,
+    },
+    Rollback {
+        revision: String,
+    },
 }
 
 impl RuntimeResourceRequest {
@@ -42,7 +55,10 @@ impl RuntimeResourceRequest {
     }
 
     pub fn requires_engine_exit(&self) -> bool {
-        !matches!(self, Self::Refresh)
+        matches!(
+            self,
+            Self::Install { .. } | Self::Activate { .. } | Self::Rollback { .. }
+        )
     }
 
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -54,6 +70,7 @@ impl RuntimeResourceRequest {
         };
         let valid = match self {
             Self::Refresh => true,
+            Self::Download { bytes, sha256 } => (1..=536870912).contains(bytes) && hash(sha256),
             Self::Install { archive, sha256 } => {
                 let path = std::path::Path::new(archive);
                 archive.len() <= 32768
@@ -77,7 +94,7 @@ impl RuntimeResourceRequest {
         if valid {
             Ok(())
         } else {
-            Err("资源参数无效：请选择本地 ZIP 并填写 64 位小写 SHA-256，或刷新版本后重试")
+            Err("资源参数无效：请核对 ZIP 大小、64 位小写 SHA-256、本地路径或版本修订")
         }
     }
 }
@@ -86,8 +103,16 @@ impl RuntimeResourceRequest {
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeResourceJobState {
     Running,
+    Cancelling,
     Succeeded,
     Failed,
+    Cancelled,
+}
+
+impl RuntimeResourceJobState {
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -99,6 +124,45 @@ pub struct RuntimeResourceJob {
     pub reconnected: bool,
     pub error: Option<String>,
     pub error_code: Option<String>,
+    pub progress: Option<RuntimeDownloadProgress>,
+    pub downloaded: Option<RuntimeDownloadedArchive>,
+}
+
+/// 地址仅用于本次提交与子进程标准输入，不进入可查询任务快照。
+#[derive(Clone, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeDownloadSource {
+    pub url: String,
+    #[ts(type = "number")]
+    pub bytes: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct RuntimeDownloadProgress {
+    pub phase: String,
+    #[ts(type = "number")]
+    pub completed_bytes: u64,
+    #[ts(type = "number")]
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct RuntimeDownloadedArchive {
+    pub archive: String,
+    pub sha256: String,
+    #[ts(type = "number")]
+    pub bytes: u64,
+    pub reused: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+pub enum RuntimeDownloadEvent {
+    Progress(RuntimeDownloadProgress),
+    Completed(RuntimeDownloadedArchive),
+    Failed(String),
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]

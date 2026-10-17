@@ -147,6 +147,18 @@ enum Action {
         #[arg(long)]
         bundle: PathBuf,
     },
+    CoffeeRunBundleCheck {
+        #[arg(long)]
+        bundle: PathBuf,
+    },
+    CoffeeRunInspect {
+        #[arg(long)]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+        #[arg(long)]
+        espresso: bool,
+    },
     CoffeeInspect {
         #[arg(long)]
         bundle: PathBuf,
@@ -255,6 +267,12 @@ enum ModelResourceAction {
 #[derive(Subcommand)]
 enum RuntimeResourceAction {
     Catalog,
+    /// 桌面内部流式入口：来源经标准输入提交，EOF 或后续输入请求取消。
+    #[command(hide = true)]
+    DownloadManaged {
+        #[arg(long)]
+        output: PathBuf,
+    },
     PreviewChange(ResourceChangeArgs),
     ApplyChange(ResourceChangeArgs),
     Download {
@@ -361,6 +379,8 @@ async fn main() -> Result<()> {
                 | Action::RecognitionCompare { .. }
                 | Action::MapBundleCheck { .. }
                 | Action::CoffeeBundleCheck { .. }
+                | Action::CoffeeRunBundleCheck { .. }
+                | Action::CoffeeRunInspect { .. }
         )
     {
         paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
@@ -369,6 +389,12 @@ async fn main() -> Result<()> {
         Action::RuntimeResources { command } => {
             use zzz_engine::runtime_resources;
             return match command {
+                RuntimeResourceAction::DownloadManaged { output } => {
+                    tokio::task::spawn_blocking(move || {
+                        zzz_engine::runtime_download::managed(&output)
+                    })
+                    .await?
+                }
                 RuntimeResourceAction::Download {
                     url,
                     bytes,
@@ -553,6 +579,14 @@ async fn main() -> Result<()> {
                 serde_json::json!({"valid":true,"read_only":true,"bundle":maa_adapter::validate_coffee_bundle(bundle)?}),
             );
         }
+        Action::CoffeeRunBundleCheck { ref bundle } => {
+            return print(
+                serde_json::json!({"valid":true,"prototype_only":true,"bundle":maa_adapter::validate_coffee_run_bundle(bundle)?}),
+            );
+        }
+        Action::CoffeeRunInspect { ref bundle, .. } => {
+            maa_adapter::validate_coffee_run_bundle(bundle)?;
+        }
         Action::MapBundleCheck { ref bundle } => {
             return print(
                 serde_json::json!({"valid":true,"prototype_only":true,"bundle":maa_adapter::validate_map_bundle(bundle)?}),
@@ -591,6 +625,22 @@ async fn main() -> Result<()> {
         Action::CoffeeInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_coffee_fixture(&image)?)
+        }
+        Action::CoffeeRunInspect {
+            bundle,
+            image,
+            espresso,
+        } => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            let config = od_core::coffee_run::CoffeeConfig {
+                kind: if espresso {
+                    od_core::coffee_run::CoffeeKind::Espresso
+                } else {
+                    od_core::coffee_run::CoffeeKind::Tinman
+                },
+                ..Default::default()
+            };
+            print(native.inspect_coffee_run_fixture(&image, config)?)
         }
         Action::MapInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;

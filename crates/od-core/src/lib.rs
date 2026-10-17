@@ -1,5 +1,7 @@
 pub mod coffee;
+pub mod coffee_run;
 pub mod config;
+pub mod config_import;
 pub mod daily;
 pub mod group_run;
 pub mod mail;
@@ -79,6 +81,9 @@ pub struct RunRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub map: Option<map_transport::MapProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub coffee: Option<coffee_run::CoffeeProgress>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub group: Option<group_run::GroupProgress>,
@@ -419,9 +424,60 @@ impl RunSlot {
         Ok(run.clone())
     }
 
+    pub fn begin_coffee(
+        &mut self,
+        config: coffee_run::CoffeeConfig,
+    ) -> Result<RunRecord, &'static str> {
+        config.validate()?;
+        self.begin("prototype.coffee")?;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        run.coffee = Some(coffee_run::CoffeeProgress::new(config));
+        Ok(run.clone())
+    }
+
+    pub fn update_coffee(
+        &mut self,
+        id: Uuid,
+        mut progress: coffee_run::CoffeeProgress,
+        message: String,
+    ) -> Result<RunRecord, &'static str> {
+        use coffee_run::CoffeeState;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        if run.id != id || run.coffee.is_none() || run.state.is_terminal() {
+            return Err("咖啡运行 ID 已过期或结束");
+        }
+        if matches!(progress.state, CoffeeState::Paused | CoffeeState::Succeeded)
+            && !progress.inputs_released
+        {
+            return Err("咖啡输入尚未释放");
+        }
+        if progress.state == CoffeeState::Succeeded
+            && (!progress.order_attempted || !progress.energy_seen)
+        {
+            return Err("咖啡完成证明不足");
+        }
+        if run.state == RunState::Stopping && progress.state == CoffeeState::Succeeded {
+            progress.state = CoffeeState::Stopped;
+        }
+        run.state = match progress.state {
+            CoffeeState::Running => run.state,
+            CoffeeState::Paused if run.state == RunState::Stopping => RunState::Stopping,
+            CoffeeState::Paused => RunState::Paused,
+            CoffeeState::Succeeded => RunState::Succeeded,
+            CoffeeState::Failed | CoffeeState::TimedOut => RunState::Failed,
+            CoffeeState::Stopped => RunState::Stopped,
+        };
+        run.coffee = Some(progress);
+        run.message = message;
+        if run.state.is_terminal() {
+            run.finished_at = Some(Utc::now());
+        }
+        Ok(run.clone())
+    }
+
     pub fn request_pause(&mut self, id: Uuid) -> Result<RunRecord, &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
-        if run.id != id || (run.mail.is_none() && run.map.is_none()) {
+        if run.id != id || (run.mail.is_none() && run.map.is_none() && run.coffee.is_none()) {
             return Err("流程运行 ID 已过期");
         }
         if !matches!(run.state, RunState::Running | RunState::Pausing) {
@@ -438,7 +494,7 @@ impl RunSlot {
 
     pub fn request_resume(&mut self, id: Uuid) -> Result<RunRecord, &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
-        if run.id != id || (run.mail.is_none() && run.map.is_none()) {
+        if run.id != id || (run.mail.is_none() && run.map.is_none() && run.coffee.is_none()) {
             return Err("流程运行 ID 已过期");
         }
         if run.state != RunState::Paused {
@@ -458,6 +514,10 @@ impl RunSlot {
             progress.state = map_transport::MapState::Running;
         }
         run.message = "准备继续流程，延时后重新识别画面".into();
+        if let Some(progress) = &mut run.coffee {
+            progress.state = coffee_run::CoffeeState::Running;
+            progress.inputs_released = false;
+        }
         Ok(run.clone())
     }
 
@@ -541,6 +601,7 @@ impl RunSlot {
             input_pipeline: None,
             mail: None,
             map: None,
+            coffee: None,
             group: None,
         };
         self.group_schedule = None;

@@ -34,7 +34,10 @@ impl Host {
     pub fn new() -> Self {
         let session = std::sync::Arc::new(Mutex::new(None));
         Self {
-            resources: crate::resources::ResourceManager::new(session.clone()),
+            resources: crate::resources::ResourceManager::new(
+                session.clone(),
+                tauri::async_runtime::handle().inner().clone(),
+            ),
             session,
             channel: std::sync::Mutex::new(None),
         }
@@ -163,5 +166,13 @@ impl Host {
         request: od_core::runtime_resources::RuntimeResourceRequest,
     ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
         self.resources.start(layout(app)?, request)
+    }
+
+    pub fn download_resources(
+        &self,
+        app: &AppHandle,
+        source: od_core::runtime_resources::RuntimeDownloadSource,
+    ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+        self.resources.start_download(layout(app)?, source)
     }
 }

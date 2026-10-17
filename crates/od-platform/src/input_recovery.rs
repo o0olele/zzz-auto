@@ -88,7 +88,7 @@ pub struct InputRecoveryPlan {
 
 impl InputRecoveryPlan {
     pub fn validate(&self) -> Result<()> {
-        ensure!(matches!(self.version, 1..=3), "输入恢复记录版本不支持");
+        ensure!(matches!(self.version, 1..=4), "输入恢复记录版本不支持");
         if self.version == 1 {
             ensure!(self.additional_inputs.is_empty(), "v1 恢复记录不能增加输入");
         } else if self.version == 2 {
@@ -103,7 +103,7 @@ impl InputRecoveryPlan {
             ensure!(
                 self.additional_inputs.is_empty()
                     && self.config == od_core::map_transport::MapConfig::recovery_inputs()[0],
-                "v3 地图恢复仅允许释放鼠标左键"
+                "v3 地图 / v4 咖啡恢复仅允许释放鼠标左键"
             );
         }
         self.config.validate().map_err(anyhow::Error::msg)?;

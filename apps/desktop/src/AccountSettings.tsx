@@ -4,8 +4,9 @@ import type { AccountConfig, AppDefinition, Command, ConfigChange, GameRegion, R
 import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { errorMessage, request } from './bridge';
 import { GroupRuns } from './GroupRuns';
+import { ConfigImport } from './ConfigImport';
 
-export function AccountSettings({ connected, active, blocked, apps, snapshot, onCommand }: { connected: boolean; active: boolean; blocked: boolean; apps: AppDefinition[]; snapshot: Snapshot | null; onCommand: (command: Command) => Promise<void> }) {
+export function AccountSettings({ connected, active, blocked, apps, snapshot, onCommand, onImported }: { connected: boolean; active: boolean; blocked: boolean; apps: AppDefinition[]; snapshot: Snapshot | null; onCommand: (command: Command) => Promise<void>; onImported: (config: AccountConfig) => void }) {
   const [config, setConfig] = useState<AccountConfig | null>(null);
   const [instanceId, setInstanceId] = useState(0);
   const [groupId, setGroupId] = useState('one_dragon');
@@ -15,10 +16,11 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
   const [runPolicy, setRunPolicy] = useState<RunPolicy>('always');
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
   const [error, setError] = useState('');
   const instance = config?.instances.find(item => item.id === instanceId);
   const group = instance?.groups.find(item => item.id === groupId);
-  const disabled = !connected || blocked || busy || active;
+  const disabled = !connected || blocked || busy || importBusy || active;
 
   function accept(value: AccountConfig) {
     setConfig(value);
@@ -75,11 +77,12 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
   }
 
   return <>
-    <div className="page-heading"><div><div className="eyebrow">ACCOUNTS AND APPLICATIONS</div><h1>账号与应用组</h1><p>管理本地账号配置和应用顺序。切换配置后，请自行确认游戏登录账号。</p></div><Button disabled={!connected || busy || blocked} onClick={async () => {
+    <div className="page-heading"><div><div className="eyebrow">ACCOUNTS AND APPLICATIONS</div><h1>账号与应用组</h1><p>管理本地账号配置和应用顺序。切换配置后，请自行确认游戏登录账号。</p></div><Button disabled={!connected || busy || importBusy || blocked} onClick={async () => {
       setBusy(true); setError(''); try { await load(); } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
     }}>读取最新配置</Button></div>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     {active && <MessageBar intent="info"><MessageBarBody>任务仍在运行或收尾，请停止任务后再修改账号及应用组。</MessageBarBody></MessageBar>}
+    <ConfigImport connected={connected} active={active} blocked={blocked || busy} current={config} apps={apps} onBusy={setImportBusy} onImported={value => { accept(value); setError(''); onImported(value); }}/>
     {!config && <Card><p>{connected ? '正在读取账号配置。读取失败时可点击“读取最新配置”重试。' : '连接桌面引擎后可读取和编辑本地配置。'}</p></Card>}
     {config && <>
       <Card><div className="card-title"><h2>账号配置</h2><Badge appearance="outline">修订 {config.revision}</Badge></div>
@@ -113,7 +116,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
           </div>;
         })}</div>
       </Card>}
-      {instance && group && <GroupRuns instanceId={instance.id} groupId={group.id} revision={config.revision} snapshot={snapshot} connected={connected} blocked={blocked} onCommand={onCommand}/>}
+      {instance && group && <GroupRuns instanceId={instance.id} groupId={group.id} revision={config.revision} snapshot={snapshot} connected={connected} blocked={blocked || importBusy || busy} onCommand={onCommand}/>}
     </>}
   </>;
 }

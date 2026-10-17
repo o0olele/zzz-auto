@@ -171,6 +171,15 @@ impl EngineSession {
     }
 
     pub async fn request(&mut self, command: Command) -> Result<Payload, ApiError> {
+        if matches!(
+            command,
+            Command::PreviewConfigImport { .. } | Command::ApplyConfigImport { .. }
+        ) {
+            self.require_recovered()?;
+            if let Some(journal) = &self.journal {
+                journal.require_clean()?;
+            }
+        }
         let mail_start = matches!(
             command,
             Command::StartMail {
@@ -182,6 +191,15 @@ impl EngineSession {
             }
         );
         let input = match &command {
+            Command::StartCoffee {
+                config,
+                allow_input: true,
+            } => {
+                config
+                    .validate()
+                    .map_err(|error| ApiError::new("invalid_input", error))?;
+                Some(od_core::coffee_run::CoffeeConfig::recovery_inputs().to_vec())
+            }
             Command::StartMap {
                 config,
                 allow_input: true,
@@ -237,7 +255,9 @@ impl EngineSession {
                 .window
                 .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
             let plan = od_platform::InputRecoveryPlan {
-                version: if matches!(command, Command::StartMap { .. }) {
+                version: if matches!(command, Command::StartCoffee { .. }) {
+                    4
+                } else if matches!(command, Command::StartMap { .. }) {
                     3
                 } else if mail_start {
                     2
@@ -264,14 +284,20 @@ impl EngineSession {
             if !snapshot.run.as_ref().is_some_and(|run| {
                 run.id == run_id
                     && run.state == od_core::RunState::Paused
-                    && (run.mail.is_some() || run.map.is_some())
+                    && (run.mail.is_some() || run.map.is_some() || run.coffee.is_some())
             }) {
                 return Err(ApiError::new(
                     "invalid_run_state",
                     "流程尚未确认暂停或运行 ID 已过期",
                 ));
             }
-            let version = if snapshot.run.as_ref().is_some_and(|run| run.map.is_some()) {
+            let version = if snapshot
+                .run
+                .as_ref()
+                .is_some_and(|run| run.coffee.is_some())
+            {
+                4
+            } else if snapshot.run.as_ref().is_some_and(|run| run.map.is_some()) {
                 3
             } else {
                 2

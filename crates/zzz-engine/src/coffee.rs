@@ -1,6 +1,7 @@
 use anyhow::{Result, ensure};
 use maa_adapter::{NativeSession, PipelineEnd, PipelineExecution};
 use od_core::{
+    coffee_approach::{CoffeeApproachPhase, CoffeeApproachProgress},
     coffee_run::{CoffeeConfig, CoffeePhase, CoffeeProgress, CoffeeState},
     pipeline::{Interrupt, PipelineControl, PipelineRequest},
 };
@@ -27,6 +28,11 @@ impl CoffeeRun {
     }
     pub fn control(&self) -> PipelineRequest {
         self.control.requester()
+    }
+    pub fn from_world(id: Uuid, config: CoffeeConfig) -> Result<Self> {
+        let mut run = Self::with_id(id, config)?;
+        run.progress.approach = Some(CoffeeApproachProgress::default());
+        Ok(run)
     }
     pub fn interrupt_requested(&self) -> Option<Interrupt> {
         self.control.requested()
@@ -84,7 +90,13 @@ impl CoffeeRun {
         );
         self.progress.inputs_released = false;
         observer(self.progress.clone());
-        let preparation = if game {
+        let preparation = if self.progress.approach.is_some() {
+            session.prepare_coffee_approach(
+                game,
+                self.control.cancellation(),
+                self.progress.config.start_delay_ms,
+            )
+        } else if game {
             session.prepare_game_coffee(
                 self.control.cancellation(),
                 self.progress.config.start_delay_ms,
@@ -128,6 +140,34 @@ impl CoffeeRun {
                     CoffeeState::TimedOut,
                     "咖啡流程超时，输入已释放，不重新点单",
                 );
+                return Ok(());
+            }
+            if self
+                .progress
+                .approach
+                .as_ref()
+                .is_some_and(|p| p.phase != CoffeeApproachPhase::Done)
+            {
+                let end = self.execute_approach_step(
+                    session,
+                    game,
+                    Duration::from_millis(u64::from(self.progress.config.timeout_ms) - used),
+                    observer,
+                )?;
+                let mut progress = self.progress.clone();
+                progress.active_ms = used;
+                observer(progress);
+                if self.interrupt() {
+                    return Ok(());
+                }
+                match end {
+                    PipelineEnd::Succeeded => continue,
+                    PipelineEnd::TimedOut => self.terminal(
+                        CoffeeState::TimedOut,
+                        "咖啡前置步骤超时，输入已释放，不重复传送或交互",
+                    ),
+                    _ => self.terminal(CoffeeState::Failed, "咖啡前置步骤未完成，输入已释放"),
+                }
                 return Ok(());
             }
             let phase = self.progress.phase;
@@ -231,5 +271,100 @@ impl CoffeeRun {
                 }
             }
         }
+    }
+
+    fn execute_approach_step(
+        &mut self,
+        session: &mut NativeSession,
+        game: bool,
+        timeout: Duration,
+        observer: &mut impl FnMut(CoffeeProgress),
+    ) -> Result<PipelineEnd> {
+        use CoffeeApproachPhase::*;
+        let approach = self.progress.approach.as_mut().expect("咖啡前置进度");
+        let phase = approach.phase;
+        let entry = match phase {
+            InspectWorld => "CoffeeApproach.InspectWorld",
+            OpenMap => {
+                approach.phase = WaitMap;
+                "CoffeeApproach.OpenMap"
+            }
+            WaitMap => "CoffeeApproach.WaitMap",
+            SelectArea => "Map.SelectArea",
+            SelectPoint => {
+                approach.phase = WaitDialog;
+                "Map.SelectPoint"
+            }
+            WaitDialog => "Map.WaitDialog",
+            Confirm => {
+                approach.phase = WaitArrival;
+                "Map.Confirm"
+            }
+            WaitArrival => "Map.WaitArrival",
+            Interact => {
+                approach.phase = WaitDialogue;
+                "CoffeeApproach.Interact"
+            }
+            WaitDialogue => "CoffeeApproach.WaitDialogue",
+            AdvanceDialogue if approach.dialogue_advances < 12 => {
+                approach.dialogue_advances += 1;
+                "CoffeeApproach.AdvanceDialogue"
+            }
+            AdvanceDialogue => "CoffeeApproach.WaitOptions",
+            Done => unreachable!(),
+        };
+        self.progress.inputs_released = false;
+        observer(self.progress.clone());
+        let execution = session.coffee_approach_step(
+            entry,
+            self.progress.config,
+            self.control.cancellation(),
+            timeout,
+            game,
+        )?;
+        self.progress.inputs_released = execution.report.released;
+        let end = execution.report.end;
+        let completed = |name: &str| {
+            execution
+                .nodes
+                .iter()
+                .any(|n| n.name == name && n.completed)
+        };
+        let next = if end == PipelineEnd::Succeeded {
+            match phase {
+                InspectWorld => {
+                    ensure!(
+                        completed("Map.World"),
+                        "咖啡自动路线须从大世界开始，不接管已有地图、对话或奖励"
+                    );
+                    OpenMap
+                }
+                OpenMap | WaitMap => SelectArea,
+                SelectArea => SelectPoint,
+                SelectPoint | WaitDialog => Confirm,
+                Confirm => WaitArrival,
+                WaitArrival => Interact,
+                Interact | WaitDialogue if completed("Coffee.Options") => Done,
+                Interact | WaitDialogue => AdvanceDialogue,
+                AdvanceDialogue if completed("Coffee.Options") => Done,
+                AdvanceDialogue => {
+                    ensure!(
+                        !completed("Map.World"),
+                        "咖啡对话已退出，本次未点单，不记录领取成功"
+                    );
+                    AdvanceDialogue
+                }
+                Done => unreachable!(),
+            }
+        } else if phase == SelectArea && completed("Map.ClickArea") {
+            SelectPoint
+        } else {
+            self.progress.approach.as_ref().expect("咖啡前置进度").phase
+        };
+        self.executions.push(execution);
+        ensure!(self.progress.inputs_released, "咖啡前置输入尚未释放");
+        let approach = self.progress.approach.as_mut().expect("咖啡前置进度");
+        approach.phase = next;
+        Ok(end)
     }
 }

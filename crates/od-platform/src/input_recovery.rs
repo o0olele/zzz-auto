@@ -88,7 +88,7 @@ pub struct InputRecoveryPlan {
 
 impl InputRecoveryPlan {
     pub fn validate(&self) -> Result<()> {
-        ensure!(matches!(self.version, 1..=4), "输入恢复记录版本不支持");
+        ensure!(matches!(self.version, 1..=5), "输入恢复记录版本不支持");
         if self.version == 1 {
             ensure!(self.additional_inputs.is_empty(), "v1 恢复记录不能增加输入");
         } else if self.version == 2 {
@@ -98,6 +98,12 @@ impl InputRecoveryPlan {
                     && self.config == expected[0]
                     && self.additional_inputs[0] == expected[1],
                 "v2 邮件恢复仅允许释放 Alt 和鼠标左键"
+            );
+        } else if self.version == 5 {
+            let expected = od_core::coffee_approach::recovery_inputs();
+            ensure!(
+                self.config == expected[0] && self.additional_inputs == expected[1..],
+                "v5 咖啡路线恢复仅允许释放鼠标左键、N 和 F"
             );
         } else {
             ensure!(
@@ -216,7 +222,7 @@ fn recovery_windows(pid: u32) -> Result<Vec<usize>> {
 
 pub fn recover_input(plan: &InputRecoveryPlan) -> Result<String> {
     plan.validate()?;
-    if plan.version == 2 {
+    if matches!(plan.version, 2 | 5) {
         let mut errors = Vec::new();
         for config in std::iter::once(plan.config).chain(plan.additional_inputs.iter().copied()) {
             let mut single = plan.clone();
@@ -228,9 +234,12 @@ pub fn recover_input(plan: &InputRecoveryPlan) -> Result<String> {
             }
         }
         ensure!(errors.is_empty(), "{}", errors.join("；"));
-        return Ok(
-            "已释放邮件记录中的 Alt 和鼠标左键；请确认游戏状态再重连，不会续跑或重复领取".into(),
-        );
+        return Ok(if plan.version == 5 {
+            "已释放咖啡路线记录中的鼠标左键、N 和 F；请确认游戏状态再重连，不会重放传送或点单"
+                .into()
+        } else {
+            "已释放邮件记录中的 Alt 和鼠标左键；请确认游戏状态再重连，不会续跑或重复领取".into()
+        });
     }
     ensure!(plan.engine.exited()?, "旧引擎仍在运行，不能发送恢复输入");
     let release = input_release(plan.config)?;

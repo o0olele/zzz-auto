@@ -23,6 +23,7 @@ import { RuntimeResources, useRuntimeResources } from './RuntimeResources';
 import { CoffeeDiagnostics } from './CoffeeDiagnostics';
 import { OfflineConfigRecovery, useConfigRecovery } from './OfflineConfigRecovery';
 import { captureNames, captureHints } from './captureSettings';
+import { useAppearance } from './appearance';
 
 type Page = 'home' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'logs' | 'apps' | 'native' | 'progress';
 const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
@@ -51,7 +52,7 @@ const milestones = [
 
 export default function App() {
   const [page, setPage] = useState<Page>('home');
-  const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && matchMedia('(prefers-color-scheme: dark)').matches));
+  const { dark, warning: appearanceWarning, update: updateAppearance, retrySave: retryAppearanceSave } = useAppearance();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [apps, setApps] = useState<AppDefinition[]>(catalog);
   const [windows, setWindows] = useState<WindowInfo[]>([]);
@@ -92,7 +93,6 @@ export default function App() {
   }, [runtimeResources.snapshot.job?.id, runtimeResources.snapshot.job?.state, resourceSwitching]);
   const filtered = useMemo(() => apps.filter(app => (filter === 'all' || app.execution === filter) && `${app.name} ${app.id}`.toLowerCase().includes(query.toLowerCase())), [apps, query, filter]);
 
-  useEffect(() => { localStorage.setItem('theme', dark ? 'dark' : 'light'); document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
   const acceptSettings = useCallback((value: Settings) => {
     setSettings(value); setCaptureMethod(value.capture_method); setScreenshot(null);
   }, []);
@@ -153,13 +153,14 @@ export default function App() {
         <div className="workspace-label">工作台</div>
         <nav aria-label="主导航">{pages.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'selected' : ''}`} onClick={() => { setPage(item.id); if (item.id === 'runtime_resources') setResourcesVisited(true); }} aria-current={page === item.id ? 'page' : undefined}>{item.icon}<span>{item.label}</span>{page === item.id && <ChevronRight20Regular />}</button>)}</nav>
         <div className="sidebar-note"><Code24Regular/><strong>迁移原型 · v0.1</strong><p>邮件主流程通过，边界继续验收；账号区服与应用组每日计划已接通。</p><Badge appearance="tint" color="brand">M3 进行中</Badge></div>
-        <div className="sidebar-footer"><span><i className={`status-dot ${connected && snapshot?.sdk.ready ? 'ready' : ''}`}/>{status}</span><Tooltip content="切换明暗主题" relationship="label"><Button appearance="subtle" icon={dark ? <WeatherSunny20Regular/> : <WeatherMoon20Regular/>} onClick={() => setDark(!dark)} aria-label="切换明暗主题"/></Tooltip></div>
+        <div className="sidebar-footer"><span><i className={`status-dot ${connected && snapshot?.sdk.ready ? 'ready' : ''}`}/>{status}</span><Tooltip content="切换明暗主题" relationship="label"><Button appearance="subtle" icon={dark ? <WeatherSunny20Regular/> : <WeatherMoon20Regular/>} onClick={() => updateAppearance({ theme: dark ? 'light' : 'dark' })} aria-label="切换明暗主题"/></Tooltip></div>
       </aside>
 
       <main className="main">
         <header className="topbar"><span>工作台 <ChevronRight20Regular/> {pages.find(item => item.id === page)?.label}</span><Badge appearance="outline">Windows x64</Badge></header>
         <div className="content">
           {!desktop && <MessageBar intent="info"><MessageBarBody>当前为浏览器预览。使用 <code>npm run tauri dev</code> 启动桌面，连接真实 Maa 引擎。</MessageBarBody></MessageBar>}
+          {appearanceWarning && <MessageBar intent="warning"><MessageBarBody>{appearanceWarning} <Button size="small" onClick={retryAppearanceSave}>重试保存外观</Button></MessageBarBody></MessageBar>}
           {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
           {shortcuts?.registration_error && <MessageBar intent="warning"><MessageBarBody>全局快捷键未生效：{shortcuts.registration_error}。请在通用设置中修改或重试。</MessageBarBody></MessageBar>}
           {shortcuts?.action_error && <MessageBar intent="warning"><MessageBarBody>快捷键控制未完成：{shortcuts.action_error}</MessageBarBody></MessageBar>}

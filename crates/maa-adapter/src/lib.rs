@@ -1,6 +1,8 @@
 mod coffee;
 mod coffee_run;
-pub use coffee_run::{CoffeeRunObservation, validate_coffee_run_bundle};
+pub use coffee_run::{
+    CoffeeRunObservation, validate_coffee_approach_bundle, validate_coffee_run_bundle,
+};
 mod events;
 mod fixture;
 pub mod flash;

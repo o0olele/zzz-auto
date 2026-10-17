@@ -6,7 +6,7 @@
 
 2026 年 10 月 17 日用户说明账号当天已无咖啡次数，决定暂缓本项实测并继续下一步。咖啡保持待验收，不记为通过；当前推进[桌面旧配置导入](account-config.md#桌面导入)，待有可用次数再安排以下正常路径测试。
 
-1. 重新启动更新后的桌面和引擎；当前协议为 v17，咖啡于 v16 接入。若当前启用的是此前的邮件 / 地图资源包，先在“运行资源”安装并启用本次咖啡包，或回滚到已经包含咖啡资源的随程序资源。
+1. 重新启动更新后的桌面和引擎；当前协议为 v22，咖啡于 v16 接入。若当前启用的是此前的邮件 / 地图资源包，先在“运行资源”安装并启用咖啡包，或回滚到已经包含咖啡资源的随程序资源。
 2. 连接 1920×1080 游戏窗口。使用已有地图入口传送到“澄辉坪 → 汀曼咖啡”，也可以手动到店。
 3. 手动按 F 交互，等待右侧出现“请来一杯汀曼特调！”和“请来一杯浓缩咖啡！”选项。当前入口不负责自动开图、按 F 或推进开场对话。
 4. 在咖啡试运行中选择本次咖啡。建议先选与素材对应的“浓缩咖啡”，超时 60000ms、启动延时 5000ms，确认后启动并在延时内切回游戏，保持前台。
@@ -35,15 +35,36 @@
 ```powershell
 cargo run -p od-tools --locked -- coffee-run-bundle --reference E:/code/ZenlessZoneZero-OneDragon
 cargo run -p zzz-engine --locked -- coffee-run-bundle-check --bundle resources/generated/coffee-run
-cargo run -p zzz-engine --locked -- coffee-run-inspect --bundle resources/generated/coffee-run --image zzz-od-test/screens/咖啡店/澄辉坪-咖啡-点单.png --espresso
-cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target --locked --test coffee_main --test coffee_resources -- --test-threads=1
-npm --prefix zzz-od-test/test/zzz_auto/frontend test -- coffee.spec.ts
+cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --locked --test coffee_approach --test input_recovery -- --test-threads=1
+npm --prefix zzz-od-test/test/zzz_auto/frontend test -- coffee-approach.spec.ts desktop.spec.ts
 ```
 
-截图只读检查报告位于独立测试仓 `artifacts/m3-coffee-main-observations.json`。原 `coffee-bundle` / `coffee-inspect` 只读预览继续保留，与执行包 `coffee-run` 分开。开发启动和发行准备均生成执行包，Tauri 与便携脚本包含并校验该目录。
+原记录的四张澄辉坪 PNG 及 `coffee_main` / `coffee_resources` 测试不在本轮检出中；当前可用的是两张旧对话 WEBP、地图与大世界素材。因此本轮只复验前置交接和现有点单选项的接管，不把奖励确认或完整新咖啡实机记为通过。原 `coffee-bundle` / `coffee-inspect` 只读预览继续保留，与执行包 `coffee-run` 分开。开发启动和发行准备均生成地图及咖啡执行包，Tauri 与便携脚本包含并校验这些目录。
 
 ## 顺序调度与剩余工作
 
+### 从大世界开始的固定路线
+
+本轮接通独立的“从大世界传送并点单”入口，保留原有手动打开选项的试运行。新入口在同一运行 ID、控制器、取消对象与有效超时内，依次验证大世界、按 N 开普通地图、复用地图固定路线、等待落地、按 F 交互、按汀曼大师标题推进对话，随后交给已有点单流程。玩法依据见[咖啡玩法](../game/gameplay/coffee.md)。
+
+开图、选择传送点、确认和交互均在投递前保存内存检查点，暂停继续只等待对应后态，不重投不确定动作；停止不执行后继。推进对话最多十二次，仅识别标题后点击；已有奖励、传送弹窗、非大世界起点不接管。传送落地和进入选项均不能单独证明本次喝咖啡成功。
+
+新咖啡执行包为 v2，在原文件清单内增加固定前置节点，同时载入独立的地图包；v1 咖啡包继续支持原点单入口，新入口在任何输入前要求 v2。桌面在发送新命令前登记 v5 输入恢复计划，仅允许释放 N、F 和鼠标左键；原 v4 点单恢复保持可读。新入口仍为诊断，不写账号每日成功，应用组接入在后续完成。
+
+桌面协议为 v22，需配套更新引擎；运行资源 schema 保持 2，已有协议 15..21 的基础包及协议 16..21 的咖啡包继续兼容，旧咖啡包不能发起自动路线。整体有效超时共用咖啡表单的 1..60000ms，不含启动 / 继续延时及暂停；地图不滚动搜索，目标需可见。
+
+本轮资源包为 `artifacts/runtime-resources-m3-coffee-route-20261017.zip`，64,144,656 字节，SHA-256：
+
+```text
+0cec6a9d2b11fd7ab3df471280c85fd835419cbfd39e3562830a0df5dd7ddd1b
+```
+
+资源 ID 为 `ed63f6014d18f088b3bb8af837f4e7fda3799de50a136a81a93166f97db42418`，外层 schema 2 / 协议 22，仍为 26 个文件。只生成测试资源，没有自动安装或切换用户的当前版本。
+
+实机正常流程：更新桌面与引擎，必要时安装并启用上述包；连接 1080p 游戏，在“咖啡起点”选择“从大世界传送并点单”，核对咖啡、超时及延时后确认启动，在延时内切回大世界。检查 N 开图、固定路线、F 交互、进入点单、领取电量和返回大世界；当天须仍可喝咖啡。未识别目标、已喝过或未确认电量不能登记本次成功。
+
+本轮新增 9 项 Rust 流程 / 资源 / 引擎用例和 3 项输入恢复用例；现有输入恢复全量 32 项通过。前置流程覆盖真实留档换帧、在开图 / 传送点 / 确认 / 交互 / 对话后暂停并继续、不重投动作、停止不执行后继、无效起点、十二次对话上限、伪造资源拒绝、v1 兼容及交接到原点单检查。地图落地和对话转选项由模拟控制器推进，不证明真实落点或已喝过分支。桌面新增 3 项、相邻 12 项共 15 项回归通过，960 像素宽深色截图已检查。
+
 现有顺序调度器保留启用顺序及当日跳过项，执行前保存检查点，结束后确认释放并保存结果，再推进下一应用。暂停保留当前项，停止不投递后继；失败或未释放输入终止整组。旧保存回执不能解锁新步骤。
 
-应用组目前仍只执行邮件。咖啡试运行尚未与账号配置、每日策略或邮件组成连续执行；地图也仍从手动打开的地图开始。咖啡实测暂缓期间推进其余 M3 基础，后续补正常路径实机反馈、自动衔接与多应用交接。M3 保持进行中。
+应用组目前仍只执行邮件。咖啡自动路线已接通独立诊断，尚未与账号配置、每日策略或邮件组成连续执行；独立地图诊断仍从手动打开的地图开始。完整咖啡正常路径、缺失奖励原图及实机边界继续待验收，后续接入账号设置与多应用交接，M3 保持进行中。

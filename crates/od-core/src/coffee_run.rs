@@ -87,6 +87,9 @@ pub struct CoffeeProgress {
     pub config: CoffeeConfig,
     pub state: CoffeeState,
     pub phase: CoffeePhase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub approach: Option<crate::coffee_approach::CoffeeApproachProgress>,
     pub order_attempted: bool,
     pub energy_seen: bool,
     pub inputs_released: bool,
@@ -99,6 +102,7 @@ impl CoffeeProgress {
             config,
             state: CoffeeState::Running,
             phase: CoffeePhase::Inspect,
+            approach: None,
             order_attempted: false,
             energy_seen: false,
             inputs_released: true,

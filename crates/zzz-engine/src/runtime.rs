@@ -213,6 +213,24 @@ impl Engine {
         Self::for_mail_fixture(paths, callback)
     }
 
+    pub fn for_coffee_fixture(
+        paths: EnginePaths,
+        callback: impl maa_adapter::CustomControllerCallback + 'static,
+    ) -> anyhow::Result<Self> {
+        let resources = paths.resources.clone();
+        Self::with_factory(
+            paths,
+            Some(Box::new(move || {
+                let map = resources.join("generated/map-preview");
+                let mut session =
+                    NativeSession::for_custom_controller(callback, &map, InputMode::Foreground)?;
+                session.load_map_bundle(&map)?;
+                session.load_coffee_run_bundle(&resources.join("generated/coffee-run"))?;
+                Ok(session)
+            })),
+        )
+    }
+
     fn with_factory(
         mut paths: EnginePaths,
         factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
@@ -463,7 +481,11 @@ impl Engine {
             Command::StartCoffee {
                 config,
                 allow_input,
-            } => self.start_coffee(config, allow_input),
+            } => self.start_coffee(config, allow_input, false),
+            Command::StartCoffeeFromWorld {
+                config,
+                allow_input,
+            } => self.start_coffee(config, allow_input, true),
             Command::Pause { run_id } => {
                 let mut state = self.state.lock().expect("运行状态锁失效");
                 let record = state
@@ -839,7 +861,12 @@ impl Engine {
         Ok(Payload::Run(record))
     }
 
-    fn start_coffee(&self, config: CoffeeConfig, allow_input: bool) -> Result<Payload, ApiError> {
+    fn start_coffee(
+        &self,
+        config: CoffeeConfig,
+        allow_input: bool,
+        from_world: bool,
+    ) -> Result<Payload, ApiError> {
         if !allow_input {
             return Err(ApiError::new(
                 "input_not_confirmed",
@@ -866,11 +893,18 @@ impl Engine {
         if state.native_pending {
             return Err(ApiError::new("busy", "原生请求尚未完成"));
         }
-        let record = state
-            .slot
-            .begin_coffee(config)
-            .map_err(|error| ApiError::new("busy", error))?;
-        let run = CoffeeRun::with_id(record.id, config).map_err(native_error)?;
+        let record = if from_world {
+            state.slot.begin_coffee_from_world(config)
+        } else {
+            state.slot.begin_coffee(config)
+        }
+        .map_err(|error| ApiError::new("busy", error))?;
+        let run = if from_world {
+            CoffeeRun::from_world(record.id, config)
+        } else {
+            CoffeeRun::with_id(record.id, config)
+        }
+        .map_err(native_error)?;
         let control = run.control();
         let work = CoffeeWork {
             fixture: self.fixture,
@@ -903,7 +937,12 @@ impl Engine {
         state.event(
             Some(record.id),
             "info",
-            "开始咖啡试运行：请先手动打开澄辉坪咖啡点单选项，并在延时内切回游戏".into(),
+            if from_world {
+                "开始咖啡自动路线：大世界 → 澄辉坪 → 汀曼咖啡；请在延时内切回游戏"
+            } else {
+                "开始咖啡试运行：请先手动打开澄辉坪咖啡点单选项，并在延时内切回游戏"
+            }
+            .into(),
         );
         Ok(Payload::Run(record))
     }
@@ -1758,6 +1797,14 @@ fn run_coffee_work(
             let bundle = maa_adapter::validate_coffee_run_bundle(
                 &paths.resources.join("generated/coffee-run"),
             )?;
+            let map_bundle = if work.run.progress.approach.is_some() {
+                maa_adapter::validate_coffee_approach_bundle(&bundle)?;
+                Some(maa_adapter::validate_map_bundle(
+                    &paths.resources.join("generated/map-preview"),
+                )?)
+            } else {
+                None
+            };
             if let Some(controller) = native.as_mut() {
                 controller.release_inputs()?;
             }
@@ -1774,6 +1821,9 @@ fn run_coffee_work(
                 InputMode::Foreground,
                 InferenceDevice::Cpu,
             )?;
+            if let Some(map_bundle) = map_bundle {
+                controller.load_map_bundle(&map_bundle)?;
+            }
             controller.load_coffee_run_bundle(&bundle)?;
             work.events = Some(controller.pipeline_events(EVENT_CAPACITY)?);
             *native = Some(controller);
@@ -1797,7 +1847,7 @@ fn run_coffee_work(
             }
             let _ = state
                 .slot
-                .update_coffee(id, progress, "咖啡点单试运行中".into());
+                .update_coffee(id, progress, "咖啡试运行中".into());
         };
         if work.fixture {
             work.run.execute(controller, false, publish)

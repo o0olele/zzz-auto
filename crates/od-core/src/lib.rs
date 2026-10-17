@@ -1,4 +1,5 @@
 pub mod coffee;
+pub mod coffee_approach;
 pub mod coffee_run;
 pub mod config;
 pub mod config_import;
@@ -437,6 +438,17 @@ impl RunSlot {
         Ok(run.clone())
     }
 
+    pub fn begin_coffee_from_world(
+        &mut self,
+        config: coffee_run::CoffeeConfig,
+    ) -> Result<RunRecord, &'static str> {
+        self.begin_coffee(config)?;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        run.coffee.as_mut().ok_or("咖啡进度缺失")?.approach =
+            Some(coffee_approach::CoffeeApproachProgress::default());
+        Ok(run.clone())
+    }
+
     pub fn update_coffee(
         &mut self,
         id: Uuid,
@@ -454,9 +466,21 @@ impl RunSlot {
             return Err("咖啡输入尚未释放");
         }
         if progress.state == CoffeeState::Succeeded
-            && (!progress.order_attempted || !progress.energy_seen)
+            && (!progress.order_attempted
+                || !progress.energy_seen
+                || progress
+                    .approach
+                    .as_ref()
+                    .is_some_and(|p| p.phase != coffee_approach::CoffeeApproachPhase::Done))
         {
             return Err("咖啡完成证明不足");
+        }
+        if run
+            .coffee
+            .as_ref()
+            .is_some_and(|old| old.approach.is_some() != progress.approach.is_some())
+        {
+            return Err("咖啡起点不能在运行中改变");
         }
         if run.state == RunState::Stopping && progress.state == CoffeeState::Succeeded {
             progress.state = CoffeeState::Stopped;

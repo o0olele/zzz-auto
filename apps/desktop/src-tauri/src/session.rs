@@ -194,6 +194,15 @@ impl EngineSession {
             }
         );
         let input = match &command {
+            Command::StartCoffeeFromWorld {
+                config,
+                allow_input: true,
+            } => {
+                config
+                    .validate()
+                    .map_err(|error| ApiError::new("invalid_input", error))?;
+                Some(od_core::coffee_approach::recovery_inputs().to_vec())
+            }
             Command::StartCoffee {
                 config,
                 allow_input: true,
@@ -258,7 +267,9 @@ impl EngineSession {
                 .window
                 .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
             let plan = od_platform::InputRecoveryPlan {
-                version: if matches!(command, Command::StartCoffee { .. }) {
+                version: if matches!(command, Command::StartCoffeeFromWorld { .. }) {
+                    5
+                } else if matches!(command, Command::StartCoffee { .. }) {
                     4
                 } else if matches!(command, Command::StartMap { .. }) {
                     3
@@ -295,6 +306,13 @@ impl EngineSession {
                 ));
             }
             let version = if snapshot
+                .run
+                .as_ref()
+                .and_then(|run| run.coffee.as_ref())
+                .is_some_and(|coffee| coffee.approach.is_some())
+            {
+                5
+            } else if snapshot
                 .run
                 .as_ref()
                 .is_some_and(|run| run.coffee.is_some())

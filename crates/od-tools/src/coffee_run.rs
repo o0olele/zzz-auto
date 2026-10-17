@@ -38,7 +38,7 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
     let mut files = BTreeMap::new();
     files.insert(
         "pipeline/coffee-run.json".to_owned(),
-        serde_json::to_vec_pretty(&od_core::coffee_run::pipeline())?,
+        serde_json::to_vec_pretty(&od_core::coffee_approach::pipeline())?,
     );
     files.insert(
         "image/coffee/world_function.png".to_owned(),
@@ -63,7 +63,7 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
             files.insert(destination.clone(), bytes);
         }
     }
-    let manifest = json!({"schema_version":1,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"prototype_only":true,"accepted":false,"start":"dialogue_options","source":{"path":source_path,"sha256":hex::encode(Sha256::digest(source))},"files":files.iter().map(|(path,bytes)|json!({"path":path,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>()});
+    let manifest = json!({"schema_version":2,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"prototype_only":true,"accepted":false,"start":"world_or_dialogue_options","source":{"path":source_path,"sha256":hex::encode(Sha256::digest(source))},"files":files.iter().map(|(path,bytes)|json!({"path":path,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>()});
     files.insert(
         "coffee-run-manifest.json".into(),
         serde_json::to_vec_pretty(&manifest)?,

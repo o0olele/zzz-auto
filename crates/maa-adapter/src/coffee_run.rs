@@ -23,12 +23,17 @@ pub fn validate_coffee_run_bundle(root: &Path) -> Result<PathBuf> {
     );
     let manifest: Value = serde_json::from_slice(&std::fs::read(path)?)?;
     ensure!(
-        manifest["schema_version"] == 1
+        (manifest["schema_version"] == 1 || manifest["schema_version"] == 2)
             && manifest["sdk_version"] == crate::SDK_VERSION
             && manifest["base_size"] == json!([1920, 1080])
             && manifest["prototype_only"] == true
             && manifest["accepted"] == false
-            && manifest["start"] == "dialogue_options",
+            && manifest["start"]
+                == if manifest["schema_version"] == 1 {
+                    "dialogue_options"
+                } else {
+                    "world_or_dialogue_options"
+                },
         "咖啡执行资源不兼容"
     );
     let allowed: BTreeSet<_> = [
@@ -102,7 +107,12 @@ pub fn validate_coffee_run_bundle(root: &Path) -> Result<PathBuf> {
     let pipeline: Value =
         serde_json::from_slice(&std::fs::read(root.join("pipeline/coffee-run.json"))?)?;
     ensure!(
-        pipeline == od_core::coffee_run::pipeline(),
+        pipeline
+            == if manifest["schema_version"] == 1 {
+                od_core::coffee_run::pipeline()
+            } else {
+                od_core::coffee_approach::pipeline()
+            },
         "咖啡执行节点与引擎不匹配"
     );
     Ok(root)
@@ -114,7 +124,99 @@ pub struct CoffeeRunObservation {
     pub checks: Vec<Value>,
 }
 
+pub fn validate_coffee_approach_bundle(root: &Path) -> Result<PathBuf> {
+    let root = validate_coffee_run_bundle(root)?;
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(root.join("coffee-run-manifest.json"))?)?;
+    ensure!(
+        manifest["schema_version"] == 2,
+        "从大世界开始需要 v2 咖啡执行包，请先更新运行资源"
+    );
+    Ok(root)
+}
+
 impl crate::NativeSession {
+    pub fn prepare_coffee_approach(
+        &mut self,
+        game: bool,
+        cancel: Arc<AtomicBool>,
+        delay_ms: u32,
+    ) -> Result<()> {
+        validate_coffee_approach_bundle(
+            self.coffee_bundle.as_deref().unwrap_or(&self.resource_root),
+        )?;
+        crate::validate_map_bundle(
+            self.map_bundle
+                .as_deref()
+                .context("咖啡前置地图资源未加载")?,
+        )?;
+        if game {
+            self.prepare_game_coffee(cancel, delay_ms)
+        } else {
+            self.prepare_fixture_coffee()
+        }
+    }
+
+    pub fn coffee_approach_step(
+        &mut self,
+        entry: &str,
+        config: CoffeeConfig,
+        cancel: Arc<AtomicBool>,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<crate::PipelineExecution> {
+        config.validate().map_err(anyhow::Error::msg)?;
+        ensure!(
+            [
+                "CoffeeApproach.InspectWorld",
+                "CoffeeApproach.OpenMap",
+                "CoffeeApproach.WaitMap",
+                "Map.SelectArea",
+                "Map.SelectPoint",
+                "Map.WaitDialog",
+                "Map.Confirm",
+                "Map.WaitArrival",
+                "CoffeeApproach.Interact",
+                "CoffeeApproach.WaitDialogue",
+                "CoffeeApproach.AdvanceDialogue",
+                "CoffeeApproach.WaitOptions",
+            ]
+            .contains(&entry),
+            "咖啡前置步骤未登记"
+        );
+        validate_coffee_approach_bundle(
+            self.coffee_bundle.as_deref().unwrap_or(&self.resource_root),
+        )?;
+        crate::validate_map_bundle(
+            self.map_bundle
+                .as_deref()
+                .context("咖啡前置地图资源未加载")?,
+        )?;
+        ensure!(
+            self.input_mode == Some(crate::InputMode::Foreground)
+                && self.game_window.is_some() == game,
+            "咖啡前置控制器无效"
+        );
+        if game {
+            self.prepare_input_target(
+                od_core::coffee_approach::recovery_inputs()[0],
+                &cancel,
+                &mut None,
+            )?;
+        }
+        self.run_pipeline_detailed(
+            entry,
+            &crate::PipelineInputPlan {
+                keys: [78, 70].into(),
+                contacts: [0].into(),
+            },
+            cancel,
+            timeout,
+            &config.overrides().to_string(),
+            true,
+        )
+    }
+
     pub fn load_coffee_run_bundle(&mut self, root: &Path) -> Result<()> {
         ensure!(!self.tasker.running(), "运行中不能更换咖啡资源");
         let root = validate_coffee_run_bundle(root)?;
@@ -144,7 +246,7 @@ impl crate::NativeSession {
             self.game_window.is_none() && self.input_mode == Some(crate::InputMode::Foreground),
             "咖啡离线控制器无效"
         );
-        validate_coffee_run_bundle(&self.resource_root)?;
+        validate_coffee_run_bundle(self.coffee_bundle.as_deref().unwrap_or(&self.resource_root))?;
         self.release_inputs()
     }
     pub fn coffee_step(
@@ -180,7 +282,9 @@ impl crate::NativeSession {
                 self.game_window.is_none() && self.input_mode == Some(crate::InputMode::Foreground),
                 "咖啡离线控制器无效"
             );
-            validate_coffee_run_bundle(&self.resource_root)?;
+            validate_coffee_run_bundle(
+                self.coffee_bundle.as_deref().unwrap_or(&self.resource_root),
+            )?;
         }
         self.run_pipeline_detailed(
             entry,

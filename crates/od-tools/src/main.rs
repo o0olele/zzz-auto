@@ -232,6 +232,8 @@ fn main() -> Result<()> {
                 od_core::coffee_run::CoffeeState::decl(),
                 od_core::coffee_run::CoffeePhase::decl(),
                 od_core::coffee_run::CoffeeProgress::decl(),
+                od_core::coffee_approach::CoffeeApproachPhase::decl(),
+                od_core::coffee_approach::CoffeeApproachProgress::decl(),
                 od_core::InputMode::decl(),
                 od_core::InputSide::decl(),
                 od_core::MouseButton::decl(),

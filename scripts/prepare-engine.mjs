@@ -16,9 +16,10 @@ if (release) {
   // 发布目录必须自带邮件资源；只在构建机读取参考仓和模型缓存。
   cargo(['run', '--locked', '-p', 'od-tools', '--', 'mail-bundle', '--reference',
     process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
-  cargo(['run', '--locked', '-p', 'od-tools', '--', 'map-bundle', '--reference',
-    process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 }
+// 咖啡自动路线共用地图资源，开发启动也需要准备。
+cargo(['run', '--locked', '-p', 'od-tools', '--', 'map-bundle', '--reference',
+  process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 // 咖啡试运行依赖新提供的模板与固定 Pipeline，开发启动也同步生成。
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'coffee-run-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);

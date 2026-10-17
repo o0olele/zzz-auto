@@ -4,6 +4,7 @@ import type { AccountConfig, CaptureMethod, GeneralSettings as Settings, Shortcu
 import { generalSettingsFields, shortcutKeys } from './generated/protocol';
 import { errorMessage, request, retryShortcuts } from './bridge';
 import { captureHints } from './captureSettings';
+import { AppearanceSettings } from './AppearanceSettings';
 
 const integer = (value: string, min: number, max: number) => value.trim() !== '' && Number.isSafeInteger(Number(value)) && Number(value) >= min && Number(value) <= max;
 
@@ -63,11 +64,12 @@ export function GeneralSettings({ connected, active, blocked, onLoaded, shortcut
   }
 
   return <>
-    <div className="page-heading"><div><div className="eyebrow">GENERAL SETTINGS</div><h1>通用设置</h1><p>保存到当前引擎的数据目录，所有本地账号共用。</p></div><Button disabled={!connected || blocked || busy} onClick={async () => {
+    <div className="page-heading"><div><div className="eyebrow">GENERAL SETTINGS</div><h1>通用设置</h1><p>调整本机外观，以及所有本地账号共用的运行参数。</p></div><Button disabled={!connected || blocked || busy} onClick={async () => {
       const requested = generation.current;
       setBusy(true); setError(''); setMessage('');
       try { const value = await load(); if (generation.current === requested) accept(value); } catch (reason) { if (generation.current === requested) { setConfig(null); setError(errorMessage(reason)); } } finally { if (generation.current === requested) setBusy(false); }
     }}>读取最新设置</Button></div>
+    <AppearanceSettings/>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     {message && <MessageBar intent="success"><MessageBarBody>{message}</MessageBarBody></MessageBar>}
     {active && <MessageBar intent="info"><MessageBarBody>任务仍在运行或收尾，请停止任务后再修改通用设置。</MessageBarBody></MessageBar>}

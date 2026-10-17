@@ -12,6 +12,7 @@ pub mod pipeline;
 pub mod run_history;
 pub mod run_plan;
 pub mod runtime_resources;
+pub mod shortcuts;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

@@ -1,28 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
-import type { AccountConfig, CaptureMethod, GeneralSettings as Settings } from './generated/protocol';
-import { generalSettingsFields } from './generated/protocol';
-import { errorMessage, request } from './bridge';
+import type { AccountConfig, CaptureMethod, GeneralSettings as Settings, ShortcutKey, ShortcutSettings, ShortcutStatus } from './generated/protocol';
+import { generalSettingsFields, shortcutKeys } from './generated/protocol';
+import { errorMessage, request, retryShortcuts } from './bridge';
 import { captureHints } from './captureSettings';
 
 const integer = (value: string, min: number, max: number) => value.trim() !== '' && Number.isSafeInteger(Number(value)) && Number(value) >= min && Number(value) <= max;
 
-export function GeneralSettings({ connected, active, blocked, onLoaded }: {
+export function GeneralSettings({ connected, active, blocked, onLoaded, shortcuts, onShortcuts }: {
   connected: boolean; active: boolean; blocked: boolean; onLoaded: (settings: Settings) => void;
+  shortcuts: ShortcutStatus | null; onShortcuts: (status: ShortcutStatus) => void;
 }) {
   const [config, setConfig] = useState<AccountConfig | null>(null);
   const [values, setValues] = useState<Record<typeof generalSettingsFields[number]['key'], string>>({ capture_method: 'frame_pool', timeout_ms: '', start_delay_ms: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [keys, setKeys] = useState<ShortcutSettings>({ pause_resume: 'f9', stop: 'f10' });
   const generation = useRef(0);
   const disabled = !connected || blocked || busy || active || !config;
-  const valid = generalSettingsFields.every(field => field.kind === 'select'
+  const duplicate = keys.pause_resume !== null && keys.pause_resume === keys.stop;
+  const valid = !duplicate && generalSettingsFields.every(field => field.kind === 'select'
     ? field.options.some(option => option.value === values[field.key])
     : integer(values[field.key], field.min, field.max));
 
   function accept(value: AccountConfig) {
     setConfig(value); setValues({ capture_method: value.general.capture_method, timeout_ms: String(value.general.mail.timeout_ms), start_delay_ms: String(value.general.mail.start_delay_ms) });
+    setKeys(value.general.shortcuts);
     onLoaded(value.general);
   }
 
@@ -45,7 +49,7 @@ export function GeneralSettings({ connected, active, blocked, onLoaded }: {
     const requested = generation.current;
     setBusy(true); setError(''); setMessage('');
     try {
-      const result = await request({ type: 'update_account_config', params: { revision: config.revision, change: { type: 'save_general', settings: { capture_method: values.capture_method as CaptureMethod, mail: { timeout_ms: Number(values.timeout_ms), start_delay_ms: Number(values.start_delay_ms) } } } } });
+      const result = await request({ type: 'update_account_config', params: { revision: config.revision, change: { type: 'save_general', settings: { capture_method: values.capture_method as CaptureMethod, mail: { timeout_ms: Number(values.timeout_ms), start_delay_ms: Number(values.start_delay_ms) }, shortcuts: keys } } } });
       if (generation.current !== requested) return;
       if (result.type !== 'account_config') throw new Error('引擎未返回保存结果');
       accept(result.data); setMessage('通用设置已保存。截图默认值在下次连接或获取截图时应用。');
@@ -77,6 +81,23 @@ export function GeneralSettings({ connected, active, blocked, onLoaded }: {
       </div>
       <p>{captureHints[values.capture_method as CaptureMethod]} 原生诊断中的截图选择仅对本次连接生效。</p>
       <p>应用组使用已保存参数；邮件诊断可以临时调整。超时只计算有效运行时间，暂停不计时。</p>
+      <h3>全局任务快捷键</h3>
+      <div className="input-fields">
+        {(['pause_resume', 'stop'] as const).map(key => <Field key={key} label={key === 'pause_resume' ? '暂停 / 继续快捷键' : '停止快捷键'} validationMessage={duplicate ? '两个动作不能使用相同的快捷键' : undefined}>
+          <Select value={keys[key] ?? ''} disabled={disabled} onChange={(_, data) => { setKeys(current => ({ ...current, [key]: data.value ? data.value as ShortcutKey : null })); setMessage(''); }}>
+            <option value="">关闭</option>{shortcutKeys.map(value => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+          </Select>
+        </Field>)}
+      </div>
+      <p>游戏在前台或窗口隐藏到托盘时仍可使用。只控制已有任务；暂停 / 继续键不启动新任务，暂停中请等待输入释放。探针只支持停止。</p>
+      <p>当前注册：{!connected ? '引擎未连接' : !shortcuts ? '正在读取' : !shortcuts.active ? '未生效' : `暂停 / 继续 ${shortcuts.active.pause_resume?.toUpperCase() ?? '关闭'}，停止 ${shortcuts.active.stop?.toUpperCase() ?? '关闭'}`}。注册结果会在保存后刷新。</p>
+      <Button disabled={disabled} onClick={async () => {
+        const requested = generation.current;
+        setBusy(true); setError('');
+        try { const status = await retryShortcuts(); if (generation.current === requested) onShortcuts(status); }
+        catch (reason) { if (generation.current === requested) setError(errorMessage(reason)); }
+        finally { if (generation.current === requested) setBusy(false); }
+      }}>重试注册快捷键</Button>
       <div className="button-row"><Button appearance="primary" disabled={disabled || !valid} onClick={() => void save()}>保存通用设置</Button>{busy && <Spinner size="tiny" label="保存设置"/>}</div>
     </Card>
   </>;

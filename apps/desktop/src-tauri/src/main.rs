@@ -3,6 +3,7 @@ mod archive_picker;
 mod host;
 mod resources;
 mod session;
+mod shortcuts;
 
 use host::Host;
 use od_protocol::{ApiError, Command, DesktopUpdate, Payload};
@@ -153,6 +154,15 @@ fn subscribe_engine(
     Ok(())
 }
 
+#[tauri::command]
+async fn retry_shortcuts(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+) -> Result<od_core::shortcuts::ShortcutStatus, ApiError> {
+    main_window(&window)?;
+    state.retry_shortcuts().await
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .manage(Host::new())
@@ -167,7 +177,8 @@ fn main() {
             start_runtime_resource_job,
             start_runtime_resource_download,
             cancel_runtime_resource_download,
-            subscribe_engine
+            subscribe_engine,
+            retry_shortcuts
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -176,6 +187,34 @@ fn main() {
             }
         })
         .setup(|app| {
+            let (sender, mut receiver) = tokio::sync::mpsc::channel(8);
+            let handle = app.handle().clone();
+            app.state::<Host>().shortcuts.start(move |action| {
+                if let Some(command) = handle.state::<Host>().shortcuts.command(action)
+                    && sender
+                        .try_send((command, std::time::Instant::now()))
+                        .is_err()
+                {
+                    handle.state::<Host>().shortcuts.control_result(Some(
+                        "快捷键请求过多或控制通道已关闭，请查看任务状态后重试".into(),
+                    ));
+                }
+            });
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while let Some((command, at)) = receiver.recv().await {
+                    // 消息拥塞时丢弃过期控制；不会补发到后续任务。
+                    if at.elapsed() > std::time::Duration::from_secs(2) {
+                        handle
+                            .state::<Host>()
+                            .shortcuts
+                            .control_result(Some("快捷键等待过久，已丢弃，请重新按键".into()));
+                        continue;
+                    }
+                    let host = handle.state::<Host>();
+                    host.control_shortcut(command, at).await;
+                }
+            });
             let show = MenuItem::with_id(app, "show", "打开主窗口", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "停止并退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
@@ -239,6 +278,7 @@ fn main() {
                 }
                 loop {
                     if handle.state::<Host>().resources.switching() {
+                        handle.state::<Host>().shortcuts.clear_target();
                         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                         continue;
                     }
@@ -253,6 +293,9 @@ fn main() {
                             if let Some(privilege) = privilege {
                                 let _ = channel.send(DesktopUpdate::Privilege(privilege));
                             }
+                            let _ = channel.send(DesktopUpdate::Shortcuts(
+                                handle.state::<Host>().shortcuts.snapshot(),
+                            ));
                             channel.send(update).is_err()
                         })
                     {
@@ -267,6 +310,7 @@ fn main() {
         .expect("Tauri 桌面初始化失败");
     app.run(|app, event| {
         if let tauri::RunEvent::Exit = event {
+            app.state::<Host>().shortcuts.close();
             let _ = tauri::async_runtime::block_on(app.state::<Host>().shutdown());
         }
     });

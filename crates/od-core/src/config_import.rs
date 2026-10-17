@@ -77,6 +77,8 @@ struct OldGroup {
 #[derive(Deserialize)]
 struct LegacyEnvironment {
     screenshot_method: Option<String>,
+    key_start_running: Option<String>,
+    key_stop_running: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -91,7 +93,11 @@ pub fn preview(source: &Path, data: &Path) -> Result<ImportPreview> {
 
 pub fn apply(source: &Path, data: &Path, preview_id: &str) -> Result<AccountConfig> {
     // 先检查目录隔离，不能在旧程序目录创建占用锁。
-    preview(source, data)?;
+    let current = preview(source, data)?;
+    ensure!(
+        current.preview_id == preview_id,
+        "源配置已变化或预览指纹不符，请重新预览"
+    );
     let store = ConfigStore::new(&resolved(data)?)?;
     let _owner = store.acquire_owner()?;
     store.apply_import(source, preview_id)
@@ -267,7 +273,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     let mut instances = Vec::new();
     let mut active = Vec::new();
     let mut warnings = vec![
-        "转换账号及区服、应用组和可兼容的截图设置；其余字段及 YAML 原样归档，凭据、战斗脚本和旧运行记录仍待迁移。"
+        "转换账号及区服、应用组、可兼容的截图设置与任务快捷键；其余字段及 YAML 原样归档，凭据、战斗脚本和旧运行记录仍待迁移。"
             .into(),
     ];
     let mut general = GeneralSettings::default();
@@ -278,6 +284,34 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         } else {
             warnings.push("旧截图方式未直接转换，采用 FramePool 默认值，请在通用设置中核对；旧自动回退、BitBlt 和 PIL 不与 Maa 截图方式视为等价。".into());
         }
+        for (value, target, label) in [
+            (
+                environment.key_start_running.as_deref(),
+                &mut general.shortcuts.pause_resume,
+                "暂停 / 继续",
+            ),
+            (
+                environment.key_stop_running.as_deref(),
+                &mut general.shortcuts.stop,
+                "停止",
+            ),
+        ] {
+            if let Some(value) = value {
+                if let Some(key) = crate::shortcuts::ShortcutKey::from_legacy(value) {
+                    *target = Some(key);
+                } else {
+                    warnings.push(format!(
+                        "旧{label}快捷键不在 F1..F11 范围内，采用默认值，请导入后核对；原值只归档。"
+                    ));
+                }
+            }
+        }
+        if general.shortcuts.validate().is_err() {
+            general.shortcuts = crate::shortcuts::ShortcutSettings::default();
+            warnings
+                .push("旧任务快捷键重复或转换后冲突，采用 F9 / F10 默认值，请导入后核对。".into());
+        }
+        warnings.push("任务快捷键只暂停 / 继续或停止已有任务；旧开始键不会启动新任务。".into());
         converted.insert(env.relative.clone());
     }
     for item in legacy.instance_list {
@@ -398,7 +432,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v3\0");
+    hash.update(b"zzz-auto-config-import-v4\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());
@@ -409,7 +443,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             path: format!("config/{}", file.relative),
             sha256: hex::encode(Sha256::digest(&file.bytes)),
             disposition: if file.relative == "env.yml" {
-                "已检查截图设置；其他环境字段仅归档，待迁移"
+                "已检查截图与任务快捷键；其他环境字段仅归档，待迁移"
             } else if file.relative.ends_with("/game_account.yml")
                 && converted.contains(&file.relative)
             {

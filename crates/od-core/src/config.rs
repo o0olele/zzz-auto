@@ -16,11 +16,14 @@ const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 pub struct GeneralSettings {
     pub capture_method: crate::CaptureMethod,
     pub mail: crate::mail::MailConfig,
+    #[serde(default)]
+    pub shortcuts: crate::shortcuts::ShortcutSettings,
 }
 
 impl GeneralSettings {
     pub fn validate(&self) -> Result<(), ConfigError> {
-        self.mail.validate().map_err(invalid)
+        self.mail.validate().map_err(invalid)?;
+        self.shortcuts.validate().map_err(invalid)
     }
 
     // 与协议一起生成表单定义；前端不维护另一份字段名、可选值与数值范围。

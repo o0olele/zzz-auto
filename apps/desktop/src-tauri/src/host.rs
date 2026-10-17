@@ -8,6 +8,7 @@ pub struct Host {
     session: crate::resources::SharedSession,
     pub resources: crate::resources::ResourceManager,
     pub channel: std::sync::Mutex<Option<tauri::ipc::Channel<od_protocol::DesktopUpdate>>>,
+    pub shortcuts: crate::shortcuts::DesktopShortcuts,
 }
 
 fn layout(app: &AppHandle) -> Result<od_platform::DesktopLayout, ApiError> {
@@ -40,6 +41,7 @@ impl Host {
             ),
             session,
             channel: std::sync::Mutex::new(None),
+            shortcuts: crate::shortcuts::DesktopShortcuts::new(),
         }
     }
 
@@ -60,6 +62,7 @@ impl Host {
             session.require_recovered()?;
         }
         state.take();
+        self.shortcuts.clear_target();
         *state = Some(EngineSession::launch(&layout(app)?, false).await?);
         Ok(())
     }
@@ -80,6 +83,7 @@ impl Host {
             .switch_to(EngineSession::launch(&layout, true))
             .await?;
         *state = Some(candidate);
+        self.shortcuts.clear_target();
         Ok(())
     }
 
@@ -87,11 +91,57 @@ impl Host {
         self.resources.require_available()?;
         let mut state = self.session.lock().await;
         self.resources.require_available()?;
-        state
+        let result = state
             .as_mut()
             .ok_or_else(|| offline("引擎未连接，使用“重连引擎”重新启动"))?
             .request(command)
-            .await
+            .await;
+        self.shortcuts.observe(&result);
+        if let Ok(Payload::AccountConfig(config)) = &result {
+            self.shortcuts
+                .configure(&config.general.shortcuts, false)
+                .await;
+        }
+        result
+    }
+
+    pub async fn control_shortcut(&self, command: Command, at: std::time::Instant) {
+        let result = async {
+            self.resources.require_available()?;
+            let mut state = self.session.lock().await;
+            self.resources.require_available()?;
+            if at.elapsed() > std::time::Duration::from_secs(2) {
+                return Err(ApiError::new(
+                    "shortcut_expired",
+                    "快捷键等待过久，已丢弃，请重新按键",
+                ));
+            }
+            state
+                .as_mut()
+                .ok_or_else(|| offline("引擎未连接"))?
+                .request(command)
+                .await
+        }
+        .await;
+        self.shortcuts.observe(&result);
+        self.shortcuts
+            .control_result(result.err().map(|error| error.message));
+    }
+
+    pub async fn retry_shortcuts(&self) -> Result<od_core::shortcuts::ShortcutStatus, ApiError> {
+        self.resources.require_available()?;
+        let mut state = self.session.lock().await;
+        self.resources.require_available()?;
+        let session = state.as_mut().ok_or_else(|| offline("引擎未连接"))?;
+        // 在同一会话锁内预检与注册，不能在预检后插入新任务。
+        crate::session::require_idle(session.request(Command::Snapshot).await?)?;
+        let Payload::AccountConfig(config) = session.request(Command::AccountConfig).await? else {
+            return Err(ApiError::new("config_error", "无法读取任务快捷键设置"));
+        };
+        self.shortcuts
+            .configure(&config.general.shortcuts, true)
+            .await;
+        Ok(self.shortcuts.snapshot())
     }
 
     pub async fn poll(
@@ -100,6 +150,7 @@ impl Host {
     ) -> (Option<EnginePrivilege>, Result<Payload, ApiError>) {
         let mut state = self.session.lock().await;
         let Some(session) = state.as_mut() else {
+            self.shortcuts.clear_target();
             let recovery = layout(app).and_then(|layout| {
                 crate::session::recovery::RecoveryJournal::open(&layout.data)?.require_clean()
             });
@@ -110,7 +161,20 @@ impl Host {
         };
         // 快照与权限来自同一会话，不能跨权限切换混合读取。
         let privilege = session.privilege.clone();
-        (Some(privilege), session.request(Command::Snapshot).await)
+        let result = session.request(Command::Snapshot).await;
+        self.shortcuts.observe(&result);
+        if result.is_ok() {
+            if let Ok(Payload::AccountConfig(config)) =
+                session.request(Command::AccountConfig).await
+            {
+                self.shortcuts
+                    .configure(&config.general.shortcuts, false)
+                    .await;
+            }
+        } else {
+            self.shortcuts.clear_target();
+        }
+        (Some(privilege), result)
     }
 
     pub async fn recover(&self, app: &AppHandle) -> Result<String, ApiError> {
@@ -148,6 +212,7 @@ impl Host {
     }
 
     pub async fn shutdown(&self) -> Result<(), ApiError> {
+        self.shortcuts.clear_target();
         self.resources.close_and_wait().await;
         let mut state = self.session.lock().await;
         if let Some(session) = state.as_mut()

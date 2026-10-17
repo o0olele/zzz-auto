@@ -3,6 +3,11 @@ import type { ApiError, Command, DesktopUpdate, Payload, DesktopRuntimeResources
 
 export const desktop = isTauri();
 
+export async function retryShortcuts(): Promise<import('./generated/protocol').ShortcutStatus> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('retry_shortcuts');
+}
+
 export async function request(command: Command): Promise<Payload> {
   if (!desktop) throw { code: 'preview_only', message: '浏览器仅供界面预览，请通过 Tauri 启动原生引擎。', details: null } satisfies ApiError;
   return invoke<Payload>('engine_request', { command });

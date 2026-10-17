@@ -10,7 +10,10 @@ export type GroupPlan = { context: RunContext, mail_config: MailConfig, items: A
 export type HistoryItem = { record: RunRecord, interrupted: boolean, };
 export type RunHistory = { instance_id: number, items: Array<HistoryItem>, unreadable: number, has_more: boolean, };
 export type GroupApp = { app_id: string, enabled: boolean, };
-export type GeneralSettings = { capture_method: CaptureMethod, mail: MailConfig, };
+export type GeneralSettings = { capture_method: CaptureMethod, mail: MailConfig, shortcuts: ShortcutSettings, };
+export type ShortcutKey = "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11";
+export type ShortcutSettings = { pause_resume: ShortcutKey | null, stop: ShortcutKey | null, };
+export type ShortcutStatus = { active: ShortcutSettings | null, registration_error: string | null, action_error: string | null, };
 export type AppGroup = { id: string, run_policy: RunPolicy, apps: Array<GroupApp>, };
 export type AccountInstance = { id: number, name: string, active_in_od: boolean, game_region: GameRegion, groups: Array<AppGroup>, };
 export type AccountConfig = { schema: number, revision: number, general: GeneralSettings, active_instance: number, instances: Array<AccountInstance>, import_id: string | null, };
@@ -78,7 +81,7 @@ export type Request = { version: number, id: string, command: Command, };
 export type Payload = { "type": "model_resources", "data": ModelResources } | { "type": "group_plan", "data": GroupPlan } | { "type": "run_history", "data": RunHistory } | { "type": "account_config", "data": AccountConfig } | { "type": "config_import_preview", "data": ImportPreview } | { "type": "snapshot", "data": Snapshot } | { "type": "applications", "data": Array<AppDefinition> } | { "type": "windows", "data": Array<WindowInfo> } | { "type": "screenshot", "data": Screenshot } | { "type": "run", "data": RunRecord } | { "type": "events", "data": Array<RunEvent> } | { "type": "ack" };
 export type ApiError = { code: string, message: string, details: string | null, };
 export type Response = { version: number, id: string, result: Payload | null, error: ApiError | null, };
-export type DesktopUpdate = { "type": "snapshot", "data": Snapshot } | { "type": "offline", "data": ApiError } | { "type": "privilege", "data": EnginePrivilege };
+export type DesktopUpdate = { "type": "snapshot", "data": Snapshot } | { "type": "offline", "data": ApiError } | { "type": "privilege", "data": EnginePrivilege } | { "type": "shortcuts", "data": ShortcutStatus };
 export type EnginePrivilege = { engine_integrity: number, desktop_integrity: number, };
 export const generalSettingsFields = [
   {
@@ -158,4 +161,17 @@ export const runPolicyOptions = [
     "label": "跳过本游戏日已完成",
     "value": "skip_daily_success"
   }
+] as const;
+export const shortcutKeys = [
+  "f1",
+  "f2",
+  "f3",
+  "f4",
+  "f5",
+  "f6",
+  "f7",
+  "f8",
+  "f9",
+  "f10",
+  "f11"
 ] as const;

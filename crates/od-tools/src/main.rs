@@ -193,6 +193,9 @@ fn main() -> Result<()> {
                 od_core::run_history::RunHistory::decl(),
                 od_core::config::GroupApp::decl(),
                 od_core::config::GeneralSettings::decl(),
+                od_core::shortcuts::ShortcutKey::decl(),
+                od_core::shortcuts::ShortcutSettings::decl(),
+                od_core::shortcuts::ShortcutStatus::decl(),
                 od_core::config::AppGroup::decl(),
                 od_core::config::AccountInstance::decl(),
                 od_core::config::AccountConfig::decl(),
@@ -271,7 +274,7 @@ fn main() -> Result<()> {
             std::fs::write(
                 output,
                 format!(
-                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\n",
+                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\n",
                     declarations
                         .into_iter()
                         .map(|decl| format!("export {decl}"))
@@ -279,7 +282,8 @@ fn main() -> Result<()> {
                         .join("\n"),
                     serde_json::to_string_pretty(&od_core::config::GeneralSettings::fields())?,
                     serde_json::to_string_pretty(&od_core::daily::GameRegion::options())?,
-                    serde_json::to_string_pretty(&od_core::daily::RunPolicy::options())?
+                    serde_json::to_string_pretty(&od_core::daily::RunPolicy::options())?,
+                    serde_json::to_string_pretty(&od_core::shortcuts::ShortcutKey::ALL)?
                 ),
             )?;
             Ok(())

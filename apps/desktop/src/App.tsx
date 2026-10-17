@@ -9,7 +9,7 @@ import {
   Home24Regular, Image24Regular, Play20Regular, PlugConnected24Regular, Search20Regular,
   Stop20Regular, WeatherMoon20Regular, WeatherSunny20Regular, Settings24Regular,
 } from '@fluentui/react-icons';
-import type { AppDefinition, CaptureMethod, EnginePrivilege, GeneralSettings as Settings, Screenshot, Snapshot, WindowInfo } from './generated/protocol';
+import type { AppDefinition, CaptureMethod, EnginePrivilege, GeneralSettings as Settings, Screenshot, ShortcutStatus, Snapshot, WindowInfo } from './generated/protocol';
 import { desktop, elevateEngine, errorMessage, reconnect, recoverInputs, request, subscribe } from './bridge';
 import catalog from '../../../resources/catalog/applications.json';
 import { InputDiagnostics } from './InputDiagnostics';
@@ -56,6 +56,7 @@ export default function App() {
   const [screenshot, setScreenshot] = useState<Screenshot | null>(null);
   const [captureMethod, setCaptureMethod] = useState<CaptureMethod>('frame_pool');
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [shortcuts, setShortcuts] = useState<ShortcutStatus | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState('');
@@ -99,6 +100,7 @@ export default function App() {
     subscribe(update => {
       if (!alive) return;
       if (update.type === 'privilege') { setPrivilege(update.data); }
+      else if (update.type === 'shortcuts') { setShortcuts(update.data); }
       else if (update.type === 'snapshot') { setSnapshot(update.data); setConnected(true); }
       else { setConnected(false); setSnapshot(null); setScreenshot(null); setError(update.data.message); if (update.data.code.startsWith('input_recovery')) setRecoveryRequired(true); }
     }).catch(reason => { if (alive) setError(errorMessage(reason)); });
@@ -149,6 +151,8 @@ export default function App() {
         <div className="content">
           {!desktop && <MessageBar intent="info"><MessageBarBody>当前为浏览器预览。使用 <code>npm run tauri dev</code> 启动桌面，连接真实 Maa 引擎。</MessageBarBody></MessageBar>}
           {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+          {shortcuts?.registration_error && <MessageBar intent="warning"><MessageBarBody>全局快捷键未生效：{shortcuts.registration_error}。请在通用设置中修改或重试。</MessageBarBody></MessageBar>}
+          {shortcuts?.action_error && <MessageBar intent="warning"><MessageBarBody>快捷键控制未完成：{shortcuts.action_error}</MessageBarBody></MessageBar>}
           {(recoveryRequired || recoveryMessage) && <Card><div className="card-title"><h2>输入恢复</h2><Badge appearance="outline">{recoveryRequired ? '需要恢复' : '已处理'}</Badge></div>
             <p>{recoveryRequired ? '引擎退出前未确认输入已释放。请停止使用自动化；恢复将只释放记录中的输入，管理员引擎可能需要再次授权 Windows。恢复成功后请确认游戏状态，再手动重连。' : recoveryMessage}</p>
             {recoveryRequired && <Button disabled={!desktop || busy} onClick={() => act(async () => {
@@ -189,7 +193,7 @@ export default function App() {
 
           {page === 'accounts' && <AccountSettings onImported={value => acceptSettings(value.general)} connected={desktop && connected} active={active} blocked={recoveryRequired || busy} apps={apps} snapshot={snapshot} onCommand={command => act(async () => { const value = await request(command); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); else if (value.type === 'snapshot') setSnapshot(value.data); })}/>}
 
-          {page === 'settings' && <GeneralSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} onLoaded={acceptSettings}/>}
+          {page === 'settings' && <GeneralSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} onLoaded={acceptSettings} shortcuts={shortcuts} onShortcuts={setShortcuts}/>}
 
           {page === 'apps' && <>
             <div className="page-heading"><div><div className="eyebrow">APPLICATION CATALOG</div><h1>应用迁移</h1><p>保留现有应用 ID，逐项记录实现与验收状态。</p></div><Badge appearance="tint" color="brand">{apps.length} 个已登记</Badge></div>

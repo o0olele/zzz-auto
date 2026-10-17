@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v17 增加旧配置预览和导入；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 17;
+// v18 增加全局任务快捷键设置与桌面注册状态；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 18;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -194,6 +194,33 @@ pub enum DesktopUpdate {
     Snapshot(Box<Snapshot>),
     Offline(ApiError),
     Privilege(EnginePrivilege),
+    Shortcuts(od_core::shortcuts::ShortcutStatus),
+}
+
+// 在原生按键到达时冻结运行 ID；发送前不重新选择其他任务。
+pub fn shortcut_command(
+    action: od_core::shortcuts::ShortcutAction,
+    run: Option<&RunRecord>,
+) -> Option<Command> {
+    use od_core::{RunState, shortcuts::ShortcutAction};
+    let run = run?;
+    if run.state.is_terminal() || run.state == RunState::Stopping {
+        return None;
+    }
+    let run_id = run.id;
+    match action {
+        ShortcutAction::Stop => Some(Command::Stop { run_id }),
+        ShortcutAction::PauseResume
+            if run.mail.is_some() || run.map.is_some() || run.coffee.is_some() =>
+        {
+            match run.state {
+                RunState::Running => Some(Command::Pause { run_id }),
+                RunState::Paused => Some(Command::Resume { run_id }),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 impl Response {

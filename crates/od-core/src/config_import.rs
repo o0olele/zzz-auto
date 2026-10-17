@@ -345,6 +345,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 let group: LegacyGroup = parse(file)?;
                 groups.push(AppGroup {
                     id: parts[0].into(),
+                    name: None,
                     run_policy: crate::daily::RunPolicy::default(),
                     apps: group
                         .app_list
@@ -361,6 +362,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         if !groups.iter().any(|g| g.id == "one_dragon") {
             let mut group = AppGroup {
                 id: "one_dragon".into(),
+                name: None,
                 run_policy: crate::daily::RunPolicy::default(),
                 apps: Vec::new(),
             };

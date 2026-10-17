@@ -14,6 +14,9 @@ pub struct RunContext {
     pub instance_id: u32,
     pub instance_name: String,
     pub group_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub group_name: Option<String>,
     pub config_revision: u32,
     pub app_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -23,6 +26,13 @@ pub struct RunContext {
 
 impl RunContext {
     pub fn validate(&self) -> Result<(), &'static str> {
+        if let Some(name) = &self.group_name
+            && (name.trim().is_empty()
+                || name.chars().count() > 120
+                || name.chars().any(char::is_control))
+        {
+            return Err("运行记录的应用组名称无效");
+        }
         if let Some(day) = &self.game_day {
             day.validate()?;
         }
@@ -195,6 +205,7 @@ pub fn plan_group_at(
             instance_id,
             instance_name: instance.name.clone(),
             group_id: group.id.clone(),
+            group_name: Some(group.display_name().into()),
             config_revision: config.revision,
             app_ids,
             game_day: Some(game_day),

@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
-import type { AccountConfig, AppDefinition, Command, ConfigChange, GameRegion, RunPolicy, Snapshot } from './generated/protocol';
+import type { AccountConfig, AppDefinition, AppGroup, Command, ConfigChange, GameRegion, RunPolicy, Snapshot } from './generated/protocol';
 import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { errorMessage, request } from './bridge';
 import { GroupRuns } from './GroupRuns';
 import { ConfigImport } from './ConfigImport';
+
+const groupName = (group: AppGroup) => group.name ?? (group.id === 'one_dragon' ? '一条龙' : group.id);
+const validName = (name: string) => !!name.trim() && [...name].length <= 80 && !/[\u0000-\u001f\u007f-\u009f]/.test(name);
 
 export function AccountSettings({ connected, active, blocked, apps, snapshot, onCommand, onImported }: { connected: boolean; active: boolean; blocked: boolean; apps: AppDefinition[]; snapshot: Snapshot | null; onCommand: (command: Command) => Promise<void>; onImported: (config: AccountConfig) => void }) {
   const [config, setConfig] = useState<AccountConfig | null>(null);
@@ -15,9 +18,15 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
   const [region, setRegion] = useState<GameRegion>('cn');
   const [runPolicy, setRunPolicy] = useState<RunPolicy>('always');
   const [newName, setNewName] = useState('');
+  const [groupLabel, setGroupLabel] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const generation = useRef(0);
   const instance = config?.instances.find(item => item.id === instanceId);
   const group = instance?.groups.find(item => item.id === groupId);
   const disabled = !connected || blocked || busy || importBusy || active;
@@ -25,21 +34,23 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
   function accept(value: AccountConfig) {
     setConfig(value);
     setInstanceId(current => value.instances.some(item => item.id === current) ? current : value.active_instance);
+    setDeleting(false); setDeleteConfirmed(false);
   }
 
   async function load() {
     const result = await request({ type: 'account_config' });
     if (result.type !== 'account_config') throw new Error('引擎未返回账号配置');
-    accept(result.data);
+    return result.data;
   }
 
   useEffect(() => {
-    let alive = true;
-    setConfig(null); setError('');
-    if (connected) request({ type: 'account_config' }).then(result => {
-      if (alive && result.type === 'account_config') accept(result.data);
-    }).catch(reason => { if (alive) setError(errorMessage(reason)); });
-    return () => { alive = false; };
+    const requested = ++generation.current;
+    setConfig(null); setError(''); setMessage(''); setBusy(false);
+    setNewGroupName(''); setDeleting(false); setDeleteConfirmed(false);
+    if (connected) load().then(value => {
+      if (generation.current === requested) accept(value);
+    }).catch(reason => { if (generation.current === requested) setError(errorMessage(reason)); });
+    return () => { generation.current++; };
   }, [connected]);
 
   useEffect(() => {
@@ -48,6 +59,11 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
 
   useEffect(() => { setRegion(instance?.game_region ?? 'cn'); }, [instance?.id, instance?.game_region]);
   useEffect(() => { setRunPolicy(group?.run_policy ?? 'always'); }, [instance?.id, group?.id, group?.run_policy]);
+  useEffect(() => { setGroupLabel(group ? groupName(group) : ''); }, [instance?.id, group?.id, config?.revision]);
+  useEffect(() => {
+    setDeleting(false); setDeleteConfirmed(false);
+  }, [connected, instanceId, groupId, config?.revision, active, blocked, importBusy]);
+  useEffect(() => { setNewGroupName(''); setMessage(''); }, [instanceId]);
 
   useEffect(() => {
     setGroupId(current => instance?.groups.some(item => item.id === current) ? current : instance?.groups[0]?.id ?? 'one_dragon');
@@ -55,18 +71,30 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
 
   async function update(change: ConfigChange) {
     if (!config || disabled) return;
-    setBusy(true); setError('');
+    const requested = generation.current;
+    setBusy(true); setError(''); setMessage('');
     try {
       const result = await request({ type: 'update_account_config', params: { revision: config.revision, change } });
+      if (generation.current !== requested) return;
       if (result.type !== 'account_config') throw new Error('引擎未返回保存结果');
       accept(result.data);
       if (change.type === 'create_instance') setNewName('');
+      if (change.type === 'create_group') {
+        const before = config.instances.find(item => item.id === change.instance_id)?.groups ?? [];
+        const created = result.data.instances.find(item => item.id === change.instance_id)?.groups.find(item => !before.some(old => old.id === item.id));
+        if (created) setGroupId(created.id);
+        setNewGroupName('');
+        setMessage(change.source_group_id ? '应用组已复制，请核对启用项和运行策略。' : '应用组已新建，所有应用默认禁用。');
+      } else if (change.type === 'rename_group') setMessage('应用组名称已保存。');
+      else if (change.type === 'delete_group') setMessage('应用组已删除，账号历史和导入归档仍保留。');
     } catch (reason) {
+      if (generation.current !== requested) return;
       if (typeof reason === 'object' && reason && 'code' in reason && reason.code === 'config_conflict') {
-        try { await load(); setError('配置已被其他窗口或进程修改，已加载最新配置。请核对后重新编辑。'); }
-        catch (refreshError) { setConfig(null); setError(`配置冲突，读取最新配置失败：${errorMessage(refreshError)}`); }
+        setDeleting(false); setDeleteConfirmed(false);
+        try { const value = await load(); if (generation.current === requested) { accept(value); setError('配置已被其他窗口或进程修改，已加载最新配置。请核对后重新编辑。'); } }
+        catch (refreshError) { if (generation.current === requested) { setConfig(null); setError(`配置冲突，读取最新配置失败：${errorMessage(refreshError)}`); } }
       } else setError(errorMessage(reason));
-    } finally { setBusy(false); }
+    } finally { if (generation.current === requested) setBusy(false); }
   }
 
   function move(index: number, offset: number) {
@@ -78,9 +106,12 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
 
   return <>
     <div className="page-heading"><div><div className="eyebrow">ACCOUNTS AND APPLICATIONS</div><h1>账号与应用组</h1><p>管理本地账号配置和应用顺序。切换配置后，请自行确认游戏登录账号。</p></div><Button disabled={!connected || busy || importBusy || blocked} onClick={async () => {
-      setBusy(true); setError(''); try { await load(); } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
+      const requested = generation.current;
+      setBusy(true); setError(''); setMessage(''); setDeleting(false); setDeleteConfirmed(false);
+      try { const value = await load(); if (generation.current === requested) accept(value); } catch (reason) { if (generation.current === requested) setError(errorMessage(reason)); } finally { if (generation.current === requested) setBusy(false); }
     }}>读取最新配置</Button></div>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+    {message && <MessageBar intent="success"><MessageBarBody>{message}</MessageBarBody></MessageBar>}
     {active && <MessageBar intent="info"><MessageBarBody>任务仍在运行或收尾，请停止任务后再修改账号及应用组。</MessageBarBody></MessageBar>}
     <ConfigImport connected={connected} active={active} blocked={blocked || busy} current={config} apps={apps} onBusy={setImportBusy} onImported={value => { accept(value); setError(''); onImported(value); }}/>
     {!config && <Card><p>{connected ? '正在读取账号配置。读取失败时可点击“读取最新配置”重试。' : '连接桌面引擎后可读取和编辑本地配置。'}</p></Card>}
@@ -88,7 +119,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       <Card><div className="card-title"><h2>账号配置</h2><Badge appearance="outline">修订 {config.revision}</Badge></div>
         <p>当前账号：{config.instances.find(item => item.id === config.active_instance)?.name}</p>
         <div className="input-fields">
-          <Field label="编辑账号"><Select value={instanceId} disabled={busy} onChange={(_, data) => setInstanceId(Number(data.value))}>{config.instances.map(item => <option key={item.id} value={item.id}>{item.name}{item.id === config.active_instance ? '（当前）' : ''}</option>)}</Select></Field>
+          <Field label="编辑账号"><Select value={instanceId} disabled={busy || importBusy} onChange={(_, data) => setInstanceId(Number(data.value))}>{config.instances.map(item => <option key={item.id} value={item.id}>{item.name}{item.id === config.active_instance ? '（当前）' : ''}</option>)}</Select></Field>
           <Field label="账号名称"><Input value={name} maxLength={80} disabled={disabled} onChange={(_, data) => setName(data.value)}/></Field>
         </div>
         <Checkbox label="参与一条龙" checked={enabled} disabled={disabled} onChange={(_, data) => setEnabled(data.checked === true)}/>
@@ -102,7 +133,21 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
         <div className="account-create"><Field label="新增账号名称"><Input value={newName} maxLength={80} disabled={disabled} onChange={(_, data) => setNewName(data.value)}/></Field><Button disabled={disabled || !newName.trim() || config.instances.length >= 128} onClick={() => void update({ type: 'create_instance', name: newName })}>新增账号</Button></div>
       </Card>
       {instance && <Card><div className="card-title"><h2>应用组顺序</h2><Badge appearance="outline">{group?.apps.length ?? 0} 项</Badge></div>
-        <Field label="应用组"><Select value={groupId} disabled={busy} onChange={(_, data) => setGroupId(data.value)}>{instance.groups.map(item => <option key={item.id} value={item.id}>{item.id === 'one_dragon' ? '一条龙' : item.id}</option>)}</Select></Field>
+        <Field label="应用组"><Select value={groupId} disabled={busy || importBusy} onChange={(_, data) => { setGroupId(data.value); setMessage(''); }}>{instance.groups.map(item => <option key={item.id} value={item.id}>{groupName(item)}</option>)}</Select></Field>
+        <div className="account-create"><Field label="应用组名称"><Input value={groupLabel} maxLength={80} disabled={disabled || !group} onChange={(_, data) => { setGroupLabel(data.value); setMessage(''); }}/></Field>
+          <Button disabled={disabled || !group || !validName(groupLabel) || groupLabel.trim() === groupName(group)} onClick={() => group && void update({ type: 'rename_group', instance_id: instance.id, group_id: group.id, name: groupLabel })}>保存组名</Button>
+          <Button disabled={disabled || !group || instance.groups.length <= 1} onClick={() => { setDeleting(true); setDeleteConfirmed(false); setMessage(''); }}>删除应用组</Button>
+        </div>
+        {deleting && group && <div role="group" aria-label="删除应用组确认">
+          <p>删除“{instance.name}”中的“{groupName(group)}”？账号历史和旧配置归档仍保留，修改前会备份配置。</p>
+          <Checkbox label={`确认删除 ${groupName(group)}`} checked={deleteConfirmed} disabled={disabled} onChange={(_, data) => setDeleteConfirmed(data.checked === true)}/>
+          <div className="button-row"><Button appearance="primary" disabled={disabled || !deleteConfirmed || instance.groups.length <= 1} onClick={() => void update({ type: 'delete_group', instance_id: instance.id, group_id: group.id })}>确认删除应用组</Button><Button disabled={busy} onClick={() => { setDeleting(false); setDeleteConfirmed(false); }}>取消删除</Button></div>
+        </div>}
+        <div className="account-create"><Field label="新应用组名称"><Input value={newGroupName} maxLength={80} disabled={disabled || instance.groups.length >= 64} onChange={(_, data) => setNewGroupName(data.value)}/></Field>
+          <Button disabled={disabled || !validName(newGroupName) || instance.groups.length >= 64} onClick={() => void update({ type: 'create_group', instance_id: instance.id, name: newGroupName, source_group_id: null })}>新建应用组</Button>
+          <Button disabled={disabled || !group || !validName(newGroupName) || instance.groups.length >= 64} onClick={() => group && void update({ type: 'create_group', instance_id: instance.id, name: newGroupName, source_group_id: group.id })}>复制当前组</Button>
+        </div>
+        <p>新建组的应用全部禁用；复制保留当前组的顺序、启用项和运行策略。每个账号可有 1..64 组。按日完成状态由同一账号各组共用。</p>
         <Field label="运行策略"><Select value={runPolicy} disabled={disabled} onChange={(_, data) => setRunPolicy(data.value as RunPolicy)}>{runPolicyOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></Field>
         <Button disabled={disabled || !group || runPolicy === group.run_policy} onClick={() => group && void update({ type: 'set_run_policy', instance_id: instance.id, group_id: group.id, run_policy: runPolicy })}>保存运行策略</Button>
         <p>新账号的应用默认禁用。启用和排序会保存到当前编辑账号；应用完成迁移与验收后才开放运行。</p>

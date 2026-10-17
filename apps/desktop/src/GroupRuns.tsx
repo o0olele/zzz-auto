@@ -86,7 +86,7 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
       {planning && <Spinner size="tiny" label="检查应用组"/>}
       {planError && <MessageBar intent="error"><MessageBarBody>{planError}</MessageBarBody></MessageBar>}
       {plan && <div aria-label="应用组运行计划">
-        <p>{plan.context.instance_name} · {plan.context.group_id} · 修订 {plan.context.config_revision}</p>
+        <p>{plan.context.instance_name} · {plan.context.group_name ?? plan.context.group_id} · 修订 {plan.context.config_revision}</p>
         <p>{gameRegionOptions.find(option => option.value === plan.game_day.region)?.label} · 游戏日 {plan.game_day.date} · {plan.run_policy === 'always' ? '每次运行' : '跳过本游戏日已完成'}</p>
         <p>启动 / 继续延时 {plan.mail_config.start_delay_ms} ms · 邮件超时 {plan.mail_config.timeout_ms} ms</p>
         <ol className="group-plan">{plan.items.map(item => <li key={item.app_id}><span>{item.name}</span><Badge appearance="outline">{item.decision === 'already_done' ? '本游戏日已完成，跳过' : item.enabled ? availability[item.availability] : '未启用'}</Badge></li>)}</ol>
@@ -120,7 +120,7 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
       {history && !history.items.length && <p>该账号暂无可读取的运行记录。</p>}
       <div className="account-history">{history?.items.map(({ record, interrupted }) => <div className="history-item" key={record.id}>
         <div className="card-title"><strong>{record.app_id === 'email' ? '邮件试运行' : record.app_id}</strong><Badge appearance="outline">{interrupted ? '异常中断' : record.mail?.state === 'timed_out' ? '超时' : stateNames[record.state]}</Badge></div>
-        <p>{record.context?.instance_name} · {record.context?.group_id} · 修订 {record.context?.config_revision} · {new Date(record.started_at).toLocaleString()}</p>
+        <p>{record.context?.instance_name} · {record.context?.group_name ?? record.context?.group_id} · 修订 {record.context?.config_revision} · {new Date(record.started_at).toLocaleString()}</p>
         {record.context?.game_day && <p>游戏日 {record.context.game_day.date}</p>}
         <p>{interrupted ? '上次引擎退出前未保存终态，实际结束时间未知，不会自动继续。' : record.message}</p>
         <RunSteps group={record.group}/>

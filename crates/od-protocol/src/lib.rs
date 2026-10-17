@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v18 增加全局任务快捷键设置与桌面注册状态；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 18;
+// v19 增加应用组管理与可选展示名称；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 19;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 

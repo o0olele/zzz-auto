@@ -58,9 +58,22 @@ pub struct GroupApp {
 #[serde(deny_unknown_fields)]
 pub struct AppGroup {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub name: Option<String>,
     #[serde(default)]
     pub run_policy: crate::daily::RunPolicy,
     pub apps: Vec<GroupApp>,
+}
+
+impl AppGroup {
+    pub fn display_name(&self) -> &str {
+        self.name.as_deref().unwrap_or(if self.id == "one_dragon" {
+            "一条龙"
+        } else {
+            &self.id
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -119,6 +132,20 @@ pub enum ConfigChange {
         group_id: String,
         apps: Vec<GroupApp>,
     },
+    CreateGroup {
+        instance_id: u32,
+        name: String,
+        source_group_id: Option<String>,
+    },
+    RenameGroup {
+        instance_id: u32,
+        group_id: String,
+        name: String,
+    },
+    DeleteGroup {
+        instance_id: u32,
+        group_id: String,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -144,6 +171,7 @@ pub fn default_group() -> AppGroup {
     apps.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
     AppGroup {
         id: "one_dragon".into(),
+        name: None,
         run_policy: crate::daily::RunPolicy::default(),
         apps: apps
             .into_iter()
@@ -203,6 +231,9 @@ impl AccountConfig {
                 if !valid_identifier(&group.id) || !groups.insert(&group.id) {
                     return Err(invalid("应用组标识无效或重复"));
                 }
+                if let Some(name) = &group.name {
+                    validate_group_name(name)?;
+                }
                 if group.apps.len() > 256 {
                     return Err(invalid("应用组最多包含 256 项"));
                 }
@@ -222,6 +253,59 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::CreateGroup {
+                instance_id,
+                name,
+                source_group_id,
+            } => {
+                validate_group_name(&name)?;
+                let instance = self.instance_mut(instance_id)?;
+                if instance.groups.len() >= 64 {
+                    return Err(invalid("每个账号最多包含 64 个应用组"));
+                }
+                let mut group = if let Some(source) = source_group_id {
+                    instance
+                        .groups
+                        .iter()
+                        .find(|group| group.id == source)
+                        .ok_or_else(|| invalid("要复制的应用组不存在"))?
+                        .clone()
+                } else {
+                    default_group()
+                };
+                // 标识不随名称变化或删除而复用，历史记录始终保留原来的关联。
+                group.id = format!("group_{}", Uuid::new_v4().simple());
+                group.name = Some(name.trim().into());
+                instance.groups.push(group);
+            }
+            ConfigChange::RenameGroup {
+                instance_id,
+                group_id,
+                name,
+            } => {
+                validate_group_name(&name)?;
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .name = Some(name.trim().into());
+            }
+            ConfigChange::DeleteGroup {
+                instance_id,
+                group_id,
+            } => {
+                let instance = self.instance_mut(instance_id)?;
+                let index = instance
+                    .groups
+                    .iter()
+                    .position(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?;
+                if instance.groups.len() == 1 {
+                    return Err(invalid("每个账号至少保留一个应用组"));
+                }
+                instance.groups.remove(index);
+            }
             ConfigChange::SetGameRegion {
                 instance_id,
                 game_region,
@@ -303,6 +387,13 @@ impl AccountConfig {
 fn validate_name(name: &str) -> Result<(), ConfigError> {
     if name.trim().is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {
         return Err(invalid("账号名称须为 1..80 个字符，不能包含控制字符"));
+    }
+    Ok(())
+}
+
+fn validate_group_name(name: &str) -> Result<(), ConfigError> {
+    if name.trim().is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {
+        return Err(invalid("应用组名称须为 1..80 个字符，不能包含控制字符"));
     }
     Ok(())
 }

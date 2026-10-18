@@ -50,7 +50,7 @@ export function GeneralSettings({ connected, active, blocked, onLoaded, shortcut
     const requested = generation.current;
     setBusy(true); setError(''); setMessage('');
     try {
-      const result = await request({ type: 'update_account_config', params: { revision: config.revision, change: { type: 'save_general', settings: { capture_method: values.capture_method as CaptureMethod, mail: { timeout_ms: Number(values.timeout_ms), start_delay_ms: Number(values.start_delay_ms) }, shortcuts: keys } } } });
+      const result = await request({ type: 'update_account_config', params: { revision: config.revision, change: { type: 'save_general', settings: { ...config.general, capture_method: values.capture_method as CaptureMethod, mail: { timeout_ms: Number(values.timeout_ms), start_delay_ms: Number(values.start_delay_ms) }, shortcuts: keys } } } });
       if (generation.current !== requested) return;
       if (result.type !== 'account_config') throw new Error('引擎未返回保存结果');
       accept(result.data); setMessage('通用设置已保存。截图默认值在下次连接或获取截图时应用。');

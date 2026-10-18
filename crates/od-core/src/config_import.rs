@@ -36,6 +36,8 @@ struct SourceFile {
 
 #[derive(Deserialize)]
 struct LegacyAccounts {
+    #[serde(default)]
+    after_done: Option<String>,
     instance_list: Vec<LegacyInstance>,
 }
 
@@ -284,6 +286,16 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             .into(),
     ];
     let mut general = GeneralSettings::default();
+    if let Some(value) = legacy.after_done.as_deref() {
+        if let Some(action) = crate::after_done::AfterDoneAction::from_legacy(value) {
+            general.after_done = action;
+        } else {
+            warnings.push("旧结束后动作不受支持，采用无动作；原值只归档，请导入后核对。".into());
+        }
+    }
+    warnings.push(
+        "结束后动作仅适用于桌面本次启动且正常完成的应用组，执行前有 60 秒可取消倒计时。".into(),
+    );
     if let Some(env) = files.iter().find(|file| file.relative == "env.yml") {
         let environment: LegacyEnvironment = parse(env)?;
         if environment.screenshot_method.as_deref() == Some("print_window") {
@@ -472,7 +484,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v5\0");
+    hash.update(b"zzz-auto-config-import-v6\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());

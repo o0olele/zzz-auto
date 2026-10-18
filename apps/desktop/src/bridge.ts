@@ -3,6 +3,11 @@ import type { ApiError, Command, DesktopUpdate, Payload, DesktopRuntimeResources
 
 export const desktop = isTauri();
 
+export async function cancelAfterDone(id: string): Promise<import('./generated/protocol').AfterDoneStatus | null> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('cancel_after_done', { id });
+}
+
 export async function configRecoveryState(): Promise<import('./generated/protocol').DesktopConfigRecovery> {
   if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
   return invoke('config_recovery_state');

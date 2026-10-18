@@ -9,7 +9,7 @@ import {
   Home24Regular, Image24Regular, Play20Regular, PlugConnected24Regular, Search20Regular,
   Stop20Regular, WeatherMoon20Regular, WeatherSunny20Regular, Settings24Regular,
 } from '@fluentui/react-icons';
-import type { AppDefinition, CaptureMethod, EnginePrivilege, GeneralSettings as Settings, Screenshot, ShortcutStatus, Snapshot, WindowInfo } from './generated/protocol';
+import type { AfterDoneStatus, AppDefinition, CaptureMethod, EnginePrivilege, GeneralSettings as Settings, Screenshot, ShortcutStatus, Snapshot, WindowInfo } from './generated/protocol';
 import { desktop, elevateEngine, errorMessage, reconnect, recoverInputs, request, subscribe } from './bridge';
 import catalog from '../../../resources/catalog/applications.json';
 import { InputDiagnostics } from './InputDiagnostics';
@@ -17,6 +17,7 @@ import { MailDiagnostics } from './MailDiagnostics';
 import { MapDiagnostics } from './MapDiagnostics';
 import { AccountSettings } from './AccountSettings';
 import { OneDragonRun } from './OneDragonRun';
+import { AfterDoneBanner } from './AfterDoneBanner';
 import { GeneralSettings } from './GeneralSettings';
 import { RunLogs } from './RunLogs';
 import { RunHistory } from './RunHistory';
@@ -69,12 +70,14 @@ export default function App() {
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState('');
   const [actionBusy, setBusy] = useState(false);
+  const [afterDone, setAfterDone] = useState<AfterDoneStatus | null>(null);
+  const afterDoneBusy = afterDone?.state === 'counting_down' || afterDone?.state === 'executing';
   const [resourcesVisited, setResourcesVisited] = useState(false);
   const runtimeResources = useRuntimeResources(resourcesVisited);
   const configRecovery = useConfigRecovery();
   const resourceSwitching = runtimeResources.snapshot.job?.state === 'running' && ['install', 'activate', 'rollback'].includes(runtimeResources.snapshot.job.request.type);
   const configRecovering = configRecovery.submitting || configRecovery.snapshot.job?.state === 'running';
-  const busy = actionBusy || resourceSwitching || configRecovering;
+  const busy = actionBusy || resourceSwitching || configRecovering || afterDoneBusy;
   const [connected, setConnected] = useState(false);
   const [privilege, setPrivilege] = useState<EnginePrivilege | null>(null);
   const [elevating, setElevating] = useState(false);
@@ -115,6 +118,7 @@ export default function App() {
       if (!alive) return;
       if (update.type === 'privilege') { setPrivilege(update.data); }
       else if (update.type === 'shortcuts') { setShortcuts(update.data); }
+      else if (update.type === 'after_done') { setAfterDone(update.data); }
       else if (update.type === 'snapshot') { setSnapshot(update.data); setConnected(true); }
       else { setConnected(false); setSnapshot(null); setScreenshot(null); setError(update.data.message); if (update.data.code.startsWith('input_recovery')) setRecoveryRequired(true); }
     }).catch(reason => { if (alive) setError(errorMessage(reason)); });
@@ -166,6 +170,7 @@ export default function App() {
           {!desktop && <MessageBar intent="info"><MessageBarBody>当前为浏览器预览。使用 <code>npm run tauri dev</code> 启动桌面，连接真实 Maa 引擎。</MessageBarBody></MessageBar>}
           {appearanceWarning && <MessageBar intent="warning"><MessageBarBody>{appearanceWarning} <Button size="small" onClick={retryAppearanceSave}>重试保存外观</Button></MessageBarBody></MessageBar>}
           {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+          <AfterDoneBanner status={afterDone} connected={connected} onChange={setAfterDone}/>
           {shortcuts?.registration_error && <MessageBar intent="warning"><MessageBarBody>全局快捷键未生效：{shortcuts.registration_error}。请在通用设置中修改或重试。</MessageBarBody></MessageBar>}
           {shortcuts?.action_error && <MessageBar intent="warning"><MessageBarBody>快捷键控制未完成：{shortcuts.action_error}</MessageBarBody></MessageBar>}
           {(recoveryRequired || recoveryMessage) && <Card><div className="card-title"><h2>输入恢复</h2><Badge appearance="outline">{recoveryRequired ? '需要恢复' : '已处理'}</Badge></div>
@@ -235,7 +240,7 @@ export default function App() {
           </>}
 
           {page === 'resources' && <ModelResources connected={connected && !recoveryRequired} blocked={busy}/>}
-          {page === 'runtime_resources' && <RuntimeResources manager={runtimeResources} blocked={actionBusy || active || recoveryRequired || configRecovering} maintenance={configRecovering}/>}
+          {page === 'runtime_resources' && <RuntimeResources manager={runtimeResources} blocked={actionBusy || active || recoveryRequired || configRecovering || afterDoneBusy} maintenance={configRecovering}/>}
 
           {page === 'progress' && <>
             <div className="page-heading"><div><div className="eyebrow">MIGRATION ROADMAP</div><h1>开发与验收</h1><p>阶段完成以验收证据为准，编译与界面预览仅是其中一部分。</p></div><Badge appearance="tint" color="brand">M2 主流程通过，边界待验收 · M3 进行中</Badge></div>

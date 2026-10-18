@@ -85,6 +85,8 @@ pub struct PlannedApp {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GroupPlan {
+    #[serde(default)]
+    pub after_done: crate::after_done::AfterDoneAction,
     pub context: RunContext,
     pub mail_config: crate::mail::MailConfig,
     pub coffee_config: crate::coffee_run::CoffeeConfig,
@@ -198,6 +200,7 @@ pub fn plan_group_at(
     let executable = blockers.is_empty() && has_pending;
     let all_done = blockers.is_empty() && !has_pending;
     Ok(GroupPlan {
+        after_done: config.general.after_done,
         valid_until: game_day.ends_at().map_err(str::to_owned)?,
         all_done,
         game_day: game_day.clone(),

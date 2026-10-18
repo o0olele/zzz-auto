@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v25 接通账号历史分页、筛选与本页导出；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 25;
+// v26 接通一条龙结束后动作设置；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 26;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -221,6 +221,7 @@ pub struct Response {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum DesktopUpdate {
+    AfterDone(Option<od_core::after_done::AfterDoneStatus>),
     Snapshot(Box<Snapshot>),
     Offline(ApiError),
     Privilege(EnginePrivilege),

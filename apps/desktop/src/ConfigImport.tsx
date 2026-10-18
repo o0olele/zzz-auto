@@ -5,6 +5,7 @@ import { gameRegionOptions } from './generated/protocol';
 import { errorMessage, pickConfigImportSource, request } from './bridge';
 import { captureNames } from './captureSettings';
 import { coffeeSummary } from './CoffeeSettings';
+import { afterDoneName } from './AfterDoneBanner';
 
 export function ConfigImport({ connected, active, blocked, current, apps, onImported, onBusy }: {
   connected: boolean; active: boolean; blocked: boolean; current: AccountConfig | null; apps: AppDefinition[];
@@ -65,7 +66,7 @@ export function ConfigImport({ connected, active, blocked, current, apps, onImpo
 
   return <Card aria-label="旧配置导入">
     <div className="card-title"><h2>导入旧配置</h2><Badge appearance="outline">先预览再导入</Badge></div>
-    <p>选择旧程序 config 目录中的 one_dragon.yml，或填写旧程序根目录。账号、区服、应用组、兼容的截图设置与任务快捷键会转换，其余 YAML 原文只归档到当前数据目录。</p>
+    <p>选择旧程序 config 目录中的 one_dragon.yml，或填写旧程序根目录。账号、区服、应用组、兼容的截图设置、任务快捷键及结束后动作会转换，其余 YAML 原文只归档到当前数据目录。</p>
     <Field label="旧程序目录"><Input value={source} disabled={disabled} onChange={(_, data) => changeSource(data.value)} placeholder="例如 E:\旧版一条龙"/></Field>
     <div className="button-row">
       <Button disabled={disabled} onClick={() => void perform('pick')}>选择 one_dragon.yml</Button>
@@ -78,6 +79,7 @@ export function ConfigImport({ connected, active, blocked, current, apps, onImpo
     {preview && <section aria-label="旧配置预览">
       <p>账号 {preview.config.instances.length} 个，归档文件 {preview.files.length} 个；默认截图：{captureNames[preview.config.general.capture_method]}。</p>
       <p>任务快捷键：暂停 / 继续 {preview.config.general.shortcuts.pause_resume?.toUpperCase() ?? '关闭'}，停止 {preview.config.general.shortcuts.stop?.toUpperCase() ?? '关闭'}；不启动新任务。</p>
+      <p>结束后动作：{afterDoneName(preview.config.general.after_done)}；正常完成后等待 60 秒，可取消。</p>
       {preview.config.instances.map(instance => <div key={instance.id}>
         <h3>{instance.name}{instance.id === preview.config.active_instance ? '（当前账号）' : ''}</h3>
         <p>编号 {instance.id} · {gameRegionOptions.find(option => option.value === instance.game_region)?.label} · {instance.active_in_od ? '参与一条龙' : '不参与一条龙'}</p>

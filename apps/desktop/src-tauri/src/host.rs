@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 pub struct Host {
+    pub after_done: crate::after_done::DesktopAfterDone,
     session: crate::resources::SharedSession,
     pub resources: crate::resources::ResourceManager,
     pub config_recovery: crate::config_recovery::ConfigRecoveryManager,
@@ -39,6 +40,7 @@ impl Host {
         let runtime = tauri::async_runtime::handle().inner().clone();
         let resources = crate::resources::ResourceManager::new(session.clone(), runtime.clone());
         Self {
+            after_done: crate::after_done::DesktopAfterDone::default(),
             config_recovery: crate::config_recovery::ConfigRecoveryManager::new(
                 resources.clone(),
                 session.clone(),
@@ -53,6 +55,8 @@ impl Host {
     }
 
     pub async fn start(&self, app: &AppHandle) -> Result<(), ApiError> {
+        self.after_done.require_available()?;
+        self.after_done.invalidate("引擎连接改变，结束后动作已取消");
         self.resources.require_available()?;
         let mut state = self.session.lock().await;
         self.resources.require_available()?;
@@ -75,6 +79,8 @@ impl Host {
     }
 
     pub async fn elevate(&self, app: &AppHandle) -> Result<(), ApiError> {
+        self.after_done.require_available()?;
+        self.after_done.invalidate("引擎权限改变，结束后动作已取消");
         self.resources.require_available()?;
         let mut state = self.session.lock().await;
         self.resources.require_available()?;
@@ -95,13 +101,54 @@ impl Host {
     }
 
     pub async fn request(&self, command: Command) -> Result<Payload, ApiError> {
+        self.after_done.require_command(&command)?;
         self.resources.require_available()?;
         let mut state = self.session.lock().await;
+        self.after_done.require_command(&command)?;
         self.resources.require_available()?;
         let session = state
             .as_mut()
             .ok_or_else(|| offline("引擎未连接，使用“重连引擎”重新启动"))?;
+        let after = if let Command::StartGroupTrial { revision, .. } = &command {
+            let Payload::AccountConfig(config) = session.request(Command::AccountConfig).await?
+            else {
+                return Err(offline("无法读取结束后动作设置"));
+            };
+            if config.revision != *revision {
+                return Err(ApiError::new(
+                    "config_conflict",
+                    "配置已变化，请重新读取并预览",
+                ));
+            }
+            let action = config.general.after_done;
+            let target = if action != od_core::after_done::AfterDoneAction::None {
+                let Payload::Snapshot(snapshot) = session.request(Command::Snapshot).await? else {
+                    return Err(offline("无法确认游戏进程"));
+                };
+                let window = snapshot.window.ok_or_else(|| offline("请先连接游戏窗口"))?;
+                Some(od_platform::after_done::AfterDoneTarget::capture(window).map_err(offline)?)
+            } else {
+                None
+            };
+            Some((action, target))
+        } else {
+            None
+        };
+        if let Command::Stop { run_id } = &command {
+            self.after_done.stop_requested(*run_id);
+        }
         let result = session.request(command).await;
+        if let (Some((action, target)), Ok(Payload::Run(run))) = (after, &result) {
+            self.after_done.arm(session.id, action, run, target);
+        }
+        if result
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.code == "engine_offline" || e.code.starts_with("input_recovery"))
+        {
+            self.after_done
+                .invalidate("引擎连接或输入恢复异常，结束后动作已取消");
+        }
         self.observe_logs(session.id, &result);
         self.shortcuts.observe(&result);
         if let Ok(Payload::AccountConfig(config)) = &result {
@@ -122,6 +169,9 @@ impl Host {
                     "shortcut_expired",
                     "快捷键等待过久，已丢弃，请重新按键",
                 ));
+            }
+            if let Command::Stop { run_id } = &command {
+                self.after_done.stop_requested(*run_id);
             }
             state
                 .as_mut()
@@ -157,6 +207,7 @@ impl Host {
     ) -> (Option<EnginePrivilege>, Result<Payload, ApiError>) {
         let mut state = self.session.lock().await;
         let Some(session) = state.as_mut() else {
+            self.after_done.invalidate("引擎未连接，结束后动作已取消");
             self.shortcuts.clear_target();
             let recovery = layout(app).and_then(|layout| {
                 crate::session::recovery::RecoveryJournal::open(&layout.data)?.require_clean()
@@ -169,6 +220,28 @@ impl Host {
         // 快照与权限来自同一会话，不能跨权限切换混合读取。
         let privilege = session.privilege.clone();
         let result = session.request(Command::Snapshot).await;
+        if let Ok(Payload::Snapshot(snapshot)) = &result {
+            let began = self.after_done.observe(session.id, snapshot);
+            if self.after_done.require_available().is_err() {
+                let models_idle = matches!(session.request(Command::ModelResources).await, Ok(Payload::ModelResources(resources)) if resources.job.as_ref().is_none_or(|job| job.state.is_terminal()));
+                if self.resources.require_available().is_err()
+                    || session.require_recovered().is_err()
+                    || !models_idle
+                {
+                    self.after_done
+                        .invalidate("资源工作或输入收尾未完成，结束后动作已取消");
+                } else {
+                    if began && let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                    self.after_done
+                        .submit_due(tauri::async_runtime::handle().inner());
+                }
+            }
+        } else {
+            self.after_done.invalidate("引擎连接中断，结束后动作已取消");
+        }
         self.observe_logs(session.id, &result);
         self.shortcuts.observe(&result);
         if result.is_ok() {
@@ -186,6 +259,8 @@ impl Host {
     }
 
     pub async fn recover(&self, app: &AppHandle) -> Result<String, ApiError> {
+        self.after_done.require_available()?;
+        self.after_done.invalidate("正在恢复输入，结束后动作已取消");
         self.resources.require_available()?;
         let mut state = self.session.lock().await;
         self.resources.require_available()?;
@@ -255,6 +330,8 @@ impl Host {
     }
 
     pub async fn shutdown(&self) -> Result<(), ApiError> {
+        self.after_done.invalidate("桌面正在退出，结束后动作已取消");
+        self.after_done.require_available()?;
         self.shortcuts.clear_target();
         self.resources.close_and_wait().await;
         let mut state = self.session.lock().await;
@@ -273,6 +350,8 @@ impl Host {
         app: &AppHandle,
         request: od_core::runtime_resources::RuntimeResourceRequest,
     ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+        self.after_done.require_available()?;
+        self.after_done.invalidate("正在操作资源，结束后动作已取消");
         self.resources.start(layout(app)?, request)
     }
 
@@ -281,6 +360,8 @@ impl Host {
         app: &AppHandle,
         source: od_core::runtime_resources::RuntimeDownloadSource,
     ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+        self.after_done.require_available()?;
+        self.after_done.invalidate("正在下载资源，结束后动作已取消");
         self.resources.start_download(layout(app)?, source)
     }
 
@@ -289,6 +370,8 @@ impl Host {
         app: &AppHandle,
         request: od_core::config::ConfigRecoveryRequest,
     ) -> Result<od_core::config::DesktopConfigRecovery, ApiError> {
+        self.after_done.require_available()?;
+        self.after_done.invalidate("正在恢复配置，结束后动作已取消");
         self.config_recovery.start(layout(app)?, request)
     }
 }

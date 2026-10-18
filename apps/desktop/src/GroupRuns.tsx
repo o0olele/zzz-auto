@@ -4,6 +4,7 @@ import type { Command, GroupPlan, RunHistory, Snapshot } from './generated/proto
 import { gameRegionOptions } from './generated/protocol';
 import { errorMessage, request } from './bridge';
 import { coffeeSummary } from './CoffeeSettings';
+import { afterDoneName } from './AfterDoneBanner';
 import { GroupRunStatus, isRunActive, RunSaveRecovery, RunSteps, runStateNames as stateNames } from './GroupRunStatus';
 
 const availability = { mail_trial: '邮件试运行', coffee_trial: '咖啡试运行（待实机验收）', unmigrated: '尚无执行器', unknown: '未注册' };
@@ -85,6 +86,7 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
       {planError && <MessageBar intent="error"><MessageBarBody>{planError}</MessageBarBody></MessageBar>}
       {plan && <div aria-label="应用组运行计划">
         <p>{plan.context.instance_name} · {plan.context.group_name ?? plan.context.group_id} · 修订 {plan.context.config_revision}</p>
+        <p>结束后：{afterDoneName(plan.after_done)}{plan.after_done && plan.after_done !== 'none' ? ' · 正常完成后等待 60 秒，可取消' : ''}</p>
         <p>{gameRegionOptions.find(option => option.value === plan.game_day.region)?.label} · 游戏日 {plan.game_day.date} · {plan.run_policy === 'always' ? '每次运行' : '跳过本游戏日已完成'}</p>
         <p>启动 / 继续延时 {plan.mail_config.start_delay_ms} ms · 邮件超时 {plan.mail_config.timeout_ms} ms</p>
         {plan.items.some(item => item.app_id === 'coffee' && item.enabled) && <p>咖啡：{coffeeSummary(plan.coffee_config)} · 澄辉坪 → 汀曼咖啡</p>}
@@ -92,7 +94,7 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
         {plan.warnings.map((message, index) => <MessageBar key={index} intent="warning"><MessageBarBody>{message}</MessageBarBody></MessageBar>)}
         {plan.all_done && <MessageBar intent="info"><MessageBarBody>本游戏日的启用应用均已完成，无需运行。</MessageBarBody></MessageBar>}
         {plan.blockers.map((message, index) => <p className="group-blocker" key={index}>{message}</p>)}
-        <Checkbox label={`我确认游戏登录账号为“${plan.context.instance_name}”，并允许本次前台输入`} checked={confirmed} disabled={disabled || active || !plan.executable || !snapshot?.window || !!snapshot.record_error} onChange={(_, data) => setConfirmed(data.checked === true)}/>
+        <Checkbox label={`我确认游戏登录账号为“${plan.context.instance_name}”，并允许本次前台输入${plan.after_done && plan.after_done !== 'none' ? `；正常完成后${afterDoneName(plan.after_done)}，60 秒内可取消` : ''}`} checked={confirmed} disabled={disabled || active || !plan.executable || !snapshot?.window || !!snapshot.record_error} onChange={(_, data) => setConfirmed(data.checked === true)}/>
         <Button appearance="primary" disabled={disabled || active || !plan.executable || !confirmed || !snapshot?.window || !!snapshot.record_error} onClick={async () => {
           setConfirmed(false); setPlan(null);
           await onCommand({ type: 'start_group_trial', params: { instance_id: instanceId, group_id: groupId, revision: plan.context.config_revision, game_day: plan.game_day.date, allow_input: true, confirm_account: true } });

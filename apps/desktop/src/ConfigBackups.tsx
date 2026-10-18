@@ -5,6 +5,7 @@ import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { errorMessage, request } from './bridge';
 import { captureNames } from './captureSettings';
 import { coffeeSummary } from './CoffeeSettings';
+import { afterDoneName } from './AfterDoneBanner';
 
 const label = (group: AppGroup) => group.name ?? (group.id === 'one_dragon' ? '一条龙' : group.id);
 const same = (before: unknown, after: unknown) => JSON.stringify(before) === JSON.stringify(after);
@@ -33,6 +34,7 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     <p>默认截图：{captureNames[current.general.capture_method]} → {captureNames[backup.general.capture_method]}。</p>
     <p>邮件超时：{current.general.mail.timeout_ms} → {backup.general.mail.timeout_ms} ms；启动 / 继续延时：{current.general.mail.start_delay_ms} → {backup.general.mail.start_delay_ms} ms。</p>
     <p>快捷键：{keys(current)} → {keys(backup)}。</p>
+    <p>结束后动作：{afterDoneName(current.general.after_done)} → {afterDoneName(backup.general.after_done)}。</p>
     <Field label="核对账号"><Select value={accountId} onChange={(_, data) => setAccountId(Number(data.value))}>{ids.map(id => {
       const old = current.instances.find(item => item.id === id); const next = backup.instances.find(item => item.id === id);
       return <option key={id} value={id}>{next?.name ?? old?.name}（编号 {id} · {changeName(old, next)}）</option>;

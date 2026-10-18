@@ -25,6 +25,8 @@ const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct GeneralSettings {
+    #[serde(default)]
+    pub after_done: crate::after_done::AfterDoneAction,
     pub capture_method: crate::CaptureMethod,
     pub mail: crate::mail::MailConfig,
     #[serde(default)]
@@ -121,6 +123,9 @@ pub struct AccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConfigChange {
+    SetAfterDone {
+        action: crate::after_done::AfterDoneAction,
+    },
     SaveCoffee {
         instance_id: u32,
         group_id: String,
@@ -303,6 +308,7 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::SetAfterDone { action } => self.general.after_done = action,
             ConfigChange::SaveCoffee {
                 instance_id,
                 group_id,

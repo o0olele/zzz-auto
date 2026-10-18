@@ -5,6 +5,7 @@ import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { configRecoveryState, desktop, errorMessage, startConfigRecovery } from './bridge';
 import { captureNames } from './captureSettings';
 import { coffeeSummary } from './CoffeeSettings';
+import { afterDoneName } from './AfterDoneBanner';
 
 export function useConfigRecovery() {
   const [snapshot, setSnapshot] = useState<DesktopConfigRecovery>({ job: null, catalog: null, preview: null, restored: null });
@@ -61,6 +62,7 @@ function RecoveryContents({ config, apps }: { config: AccountConfig; apps: AppDe
     <p>账号顺序：{config.instances.map(item => item.name).join(' → ')}。</p>
     <p>默认截图：{captureNames[config.general.capture_method]}；邮件超时 {config.general.mail.timeout_ms} ms，启动 / 继续延时 {config.general.mail.start_delay_ms} ms。</p>
     <p>快捷键：暂停 / 继续 {config.general.shortcuts.pause_resume?.toUpperCase() ?? '关闭'}，停止 {config.general.shortcuts.stop?.toUpperCase() ?? '关闭'}。</p>
+    <p>结束后动作：{afterDoneName(config.general.after_done)}；正常完成后有 60 秒可取消倒计时。</p>
     <Field label="核对恢复账号"><Select value={accountId} onChange={(_, data) => { setAccountId(Number(data.value)); setGroupId(''); }}>{config.instances.map(item => <option key={item.id} value={item.id}>{item.name}（编号 {item.id}）</option>)}</Select></Field>
     <p>区服：{gameRegionOptions.find(item => item.value === account.game_region)?.label}；参与一条龙：{account.active_in_od ? '是' : '否'}。</p>
     <p>应用组顺序：{account.groups.map(groupLabel).join(' → ')}。</p>

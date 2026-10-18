@@ -1,4 +1,7 @@
 // 由 od-tools types 生成；请修改 Rust 协议。
+export type AfterDoneAction = "none" | "close_game" | "shutdown" | "hibernate" | "sleep";
+export type AfterDoneState = "watching" | "counting_down" | "executing" | "succeeded" | "cancelled" | "failed";
+export type AfterDoneStatus = { id: string, run_id: string, action: AfterDoneAction, state: AfterDoneState, remaining_seconds: number, message: string, };
 export type GameRegion = "cn" | "cn_b" | "us" | "eu" | "asia" | "twhkmo";
 export type RunPolicy = "always" | "skip_daily_success";
 export type GameDay = { region: GameRegion, date: string, };
@@ -6,7 +9,7 @@ export type RunContext = { instance_id: number, instance_name: string, group_id:
 export type PlanDecision = "disabled" | "run" | "already_done" | "blocked";
 export type AppAvailability = "mail_trial" | "coffee_trial" | "unmigrated" | "unknown";
 export type PlannedApp = { app_id: string, name: string, enabled: boolean, availability: AppAvailability, decision: PlanDecision, completed_run_id: string | null, };
-export type GroupPlan = { context: RunContext, mail_config: MailConfig, coffee_config: CoffeeConfig, items: Array<PlannedApp>, blockers: Array<string>, executable: boolean, all_done: boolean, game_day: GameDay, run_policy: RunPolicy, warnings: Array<string>, valid_until: string, };
+export type GroupPlan = { after_done: AfterDoneAction, context: RunContext, mail_config: MailConfig, coffee_config: CoffeeConfig, items: Array<PlannedApp>, blockers: Array<string>, executable: boolean, all_done: boolean, game_day: GameDay, run_policy: RunPolicy, warnings: Array<string>, valid_until: string, };
 export type HistoryItem = { record: RunRecord, interrupted: boolean, };
 export type RunHistory = { instance_id: number, items: Array<HistoryItem>, unreadable: number, has_more: boolean, };
 export type HistoryOutcome = "active" | "succeeded" | "failed" | "timed_out" | "stopped" | "interrupted";
@@ -15,7 +18,7 @@ export type HistoryQuery = { group_id: string | null, app_id: string | null, gam
 export type HistoryPage = { instance_id: number, query: HistoryQuery, items: Array<HistoryItem>, matching: number, unreadable: number, next: HistoryCursor | null, content_id: string, };
 export type HistoryExport = { path: string, instance_id: number, record_count: number, content_id: string, };
 export type GroupApp = { app_id: string, enabled: boolean, };
-export type GeneralSettings = { capture_method: CaptureMethod, mail: MailConfig, shortcuts: ShortcutSettings, };
+export type GeneralSettings = { after_done: AfterDoneAction, capture_method: CaptureMethod, mail: MailConfig, shortcuts: ShortcutSettings, };
 export type ShortcutKey = "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11";
 export type ShortcutSettings = { pause_resume: ShortcutKey | null, stop: ShortcutKey | null, };
 export type ShortcutStatus = { active: ShortcutSettings | null, registration_error: string | null, action_error: string | null, };
@@ -34,7 +37,7 @@ export type ConfigRecoveryRequest = { "type": "list" } | { "type": "preview", id
 export type ConfigRecoveryJobState = "running" | "succeeded" | "failed";
 export type ConfigRecoveryJob = { id: string, request: ConfigRecoveryRequest, state: ConfigRecoveryJobState, phase: string, reconnected: boolean, reconnect_error: string | null, error: string | null, error_code: string | null, };
 export type DesktopConfigRecovery = { job: ConfigRecoveryJob | null, catalog: ConfigRecoveryCatalog | null, preview: ConfigRecoveryPreview | null, restored: ConfigRecoveryResult | null, };
-export type ConfigChange = { "type": "save_coffee", instance_id: number, group_id: string, settings: CoffeeConfig, } | { "type": "set_game_region", instance_id: number, game_region: GameRegion, } | { "type": "set_run_policy", instance_id: number, group_id: string, run_policy: RunPolicy, } | { "type": "save_general", settings: GeneralSettings, } | { "type": "create_instance", name: string, } | { "type": "copy_instance", instance_id: number, name: string, } | { "type": "delete_instance", instance_id: number, confirm: boolean, } | { "type": "reorder_instances", instance_ids: Array<number>, } | { "type": "reorder_groups", instance_id: number, group_ids: Array<string>, } | { "type": "update_instance", instance_id: number, name: string, active_in_od: boolean, } | { "type": "switch_instance", instance_id: number, } | { "type": "save_group", instance_id: number, group_id: string, apps: Array<GroupApp>, } | { "type": "create_group", instance_id: number, name: string, source_group_id: string | null, } | { "type": "rename_group", instance_id: number, group_id: string, name: string, } | { "type": "delete_group", instance_id: number, group_id: string, };
+export type ConfigChange = { "type": "set_after_done", action: AfterDoneAction, } | { "type": "save_coffee", instance_id: number, group_id: string, settings: CoffeeConfig, } | { "type": "set_game_region", instance_id: number, game_region: GameRegion, } | { "type": "set_run_policy", instance_id: number, group_id: string, run_policy: RunPolicy, } | { "type": "save_general", settings: GeneralSettings, } | { "type": "create_instance", name: string, } | { "type": "copy_instance", instance_id: number, name: string, } | { "type": "delete_instance", instance_id: number, confirm: boolean, } | { "type": "reorder_instances", instance_ids: Array<number>, } | { "type": "reorder_groups", instance_id: number, group_ids: Array<string>, } | { "type": "update_instance", instance_id: number, name: string, active_in_od: boolean, } | { "type": "switch_instance", instance_id: number, } | { "type": "save_group", instance_id: number, group_id: string, apps: Array<GroupApp>, } | { "type": "create_group", instance_id: number, name: string, source_group_id: string | null, } | { "type": "rename_group", instance_id: number, group_id: string, name: string, } | { "type": "delete_group", instance_id: number, group_id: string, };
 export type ImportFile = { path: string, sha256: string, disposition: string, };
 export type ImportPreview = { preview_id: string, config: AccountConfig, files: Array<ImportFile>, warnings: Array<string>, };
 export type AppDefinition = { id: string, name: string, execution: string, reason: string, factory: string, configs: Array<string>, settings: Array<string>, run_records: Array<string>, source_files: Array<string>, priority: number, default_group: boolean, implemented: boolean, };
@@ -105,7 +108,7 @@ export type Request = { version: number, id: string, command: Command, };
 export type Payload = { "type": "model_resources", "data": ModelResources } | { "type": "group_plan", "data": GroupPlan } | { "type": "run_history", "data": RunHistory } | { "type": "history_page", "data": HistoryPage } | { "type": "history_export", "data": HistoryExport } | { "type": "account_config", "data": AccountConfig } | { "type": "config_backups", "data": ConfigBackups } | { "type": "config_backup_preview", "data": ConfigBackupPreview } | { "type": "config_import_preview", "data": ImportPreview } | { "type": "snapshot", "data": Snapshot } | { "type": "applications", "data": Array<AppDefinition> } | { "type": "windows", "data": Array<WindowInfo> } | { "type": "screenshot", "data": Screenshot } | { "type": "run", "data": RunRecord } | { "type": "events", "data": Array<RunEvent> } | { "type": "ack" };
 export type ApiError = { code: string, message: string, details: string | null, };
 export type Response = { version: number, id: string, result: Payload | null, error: ApiError | null, };
-export type DesktopUpdate = { "type": "snapshot", "data": Snapshot } | { "type": "offline", "data": ApiError } | { "type": "privilege", "data": EnginePrivilege } | { "type": "shortcuts", "data": ShortcutStatus };
+export type DesktopUpdate = { "type": "after_done", "data": AfterDoneStatus | null } | { "type": "snapshot", "data": Snapshot } | { "type": "offline", "data": ApiError } | { "type": "privilege", "data": EnginePrivilege } | { "type": "shortcuts", "data": ShortcutStatus };
 export type EnginePrivilege = { engine_integrity: number, desktop_integrity: number, };
 export const generalSettingsFields = [
   {
@@ -235,3 +238,25 @@ export const coffeeDefaultConfig = {
   "timeout_ms": 60000,
   "start_delay_ms": 3000
 } as const;
+export const afterDoneOptions = [
+  {
+    "label": "无",
+    "value": "none"
+  },
+  {
+    "label": "关闭游戏",
+    "value": "close_game"
+  },
+  {
+    "label": "关机",
+    "value": "shutdown"
+  },
+  {
+    "label": "休眠",
+    "value": "hibernate"
+  },
+  {
+    "label": "睡眠",
+    "value": "sleep"
+  }
+] as const;

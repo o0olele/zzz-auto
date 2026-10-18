@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod after_done;
 mod archive_picker;
 mod config_recovery;
 mod host;
@@ -42,6 +43,16 @@ async fn engine_request(
         return Err(ApiError::new("forbidden_command", "请使用托盘退出应用"));
     }
     state.request(command).await
+}
+
+#[tauri::command]
+fn cancel_after_done(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+    id: uuid::Uuid,
+) -> Result<Option<od_core::after_done::AfterDoneStatus>, ApiError> {
+    main_window(&window)?;
+    state.after_done.cancel(id)
 }
 
 #[tauri::command]
@@ -210,6 +221,7 @@ fn main() {
         .manage(Host::new())
         .invoke_handler(tauri::generate_handler![
             engine_request,
+            cancel_after_done,
             reconnect_engine,
             elevate_engine,
             recover_inputs,
@@ -263,7 +275,9 @@ fn main() {
             });
             let show = MenuItem::with_id(app, "show", "打开主窗口", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "停止并退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
+            let cancel_after =
+                MenuItem::with_id(app, "cancel_after", "取消结束后动作", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &cancel_after, &quit])?;
             let pixels: Vec<u8> = (0..32 * 32)
                 .flat_map(|index| {
                     let x = index % 32;
@@ -284,6 +298,15 @@ fn main() {
                 .tooltip("绝区零一条龙 · Rust 原型")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
+                    "cancel_after" => {
+                        if let Some(status) = app.state::<Host>().after_done.snapshot() {
+                            let _ = app.state::<Host>().after_done.cancel(status.id);
+                        }
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
@@ -324,6 +347,10 @@ fn main() {
                 }
                 loop {
                     if handle.state::<Host>().resources.switching() {
+                        handle
+                            .state::<Host>()
+                            .after_done
+                            .invalidate("资源操作改变了会话，结束后动作已取消");
                         handle.state::<Host>().shortcuts.clear_target();
                         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                         continue;
@@ -341,6 +368,9 @@ fn main() {
                             }
                             let _ = channel.send(DesktopUpdate::Shortcuts(
                                 handle.state::<Host>().shortcuts.snapshot(),
+                            ));
+                            let _ = channel.send(DesktopUpdate::AfterDone(
+                                handle.state::<Host>().after_done.snapshot(),
                             ));
                             channel.send(update).is_err()
                         })

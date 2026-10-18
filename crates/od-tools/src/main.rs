@@ -181,6 +181,9 @@ fn main() -> Result<()> {
         }
         Tool::Types { output } => {
             let declarations = [
+                od_core::after_done::AfterDoneAction::decl(),
+                od_core::after_done::AfterDoneState::decl(),
+                od_core::after_done::AfterDoneStatus::decl(),
                 od_core::daily::GameRegion::decl(),
                 od_core::daily::RunPolicy::decl(),
                 od_core::daily::GameDay::decl(),
@@ -298,7 +301,7 @@ fn main() -> Result<()> {
             std::fs::write(
                 output,
                 format!(
-                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\n",
+                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\n",
                     declarations
                         .into_iter()
                         .map(|decl| format!("export {decl}"))
@@ -309,7 +312,8 @@ fn main() -> Result<()> {
                     serde_json::to_string_pretty(&od_core::daily::RunPolicy::options())?,
                     serde_json::to_string_pretty(&od_core::shortcuts::ShortcutKey::ALL)?,
                     serde_json::to_string_pretty(&od_core::coffee_run::CoffeeConfig::fields())?,
-                    serde_json::to_string_pretty(&od_core::coffee_run::CoffeeConfig::default())?
+                    serde_json::to_string_pretty(&od_core::coffee_run::CoffeeConfig::default())?,
+                    serde_json::to_string_pretty(&od_core::after_done::AfterDoneAction::options())?
                 ),
             )?;
             Ok(())

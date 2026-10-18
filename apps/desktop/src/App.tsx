@@ -18,6 +18,7 @@ import { MapDiagnostics } from './MapDiagnostics';
 import { AccountSettings } from './AccountSettings';
 import { GeneralSettings } from './GeneralSettings';
 import { RunLogs } from './RunLogs';
+import { RunHistory } from './RunHistory';
 import { ModelResources } from './ModelResources';
 import { RuntimeResources, useRuntimeResources } from './RuntimeResources';
 import { CoffeeDiagnostics } from './CoffeeDiagnostics';
@@ -25,7 +26,7 @@ import { OfflineConfigRecovery, useConfigRecovery } from './OfflineConfigRecover
 import { captureNames, captureHints } from './captureSettings';
 import { useAppearance } from './appearance';
 
-type Page = 'home' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'logs' | 'apps' | 'native' | 'progress';
+type Page = 'home' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'history' | 'logs' | 'apps' | 'native' | 'progress';
 const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'home', label: '总览', icon: <Home24Regular /> },
   { id: 'accounts', label: '账号与应用组', icon: <Apps24Regular /> },
@@ -33,6 +34,7 @@ const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'resources', label: '模型资源', icon: <Apps24Regular /> },
   { id: 'runtime_resources', label: '运行资源', icon: <Apps24Regular /> },
   { id: 'logs', label: '运行日志', icon: <DocumentText24Regular /> },
+  { id: 'history', label: '运行记录', icon: <DocumentText24Regular /> },
   { id: 'apps', label: '应用迁移', icon: <Apps24Regular /> },
   { id: 'native', label: '原生诊断', icon: <Desktop24Regular /> },
   { id: 'progress', label: '开发与验收', icon: <DocumentText24Regular /> },
@@ -208,6 +210,7 @@ export default function App() {
           {page === 'settings' && <GeneralSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} onLoaded={acceptSettings} shortcuts={shortcuts} onShortcuts={setShortcuts}/>}
 
           {page === 'logs' && <RunLogs enabled={desktop} connected={connected}/>}
+          {page === 'history' && <RunHistory connected={desktop && connected}/>}
 
           {page === 'apps' && <>
             <div className="page-heading"><div><div className="eyebrow">APPLICATION CATALOG</div><h1>应用迁移</h1><p>保留现有应用 ID，逐项记录实现与验收状态。</p></div><Badge appearance="tint" color="brand">{apps.length} 个已登记</Badge></div>

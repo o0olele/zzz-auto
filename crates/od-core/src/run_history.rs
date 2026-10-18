@@ -18,6 +18,10 @@ use uuid::Uuid;
 const RECORD_LIMIT: u64 = 1024 * 1024;
 const DIRECTORY_LIMIT: usize = 10_000;
 
+#[path = "run_history_query.rs"]
+mod query;
+pub use query::*;
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct HistoryItem {
     pub record: RunRecord,

@@ -159,3 +159,7 @@ p { color: var(--muted); font-size: 13px; line-height: 1.85; margin: 0; }
 :root[data-narrow='true'] .input-fields, :root[data-narrow='true'] .resource-grid { grid-template-columns: 1fr; }
 :root[data-narrow='true'] .page-heading { flex-wrap: wrap; }
 .appearance-card { padding: 22px !important; gap: 14px !important; }
+.history-browser { padding: 22px !important; gap: 14px !important; min-width: 0; }
+.history-browser .fui-Input, .history-browser .fui-Select { min-width: 0; max-width: 100%; width: 100%; }
+.history-results { max-height: 640px; overflow: auto; }
+.history-results li { font-size: 12px; padding-block: 3px; }

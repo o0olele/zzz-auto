@@ -348,6 +348,8 @@ impl EngineSession {
                 | Command::AccountConfig
                 | Command::PreviewGroup { .. }
                 | Command::RunHistory { .. }
+                | Command::QueryRunHistory { .. }
+                | Command::ExportRunHistory { .. }
                 | Command::RetryRunSave
                 | Command::Stop { .. }
                 | Command::Pause { .. }

@@ -390,6 +390,17 @@ impl Engine {
                     .await
                     .map(Payload::GroupPlan)
             }
+            Command::QueryRunHistory { instance_id, query } => {
+                self.query_history(instance_id, query, None).await
+            }
+            Command::ExportRunHistory {
+                instance_id,
+                query,
+                content_id,
+            } => {
+                self.query_history(instance_id, query, Some(content_id))
+                    .await
+            }
             Command::RunHistory { instance_id } => {
                 let config = self.config.read().map_err(config_error)?;
                 if !config
@@ -650,6 +661,54 @@ impl Engine {
                 Ok(Payload::Ack)
             }
         }
+    }
+
+    async fn query_history(
+        &self,
+        instance_id: u32,
+        query: od_core::run_history::HistoryQuery,
+        export_content: Option<String>,
+    ) -> Result<Payload, ApiError> {
+        query
+            .validate()
+            .map_err(|e| ApiError::new("history_error", e.to_string()))?;
+        let config = self.config.read().map_err(config_error)?;
+        if !config
+            .instances
+            .iter()
+            .any(|instance| instance.id == instance_id)
+        {
+            return Err(ApiError::new("unknown_instance", "账号不存在"));
+        }
+        let live = {
+            let state = self.state.lock().expect("运行状态锁失效");
+            state
+                .slot
+                .current()
+                .filter(|run| {
+                    !run.state.is_terminal()
+                        && run
+                            .context
+                            .as_ref()
+                            .is_some_and(|c| c.instance_id == instance_id)
+                })
+                .map(|run| run.id)
+        };
+        let history = self.history.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Some(content) = export_content {
+                history
+                    .export_page(instance_id, live, query, &content)
+                    .map(Payload::HistoryExport)
+            } else {
+                history
+                    .query(instance_id, live, query)
+                    .map(Payload::HistoryPage)
+            }
+        })
+        .await
+        .map_err(|_| ApiError::new("history_error", "历史查询线程异常退出"))?
+        .map_err(|error| ApiError::new("history_error", error.to_string()))
     }
 
     async fn group_plan(

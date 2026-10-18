@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v24 接通咖啡应用组试运行与分项结果；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 24;
+// v25 接通账号历史分页、筛选与本页导出；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 25;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -69,6 +69,15 @@ pub enum Command {
     },
     RunHistory {
         instance_id: u32,
+    },
+    QueryRunHistory {
+        instance_id: u32,
+        query: od_core::run_history::HistoryQuery,
+    },
+    ExportRunHistory {
+        instance_id: u32,
+        query: od_core::run_history::HistoryQuery,
+        content_id: String,
     },
     RetryRunSave,
     AccountConfig,
@@ -160,6 +169,8 @@ pub enum Payload {
     ModelResources(od_core::model_resources::ModelResources),
     GroupPlan(od_core::run_plan::GroupPlan),
     RunHistory(od_core::run_history::RunHistory),
+    HistoryPage(od_core::run_history::HistoryPage),
+    HistoryExport(od_core::run_history::HistoryExport),
     AccountConfig(od_core::config::AccountConfig),
     ConfigBackups(od_core::config::ConfigBackups),
     ConfigBackupPreview(od_core::config::ConfigBackupPreview),

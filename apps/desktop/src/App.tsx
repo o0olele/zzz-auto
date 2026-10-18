@@ -16,6 +16,7 @@ import { InputDiagnostics } from './InputDiagnostics';
 import { MailDiagnostics } from './MailDiagnostics';
 import { MapDiagnostics } from './MapDiagnostics';
 import { AccountSettings } from './AccountSettings';
+import { OneDragonRun } from './OneDragonRun';
 import { GeneralSettings } from './GeneralSettings';
 import { RunLogs } from './RunLogs';
 import { RunHistory } from './RunHistory';
@@ -26,9 +27,10 @@ import { OfflineConfigRecovery, useConfigRecovery } from './OfflineConfigRecover
 import { captureNames, captureHints } from './captureSettings';
 import { useAppearance } from './appearance';
 
-type Page = 'home' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'history' | 'logs' | 'apps' | 'native' | 'progress';
+type Page = 'home' | 'run' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'history' | 'logs' | 'apps' | 'native' | 'progress';
 const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'home', label: '总览', icon: <Home24Regular /> },
+  { id: 'run', label: '一条龙运行', icon: <Play20Regular /> },
   { id: 'accounts', label: '账号与应用组', icon: <Apps24Regular /> },
   { id: 'settings', label: '通用设置', icon: <Settings24Regular /> },
   { id: 'resources', label: '模型资源', icon: <Apps24Regular /> },
@@ -200,12 +202,14 @@ export default function App() {
             </Card>
             <div className="home-grid">
               <Card className="connect-card"><div className="card-title"><h2>连接游戏</h2><Badge appearance="tint" color={snapshot?.window ? 'success' : 'informative'}>{snapshot?.window ? '已连接' : '尚未连接'}</Badge></div><p>启动绝区零并设置 1920 × 1080 客户区，再选择游戏窗口。</p><Field label="游戏窗口"><Select value={hwnd} onChange={(_, data) => setHwnd(data.value)} disabled={busy || active}><option value="">{windows.length ? '选择游戏窗口' : '尚未发现窗口'}</option>{windows.map(window => <option key={window.hwnd} value={window.hwnd}>{window.title} · PID {window.pid} · {window.width}×{window.height}</option>)}</Select></Field>{captureSelect}<div className="button-row"><Button disabled={!connected || busy || active} icon={<ArrowClockwise20Regular/>} onClick={() => act(scanWindows)}>扫描窗口</Button><Button appearance="primary" disabled={!hwnd || !connected || recoveryRequired || busy || active || !settings} icon={<PlugConnected24Regular/>} onClick={() => act(() => connectWindow())}>连接窗口</Button></div><Divider/><div className="connection-detail"><Text size={200}>SDK 状态</Text><p>{snapshot?.sdk.message ?? '桌面启动后自动校验随附 SDK 与引擎。'}</p></div></Card>
-              <Card className="next-card"><div className="card-title"><h2>当前阶段</h2><Badge appearance="tint" color="brand">M3 进行中</Badge></div><h3>应用组每日计划</h3><p>M2 主流程通过，边界待验收；M3 已接入账号配置、应用组邮件试运行、账号历史、通用设置及每日跳过策略。</p><div className="milestone-mini"><CheckmarkCircle20Regular/><span>邮件大世界 / 菜单起点主流程通过</span></div><div className="milestone-mini"><div className="step-dot"/><span>应用组预检、修订核对与按账号记录</span></div><div className="milestone-mini muted"><div className="step-dot hollow"/><span>咖啡、多应用执行与资源下载</span></div><Button appearance="subtle" icon={<ArrowRight20Regular/>} iconPosition="after" onClick={() => setPage('accounts')}>管理账号与应用组</Button></Card>
+              <Card className="next-card"><div className="card-title"><h2>当前阶段</h2><Badge appearance="tint" color="brand">M3 进行中</Badge></div><h3>一条龙运行</h3><p>集中预览当前账号的应用组、启动任务并查看分项进度，支持邮件与咖啡顺序执行及每日成功跳过。</p><div className="milestone-mini"><CheckmarkCircle20Regular/><span>邮件大世界 / 菜单起点主流程通过</span></div><div className="milestone-mini"><div className="step-dot"/><span>账号配置、运行记录与资源管理已接通</span></div><div className="milestone-mini muted"><div className="step-dot hollow"/><span>咖啡完整领取及实际游戏串联待验收</span></div><Button appearance="primary" icon={<ArrowRight20Regular/>} iconPosition="after" onClick={() => setPage('run')}>前往一条龙运行</Button><Button appearance="subtle" onClick={() => setPage('accounts')}>管理账号与应用组</Button></Card>
             </div>
             <Card><div className="card-title"><h2>最近运行</h2><Badge appearance="tint" color={active ? 'brand' : 'informative'}>{snapshot?.run ? runNames[snapshot.run.state] : '空闲'}</Badge></div>{snapshot?.run ? <><strong>{['prototype.input_probe', 'prototype.input_pipeline'].includes(snapshot.run.app_id) ? '真实输入诊断' : snapshot.run.app_id === 'application_group' ? '应用组试运行' : snapshot.run.app_id === 'email' ? '邮件试运行' : snapshot.run.app_id === 'prototype.coffee' ? '咖啡点单试运行' : snapshot.run.app_id === 'prototype.map_transport' ? '地图传送试运行' : 'Maa 原生健康检查'}</strong><p className="run-message">{snapshot.run.message}</p><Text size={200}>运行 ID：{snapshot.run.id}</Text></> : <div className="empty-row"><Play20Regular/><span>尚无运行记录。连接窗口后可在原生诊断中执行健康检查。</span></div>}</Card>
           </>}
 
           {page === 'accounts' && <AccountSettings onImported={value => acceptSettings(value.general)} connected={desktop && connected} active={active} blocked={recoveryRequired || busy} apps={apps} snapshot={snapshot} onCommand={command => act(async () => { const value = await request(command); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); else if (value.type === 'snapshot') setSnapshot(value.data); })}/>}
+
+          {page === 'run' && <OneDragonRun connected={desktop && connected} blocked={recoveryRequired || busy} apps={apps} snapshot={snapshot} onNavigate={setPage} onCommand={command => act(async () => { const value = await request(command); if (value.type === 'run') setSnapshot(current => current ? { ...current, run: value.data } : current); else if (value.type === 'snapshot') setSnapshot(value.data); })}/>}
 
           {page === 'settings' && <GeneralSettings connected={desktop && connected} active={active} blocked={recoveryRequired || busy} onLoaded={acceptSettings} shortcuts={shortcuts} onShortcuts={setShortcuts}/>}
 

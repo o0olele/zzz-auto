@@ -1,30 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Checkbox, MessageBar, MessageBarBody, Spinner } from '@fluentui/react-components';
-import type { Command, GroupPlan, GroupProgress, RunHistory, Snapshot } from './generated/protocol';
+import type { Command, GroupPlan, RunHistory, Snapshot } from './generated/protocol';
 import { gameRegionOptions } from './generated/protocol';
 import { errorMessage, request } from './bridge';
 import { coffeeSummary } from './CoffeeSettings';
+import { GroupRunStatus, isRunActive, RunSaveRecovery, RunSteps, runStateNames as stateNames } from './GroupRunStatus';
 
-const stateNames: Record<string, string> = { running: '运行中', pausing: '暂停中', paused: '已暂停', stopping: '停止中', succeeded: '完成', failed: '失败', stopped: '已停止' };
 const availability = { mail_trial: '邮件试运行', coffee_trial: '咖啡试运行（待实机验收）', unmigrated: '尚无执行器', unknown: '未注册' };
 
-const inputsReleased = (run: NonNullable<Snapshot['run']>) => run.group
-  ? run.group.steps.every(step => step.inputs_released) && (run.mail?.inputs_released ?? true) && (run.coffee?.inputs_released ?? true)
-  : run.mail?.inputs_released ?? run.coffee?.inputs_released ?? false;
-
-function RunSteps({ group }: { group: GroupProgress | undefined }) {
-  if (!group) return null;
-  const names = { pending: '等待执行', running: '执行中', skipped: '按日跳过', succeeded: '执行完成', failed: '执行失败', stopped: '执行停止' };
-  return <ol className="group-plan" aria-label="应用分项进度">{group.steps.map(step => <li key={step.app_id}>
-    <span>{step.app_id === 'email' ? '邮件' : step.app_id === 'coffee' ? '咖啡' : step.app_id}</span>
-    <Badge appearance="outline">{step.state === 'running' && group.state === 'paused' ? '执行已暂停' : names[step.state]}</Badge>
-    {step.state !== 'pending' && step.state !== 'skipped' && <span className="group-step-release">{step.inputs_released ? '分项输入已释放' : '分项输入待释放'}</span>}
-  </li>)}</ol>;
-}
-
-export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, blocked, onCommand }: {
+export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, blocked, onCommand, showStatus = true }: {
   instanceId: number; groupId: string; revision: number; snapshot: Snapshot | null;
-  connected: boolean; blocked: boolean; onCommand: (command: Command) => Promise<void>;
+  connected: boolean; blocked: boolean; onCommand: (command: Command) => Promise<void>; showStatus?: boolean;
 }) {
   const [plan, setPlan] = useState<GroupPlan | null>(null);
   const [history, setHistory] = useState<RunHistory | null>(null);
@@ -34,13 +20,19 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
   const [planError, setPlanError] = useState('');
   const [historyError, setHistoryError] = useState('');
   const currentRun = snapshot?.run;
-  const active = !!currentRun && ['running', 'pausing', 'paused', 'stopping'].includes(currentRun.state);
+  const active = isRunActive(currentRun);
   const run = currentRun?.context?.instance_id === instanceId && currentRun.context.group_id === groupId ? currentRun : null;
-  const key = `${instanceId}/${groupId}/${revision}/${connected}/${snapshot?.window?.hwnd}/${snapshot?.window?.pid}/${snapshot?.capture_method}`;
-  const currentKey = useRef(key); currentKey.current = key;
+  const key = `${instanceId}/${groupId}/${revision}/${connected}/${snapshot?.window?.hwnd}/${snapshot?.window?.pid}/${snapshot?.capture_method}/${currentRun?.id}/${currentRun?.state}/${currentRun?.finished_at}`;
+  const requestKey = `${key}/${snapshot?.record_error}/${blocked}`;
+  const currentKey = useRef(requestKey); currentKey.current = requestKey;
+  const planRequest = useRef(0);
 
   useEffect(() => { setPlan(null); setConfirmed(false); setPlanError(''); }, [key]);
-  useEffect(() => { setConfirmed(false); }, [snapshot?.record_error, active]);
+  useEffect(() => {
+    planRequest.current++;
+    setConfirmed(false); setPlanning(false);
+    return () => { planRequest.current++; };
+  }, [requestKey]);
   useEffect(() => {
     if (!plan) return;
     const remaining = new Date(plan.valid_until).getTime() - Date.now();
@@ -49,16 +41,17 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
   }, [plan]);
 
   async function preview() {
-    const requested = key;
+    const requested = requestKey;
+    const requestId = ++planRequest.current;
     setPlanning(true); setPlanError(''); setConfirmed(false); setPlan(null);
     try {
       const value = await request({ type: 'preview_group', params: { instance_id: instanceId, group_id: groupId } });
-      if (currentKey.current !== requested) return;
+      if (currentKey.current !== requested || planRequest.current !== requestId) return;
       if (value.type !== 'group_plan') throw new Error('引擎未返回应用组预览');
       if (value.data.context.config_revision !== revision) throw new Error('配置已更新，请先读取最新账号配置后重新预览。');
       setPlan(value.data);
-    } catch (reason) { if (currentKey.current === requested) setPlanError(errorMessage(reason)); }
-    finally { setPlanning(false); }
+    } catch (reason) { if (currentKey.current === requested && planRequest.current === requestId) setPlanError(errorMessage(reason)); }
+    finally { if (currentKey.current === requested && planRequest.current === requestId) setPlanning(false); }
   }
 
   useEffect(() => {
@@ -75,7 +68,7 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
 
   async function refreshHistory() {
     setHistoryBusy(true); setHistoryError('');
-    const requested = key;
+    const requested = requestKey;
     try {
       const value = await request({ type: 'run_history', params: { instance_id: instanceId } });
       if (currentKey.current === requested && value.type === 'run_history') setHistory(value.data);
@@ -105,17 +98,8 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
           await onCommand({ type: 'start_group_trial', params: { instance_id: instanceId, group_id: groupId, revision: plan.context.config_revision, game_day: plan.game_day.date, allow_input: true, confirm_account: true } });
         }}>开始应用组试运行</Button>
       </div>}
-      {snapshot?.record_error && <><MessageBar intent="error"><MessageBarBody>{snapshot.record_error}。请修复数据目录后重试保存，当前不接受新任务。</MessageBarBody></MessageBar><Button disabled={disabled} onClick={() => onCommand({ type: 'retry_run_save' })}>重试保存运行记录</Button></>}
-      {run && <div aria-label="应用组运行状态">
-        <Badge appearance="tint">{run.mail?.state === 'timed_out' || run.coffee?.state === 'timed_out' ? '超时' : stateNames[run.state]}</Badge><p>{run.message}</p>
-        <p>{inputsReleased(run) ? '输入已释放' : '等待输入收尾'} · 运行 ID：{run.id}</p>
-        <RunSteps group={run.group}/>
-        <div className="button-row">
-          <Button disabled={disabled || run.state !== 'running'} onClick={() => onCommand({ type: 'pause', params: { run_id: run.id } })}>暂停应用组</Button>
-          <Button disabled={disabled || !!snapshot?.record_error || run.state !== 'paused'} onClick={() => onCommand({ type: 'resume', params: { run_id: run.id } })}>继续应用组</Button>
-          <Button disabled={disabled || !active || run.state === 'stopping'} onClick={() => onCommand({ type: 'stop', params: { run_id: run.id } })}>停止应用组</Button>
-        </div>
-      </div>}
+      {showStatus && <RunSaveRecovery error={snapshot?.record_error} disabled={disabled} onCommand={onCommand}/>}
+      {showStatus && run && <GroupRunStatus run={run} disabled={disabled} recordError={!!snapshot?.record_error} onCommand={onCommand}/>}
     </Card>
     <Card><div className="card-title"><h2>账号运行记录</h2><Button disabled={!connected || historyBusy} onClick={() => void refreshHistory()}>刷新运行记录</Button></div>
       <p>查看所选账号最近的运行记录。按日策略只跳过本游戏日完整保存并确认输入释放的成功应用。</p>

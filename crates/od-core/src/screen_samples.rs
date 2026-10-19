@@ -14,6 +14,26 @@ use uuid::Uuid;
 
 pub const MAX_PNG_BYTES: usize = 10 * 1024 * 1024;
 
+pub(crate) fn validate_png(png: &[u8]) -> Result<()> {
+    ensure!(
+        png.len() <= MAX_PNG_BYTES && png.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "素材必须是有界 PNG"
+    );
+    let mut reader =
+        image::ImageReader::with_format(std::io::Cursor::new(png), image::ImageFormat::Png);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(1920);
+    limits.max_image_height = Some(1080);
+    limits.max_alloc = Some(32 * 1024 * 1024);
+    reader.limits(limits);
+    let decoded = reader.decode().context("PNG 解码失败或超出 1080p 限制")?;
+    ensure!(
+        decoded.width() == 1920 && decoded.height() == 1080,
+        "PNG 实际尺寸不是 1920×1080"
+    );
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ScreenSampleKind {
@@ -154,22 +174,7 @@ impl ScreenSampleBook {
         let png = base64::engine::general_purpose::STANDARD
             .decode(&screenshot.png_base64)
             .context("截图编码无效")?;
-        ensure!(
-            png.len() <= MAX_PNG_BYTES && png.starts_with(b"\x89PNG\r\n\x1a\n"),
-            "素材必须是有界 PNG"
-        );
-        let mut reader =
-            image::ImageReader::with_format(std::io::Cursor::new(&png), image::ImageFormat::Png);
-        let mut limits = image::Limits::default();
-        limits.max_image_width = Some(1920);
-        limits.max_image_height = Some(1080);
-        limits.max_alloc = Some(32 * 1024 * 1024);
-        reader.limits(limits);
-        let decoded = reader.decode().context("PNG 解码失败或超出 1080p 限制")?;
-        ensure!(
-            decoded.width() == 1920 && decoded.height() == 1080,
-            "PNG 实际尺寸不是 1920×1080"
-        );
+        validate_png(&png)?;
         let preview = ScreenSamplePreview {
             id: Uuid::new_v4(),
             source: ScreenSampleSource {

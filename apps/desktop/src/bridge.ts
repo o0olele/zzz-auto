@@ -3,6 +3,15 @@ import type { ApiError, Command, DesktopUpdate, Payload, DesktopRuntimeResources
 
 export const desktop = isTauri();
 
+export async function screenSampleLibrary(query: import('./generated/protocol').ScreenSampleQuery): Promise<import('./generated/protocol').ScreenSamplePage> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('screen_sample_library', { query });
+}
+export async function openSavedScreenSample(key: string, metadataSha256: string): Promise<import('./generated/protocol').ScreenSampleView> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('open_saved_screen_sample', { key, metadataSha256 });
+}
+
 export async function screenSampleState(): Promise<import('./generated/protocol').ScreenSampleState> {
   if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
   return invoke('screen_sample_state');

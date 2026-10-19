@@ -29,9 +29,13 @@ npm run tauri dev
 
 需要补充奖励等真实画面时，可在总览连接游戏后进入[画面素材](docs/develop/screen-samples.md)，按需采集、核对预览和人工标注，再保存 PNG 与元信息到本机数据目录 `diagnostics/screens/`。
 
+同页的[已保存素材](docs/develop/screen-sample-library.md)支持按状态和备注筛选、分页及图片回看，重启或引擎断线后仍可读取；打开时自动核对文件哈希和实际尺寸。
+
 只查看界面可以执行 `npm run dev`。浏览器显示“界面预览”，原生功能保持禁用。
 
 ## CLI
+
+`OcrText` 现支持 [RGB 颜色范围过滤](docs/develop/ocr-color-filter.md)，可用固定截图核对快捷手册当前选中的标签；上下界与旧版 RGB 设置一致，二值化由 Maa 原生完成。
 
 下列命令在工程根目录执行，不需要 Tauri。SDK 必须先完成安装。
 

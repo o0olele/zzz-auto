@@ -265,6 +265,29 @@ fn screen_sample_state(
 }
 
 #[tauri::command]
+async fn screen_sample_library(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+    query: od_core::screen_sample_library::ScreenSampleQuery,
+) -> Result<od_core::screen_sample_library::ScreenSamplePage, ApiError> {
+    main_window(&window)?;
+    state.sample_library(&app, query).await
+}
+
+#[tauri::command]
+async fn open_saved_screen_sample(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+    key: String,
+    metadata_sha256: String,
+) -> Result<od_core::screen_sample_library::ScreenSampleView, ApiError> {
+    main_window(&window)?;
+    state.open_saved_sample(&app, key, metadata_sha256).await
+}
+
+#[tauri::command]
 async fn capture_screen_sample(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, Host>,
@@ -313,6 +336,8 @@ fn main() {
             desktop_logs,
             export_log_session,
             screen_sample_state,
+            screen_sample_library,
+            open_saved_screen_sample,
             capture_screen_sample,
             save_screen_sample
         ])

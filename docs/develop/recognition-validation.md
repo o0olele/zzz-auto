@@ -174,7 +174,8 @@ target/release/zzz-engine.exe recognition-compare --cases zzz-od-test/test/zzz_a
 | `run_ocr_single_line(strict_one_line=True)` | `only_rec=true`，使用 Maa 公开的仅识别路径，ROI 必须已包含单行文字；框表示整个 ROI，不能当作检测器定位结果 |
 | 检测并识别的置信度 | 旧 TextSystem 先应用 `drop_score=0.5`，再应用调用方阈值；适配器使用 `max(0.5, threshold)` |
 | 单行直识别的置信度 | 不经过检测路径的 `drop_score`，直接应用调用方阈值，默认 0 |
-| 行合并、颜色过滤、全图识别后按重叠率筛选、相似度排名、识别缓存 | 本轮不支持；未知参数立即报错，不静默忽略 |
+| RGB 颜色过滤 | `color_range` 指定 RGB 上下界，由 Maa 原生二值化后识别；参数和验证范围见[颜色范围适配](ocr-color-filter.md) |
+| 行合并、全图识别后按重叠率筛选、相似度排名、识别缓存 | 当前不支持；未知参数立即报错，不静默忽略 |
 
 LCS 由 `od-core::ocr` 实现，按 Unicode 字符计算最长公共子序列，比较 `LCS长度 >= 原目标字符数 × lcs_percent`，不按 UTF-8 字节数、不要求连续。`ignore_case` 默认 true，精确和包含模式同样显式控制大小写，不去除空白。该接口对应显式文字匹配规则；旧 `match_words` 的 LCS 分支会再次调用默认忽略大小写的 `find_by_lcs`，即便其外层设置 `ignore_case=False`，也不能据此声称整个旧包装器逐参数等价。
 

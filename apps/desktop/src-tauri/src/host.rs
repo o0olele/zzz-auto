@@ -379,6 +379,23 @@ impl Host {
             .map_err(|error| ApiError::new("log_export_failed", format!("{error:#}")))
     }
 
+    pub async fn sample_library(
+        &self,
+        app: &AppHandle,
+        query: od_core::screen_sample_library::ScreenSampleQuery,
+    ) -> Result<od_core::screen_sample_library::ScreenSamplePage, ApiError> {
+        crate::screen_samples::library_page(layout(app)?.data, query).await
+    }
+
+    pub async fn open_saved_sample(
+        &self,
+        app: &AppHandle,
+        key: String,
+        metadata_sha256: String,
+    ) -> Result<od_core::screen_sample_library::ScreenSampleView, ApiError> {
+        crate::screen_samples::open_saved(layout(app)?.data, key, metadata_sha256).await
+    }
+
     pub async fn capture_sample(
         &self,
         hwnd: &str,

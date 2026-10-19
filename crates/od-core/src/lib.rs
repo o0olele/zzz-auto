@@ -18,6 +18,7 @@ pub mod run_logs;
 pub mod run_notifications;
 pub mod run_plan;
 pub mod runtime_resources;
+pub mod screen_sample_library;
 pub mod screen_samples;
 pub mod shortcuts;
 

@@ -4,6 +4,7 @@ import type { CaptureMethod, ScreenSampleKind, ScreenSampleState, Snapshot } fro
 import { screenSampleKindOptions } from './generated/protocol';
 import { captureScreenSample, desktop, errorMessage, saveScreenSample, screenSampleState } from './bridge';
 import { captureNames } from './captureSettings';
+import { ScreenSampleLibrary } from './ScreenSampleLibrary';
 
 export function useScreenSamples(enabled: boolean) {
   const [state, setState] = useState<ScreenSampleState>({ preview: null, saved: null });
@@ -82,5 +83,6 @@ export function ScreenSamples({ manager, connected, blocked, snapshot }: { manag
       <div className="button-row"><Button appearance="primary" disabled={!desktop || !preview || !decoded || noteInvalid || working || !!state.saved} onClick={() => void manager.save(kind, note)}>保存这张预览</Button>{state.saved && <Badge color="success" appearance="tint">本张已保存</Badge>}</div>
       {state.saved && <><Field label="素材图片路径"><Input readOnly value={state.saved.image_path}/></Field><Field label="素材元信息路径"><Input readOnly value={state.saved.metadata_path}/></Field><p>可从这些路径取出文件用于后续画面建档。更换标注或继续采集其他状态时，请重新采集一帧。</p></>}
     </Card>
+    <ScreenSampleLibrary savedId={state.saved?.id}/>
   </>;
 }

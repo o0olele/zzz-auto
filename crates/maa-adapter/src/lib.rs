@@ -243,6 +243,7 @@ impl NativeSession {
                 .is_success(),
             "Maa 资源包加载失败"
         );
+        ocr::initialize_color_filter(&resource)?;
         let tasker = Tasker::new()?;
         tasker.bind_resource(&resource)?;
         ensure!(

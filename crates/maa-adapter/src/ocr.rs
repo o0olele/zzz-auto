@@ -6,6 +6,28 @@ use std::time::Instant;
 
 use crate::{NativeSession, RecognitionImage, RecognitionMeasurement};
 
+pub const OCR_COLOR_FILTER_NODE: &str = "__ZzzAuto_OcrText_RgbRange";
+
+fn color_filter_pipeline(range: [[u8; 3]; 2]) -> Value {
+    json!({ (OCR_COLOR_FILTER_NODE): {
+        "recognition":"ColorMatch", "action":"DoNothing", "enabled":false,
+        "next":[], "on_error":[], "roi":[0,0,1920,1080],
+        "method":4, "lower":range[0], "upper":range[1]
+    }})
+}
+
+pub(crate) fn initialize_color_filter(resource: &maa_framework::resource::Resource) -> Result<()> {
+    ensure!(
+        !resource
+            .node_list()?
+            .iter()
+            .any(|name| name == OCR_COLOR_FILTER_NODE),
+        "资源使用了 OCR 内部保留节点名，不能覆盖：{OCR_COLOR_FILTER_NODE}"
+    );
+    resource.override_pipeline_json(&color_filter_pipeline([[0; 3], [255; 3]]))?;
+    Ok(())
+}
+
 fn default_roi() -> [i32; 4] {
     [0, 0, 1920, 1080]
 }
@@ -34,6 +56,8 @@ pub struct OcrTextConfig {
     pub lcs_percent: f64,
     #[serde(default = "default_ignore_case")]
     pub ignore_case: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_range: Option<[[u8; 3]; 2]>,
 }
 
 impl OcrTextConfig {
@@ -68,7 +92,28 @@ impl OcrTextConfig {
                     .all(|word| { !word.is_empty() && word.chars().count() <= 512 }),
             "OCR 目标文字不能为空，每项最多 512 字，最多 64 项"
         );
+        if let Some([lower, upper]) = config.color_range {
+            ensure!(
+                lower.into_iter().zip(upper).all(|(low, high)| low <= high),
+                "OCR RGB 颜色下界不能大于上界"
+            );
+        }
         Ok(config)
+    }
+
+    pub fn native_params(&self) -> Value {
+        let mut params = json!({
+            "model":self.model, "roi":self.roi, "only_rec":self.only_rec,
+            "threshold":0.0, "order_by":"Vertical"
+        });
+        if self.color_range.is_some() {
+            params["color_filter"] = json!(OCR_COLOR_FILTER_NODE);
+        }
+        params
+    }
+
+    pub fn color_filter_pipeline(&self) -> Option<Value> {
+        self.color_range.map(color_filter_pipeline)
     }
 
     pub fn effective_threshold(&self) -> f64 {
@@ -140,6 +185,7 @@ pub fn text_decision(native: &Value, params: &Value) -> Result<Value> {
         "adaptation": {
             "kind": "OcrText", "config": config, "effective_threshold": threshold,
             "coordinate_space": "full_frame", "score_source": "maa_json_6_decimals",
+            "color_filter_backend": if config.color_range.is_some() { Some("Maa OCR.color_filter / ColorMatch RGB") } else { None },
             "legacy_algorithm_compatible": false
         },
         "native_detail": native
@@ -154,14 +200,12 @@ impl NativeSession {
     ) -> Result<RecognitionMeasurement> {
         let started = Instant::now();
         let config = OcrTextConfig::parse(params)?;
-        let mut measured = self.recognize_maa_prepared(
-            image,
-            "OCR",
-            &json!({
-                "model": config.model, "roi": config.roi, "only_rec": config.only_rec,
-                "threshold": 0.0, "order_by": "Vertical"
-            }),
-        )?;
+        if let Some(pipeline) = config.color_filter_pipeline() {
+            self._resource.override_pipeline_json(&pipeline)?;
+        }
+        let prepare_us = started.elapsed().as_micros() as u64;
+        let mut measured = self.recognize_maa_prepared(image, "OCR", &config.native_params())?;
+        measured.timing.prepare_us += prepare_us;
         let details_at = Instant::now();
         measured.detail = text_decision(&measured.detail, params)?;
         measured.timing.details_us += details_at.elapsed().as_micros() as u64;

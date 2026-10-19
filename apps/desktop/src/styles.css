@@ -178,3 +178,13 @@ p { color: var(--muted); font-size: 13px; line-height: 1.85; margin: 0; }
 .screen-samples-card { min-width: 0; }
 .screen-samples-card .button-row, .screen-samples-card .preview-meta { flex-wrap: wrap; gap: 8px; }
 .screen-samples-card .fui-Input, .screen-samples-card .fui-Select { min-width: 0; max-width: 100%; width: 100%; }
+.sample-library-items { max-height: 520px; overflow: auto; }
+.sample-library-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); }
+.sample-library-item > div { min-width: 0; overflow-wrap: anywhere; }
+.sample-library-item time { display: block; margin-top: 5px; font-size: 12px; }
+.sample-library-item p { margin: 7px 0; white-space: pre-wrap; }
+.sample-library-item small { color: var(--muted); }
+.sample-library-item .fui-Button { flex-shrink: 0; }
+.sample-library-view { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; min-width: 0; }
+.sample-library-view p, .sample-library-view h3 { margin: 0; overflow-wrap: anywhere; }
+.screen-sample-library .card-title, .screen-sample-library .button-row, .screen-sample-library .log-pagination { flex-wrap: wrap; gap: 8px; }

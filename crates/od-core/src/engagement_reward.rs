@@ -8,6 +8,17 @@ pub struct EngagementArea {
     pub text: &'static str,
 }
 
+pub const BUNDLE_SCHEMA_VERSION: u32 = 2;
+pub const DAILY_TAB_SOURCE: &str = "assets/game_data/screen_info/compendium_errands.yml";
+pub const DAILY_TAB_COLOR_NODE: &str = "EngagementReward.ReadOnly.DailyTabColor";
+pub const DAILY_TAB_RGB_RANGE: [[u8; 3]; 2] = [[200, 160, 0], [255, 255, 60]];
+pub const DAILY_TAB: EngagementArea = EngagementArea {
+    alias: "DailyTab",
+    legacy_name: "TAB-日常",
+    rect: [708, 140, 1636, 220],
+    text: "日常",
+};
+
 pub const AREAS: &[EngagementArea] = &[
     EngagementArea {
         alias: "DailyTitle",
@@ -42,7 +53,7 @@ pub const TEMPLATE_SHA256: &str =
 
 pub fn pipeline() -> Value {
     let mut nodes = serde_json::Map::new();
-    for area in AREAS {
+    for area in AREAS.iter().chain(std::iter::once(&DAILY_TAB)) {
         let [x, y, x2, y2] = area.rect;
         let mut node = json!({"action":"DoNothing","roi":[x,y,x2-x,y2-y]});
         if area.text.is_empty() {
@@ -56,18 +67,30 @@ pub fn pipeline() -> Value {
             node["model"] = json!("ppocrv5");
             node["expected"] = json!([format!("^{}$", area.text)]);
             node["threshold"] = json!(0.6);
+            if area.alias == DAILY_TAB.alias {
+                node["color_filter"] = json!(DAILY_TAB_COLOR_NODE);
+            }
         }
         nodes.insert(format!("EngagementReward.ReadOnly.{}", area.alias), node);
     }
+    let [x, y, x2, y2] = DAILY_TAB.rect;
+    nodes.insert(
+        DAILY_TAB_COLOR_NODE.to_owned(),
+        json!({
+            "recognition":"ColorMatch", "action":"DoNothing", "enabled":false,
+            "next":[], "on_error":[], "roi":[x,y,x2-x,y2-y], "method":4,
+            "lower":DAILY_TAB_RGB_RANGE[0], "upper":DAILY_TAB_RGB_RANGE[1]
+        }),
+    );
     Value::Object(nodes)
 }
 
-/// 使用可辨认的标题确定画面；确认和完成图标都不能独立提供上下文。
-pub fn visible_view(daily_title: bool, preview: bool) -> &'static str {
-    match (daily_title, preview) {
-        (true, true) => "ambiguous",
-        (true, false) => "daily_visible",
-        (false, true) => "reward_preview_visible",
-        (false, false) => "unknown",
+/// 同时核对选中页签和标题；确认和完成图标都不能独立提供上下文。
+pub fn visible_view(daily_tab_selected: bool, daily_title: bool, preview: bool) -> &'static str {
+    match (daily_tab_selected, daily_title, preview) {
+        (_, true, true) => "ambiguous",
+        (true, true, false) => "daily_visible",
+        (_, false, true) => "reward_preview_visible",
+        _ => "unknown",
     }
 }

@@ -116,6 +116,18 @@ pub fn plan_group_at(
     now: DateTime<Utc>,
     completed: Option<&DailyCompletions>,
 ) -> Result<GroupPlan, String> {
+    plan_group_selection_at(config, instance_id, group_id, now, completed, None)
+}
+
+/// 本次选择只替代启用项，顺序与参数仍来自保存的组，不改写配置。
+pub fn plan_group_selection_at(
+    config: &AccountConfig,
+    instance_id: u32,
+    group_id: &str,
+    now: DateTime<Utc>,
+    completed: Option<&DailyCompletions>,
+    selection: Option<&[String]>,
+) -> Result<GroupPlan, String> {
     config.validate().map_err(|error| error.to_string())?;
     let instance = config
         .instances
@@ -127,6 +139,21 @@ pub fn plan_group_at(
         .iter()
         .find(|item| item.id == group_id)
         .ok_or("应用组不存在")?;
+    if let Some(ids) = selection {
+        if ids.is_empty() || ids.len() > 256 {
+            return Err("本次请选择 1..256 个应用".into());
+        }
+        let unique: std::collections::HashSet<_> = ids.iter().collect();
+        if unique.len() != ids.len() {
+            return Err("本次所选应用不能重复".into());
+        }
+        if ids
+            .iter()
+            .any(|id| !group.apps.iter().any(|app| app.app_id == *id))
+        {
+            return Err("本次所选应用不属于当前应用组，请重新读取配置".into());
+        }
+    }
     let game_day = GameDay::at(instance.game_region, now).map_err(str::to_owned)?;
     if completed.is_some_and(|index| index.game_day != game_day) {
         return Err("完成记录的游戏日与计划不符，请重新预览".into());
@@ -148,6 +175,7 @@ pub fn plan_group_at(
     let mut items = Vec::new();
     let mut app_ids = Vec::new();
     for item in &group.apps {
+        let enabled = selection.map_or(item.enabled, |ids| ids.contains(&item.app_id));
         let definition = catalog.iter().find(|app| app.id == item.app_id);
         let name = definition.map_or_else(|| item.app_id.clone(), |app| app.name.clone());
         // 是否有执行器由业务实现决定，登记的 implemented 标记不能开放未知运行入口。
@@ -159,7 +187,7 @@ pub fn plan_group_at(
         };
         let mut decision = PlanDecision::Disabled;
         let mut completed_run_id = None;
-        if item.enabled {
+        if enabled {
             app_ids.push(item.app_id.clone());
             match availability {
                 AppAvailability::MailTrial | AppAvailability::CoffeeTrial => {
@@ -187,7 +215,7 @@ pub fn plan_group_at(
         items.push(PlannedApp {
             app_id: item.app_id.clone(),
             name,
-            enabled: item.enabled,
+            enabled,
             availability,
             decision,
             completed_run_id,

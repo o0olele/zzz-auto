@@ -20,12 +20,12 @@ pub fn validate_engagement_reward_bundle(root: &Path) -> Result<PathBuf> {
     );
     let manifest: Value = serde_json::from_slice(&std::fs::read(manifest_path)?)?;
     ensure!(
-        manifest["schema_version"] == 1
+        manifest["schema_version"] == od_core::engagement_reward::BUNDLE_SCHEMA_VERSION
             && manifest["sdk_version"] == crate::SDK_VERSION
             && manifest["base_size"] == json!([1920, 1080])
             && manifest["read_only"] == true
             && manifest["accepted"] == false,
-        "活跃度奖励资源版本或只读标记不兼容"
+        "活跃度奖励资源版本或只读标记不兼容，请重新运行 engagement-reward-bundle"
     );
     let allowed: BTreeSet<_> = [
         "pipeline/engagement-reward-readonly.json",
@@ -122,11 +122,12 @@ pub fn validate_engagement_reward_bundle(root: &Path) -> Result<PathBuf> {
 #[derive(Debug, Serialize)]
 pub struct EngagementRewardObservation {
     pub read_only: bool,
+    pub daily_tab_selected: bool,
     pub daily_title_visible: bool,
     pub confirm_text_visible: bool,
     pub preview_title_visible: bool,
     pub completed_marker_visible: bool,
-    /// 可见标记只有在日常标题同时命中时才有对应画面上下文。
+    /// 可见标记只有在日常选中页签和标题同时命中且无歧义时才有画面上下文。
     pub completed_marker_on_daily: bool,
     pub view: &'static str,
     pub checks: Vec<Value>,
@@ -146,7 +147,10 @@ impl crate::NativeSession {
         let pipeline = od_core::engagement_reward::pipeline();
         let mut checks = Vec::new();
         let mut hits = Vec::new();
-        for area in od_core::engagement_reward::AREAS {
+        for area in od_core::engagement_reward::AREAS
+            .iter()
+            .chain(std::iter::once(&od_core::engagement_reward::DAILY_TAB))
+        {
             let mut params = pipeline[format!("EngagementReward.ReadOnly.{}", area.alias)].clone();
             let kind = params["recognition"]
                 .as_str()
@@ -163,9 +167,10 @@ impl crate::NativeSession {
             );
             checks.push(json!({"area":area.alias,"recognition":result}));
         }
-        let view = od_core::engagement_reward::visible_view(hits[0], hits[2]);
+        let view = od_core::engagement_reward::visible_view(hits[4], hits[0], hits[2]);
         Ok(EngagementRewardObservation {
             read_only: true,
+            daily_tab_selected: hits[4],
             daily_title_visible: hits[0],
             confirm_text_visible: hits[1],
             preview_title_visible: hits[2],

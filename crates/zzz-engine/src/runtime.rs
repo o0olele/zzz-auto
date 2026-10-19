@@ -16,7 +16,7 @@ use od_core::{
 use od_core::{mail::MailConfig, pipeline::PipelineRequest};
 use od_core::{
     run_history::RunStore,
-    run_plan::{GroupPlan, plan_group_at},
+    run_plan::{GroupPlan, plan_group_selection_at},
 };
 use od_protocol::{ApiError, Command, Payload};
 use std::{
@@ -402,9 +402,10 @@ impl Engine {
             Command::PreviewGroup {
                 instance_id,
                 group_id,
+                app_ids,
             } => {
                 let config = self.config.read().map_err(config_error)?;
-                self.group_plan(config, instance_id, group_id)
+                self.group_plan(config, instance_id, group_id, app_ids)
                     .await
                     .map(Payload::GroupPlan)
             }
@@ -454,6 +455,7 @@ impl Engine {
                 group_id,
                 revision,
                 game_day,
+                app_ids,
                 allow_input,
                 confirm_account,
             } => {
@@ -483,7 +485,9 @@ impl Engine {
                 if saved.revision != revision {
                     return Err(config_error(ConfigError::Conflict(Box::new(saved))));
                 }
-                let plan = self.group_plan(saved, instance_id, group_id).await?;
+                let plan = self
+                    .group_plan(saved, instance_id, group_id, app_ids)
+                    .await?;
                 if plan.game_day.date != game_day {
                     return Err(ApiError::new(
                         "plan_expired",
@@ -734,10 +738,18 @@ impl Engine {
         config: od_core::config::AccountConfig,
         instance_id: u32,
         group_id: String,
+        app_ids: Option<Vec<String>>,
     ) -> Result<GroupPlan, ApiError> {
         let now = Utc::now();
-        let plan = plan_group_at(&config, instance_id, &group_id, now, None)
-            .map_err(|error| ApiError::new("invalid_group", error))?;
+        let plan = plan_group_selection_at(
+            &config,
+            instance_id,
+            &group_id,
+            now,
+            None,
+            app_ids.as_deref(),
+        )
+        .map_err(|error| ApiError::new("invalid_group", error))?;
         if plan.run_policy == RunPolicy::Always {
             return Ok(plan);
         }
@@ -746,8 +758,15 @@ impl Engine {
             let completed = history
                 .daily_completions(instance_id, plan.game_day, now)
                 .map_err(|error| ApiError::new("history_error", error.to_string()))?;
-            plan_group_at(&config, instance_id, &group_id, now, Some(&completed))
-                .map_err(|error| ApiError::new("invalid_group", error))
+            plan_group_selection_at(
+                &config,
+                instance_id,
+                &group_id,
+                now,
+                Some(&completed),
+                app_ids.as_deref(),
+            )
+            .map_err(|error| ApiError::new("invalid_group", error))
         })
         .await
         .map_err(|_| ApiError::new("history_error", "每日记录查询线程异常退出"))?

@@ -21,6 +21,8 @@ npm run tauri dev
 
 连接游戏后可从侧栏或总览进入[一条龙运行](docs/develop/one-dragon-run.md)，选择当前账号的应用组，预览计划并确认本次账号和输入后启动；页面集中显示分项进度、暂停 / 继续 / 停止及记录保存重试。账号和应用顺序在“账号与应用组”编辑，完整历史在“运行记录”查看。
 
+运行页可开启“仅本次选择应用”，临时勾选邮件、咖啡或其他组内应用，按保存顺序预检及执行，不改变应用组配置；未迁移项被选中时仍会拦截。刷新配置、换组、断线或离开页面后恢复保存的默认启用项。
+
 一条龙运行页可保存[结束后动作](docs/develop/after-done.md)：无、关闭游戏、关机、休眠或睡眠。整组正常完成并确认保存及输入释放后进入 60 秒倒计时，可在任意页面或托盘取消本次动作；失败、停止和独立诊断不执行。
 
 总览提供[手动启动游戏](docs/develop/game-launch.md)：先在“账号与应用组”按账号保存游戏路径及可选的固定 1080p 参数，再回总览核对并确认启动。启动后手动登录、扫描和连接窗口，随后进入一条龙运行。
@@ -39,7 +41,7 @@ npm run tauri dev
 
 下列命令在工程根目录执行，不需要 Tauri。SDK 必须先完成安装。
 
-[活跃度奖励识别准备](docs/develop/engagement-reward.md)提供 `engagement-reward-bundle`、`engagement-reward-bundle-check` 和 `engagement-reward-inspect`，用于生成、校验只读资源及检查固定 1080p 截图。已验证真实日常页和完成标记，自动领取及应用组入口仍待补充奖励画面后实现。
+[活跃度奖励识别准备](docs/develop/engagement-reward.md)提供 `engagement-reward-bundle`、`engagement-reward-bundle-check` 和 `engagement-reward-inspect`，用于生成、校验只读资源及检查固定 1080p 截图。日常页要求黄色选中页签和正文标题同时命中，报告保留可见完成标记；旧只读包需重新生成为 schema 2。自动领取及应用组入口仍待补充奖励画面后实现。
 
 ```powershell
 cargo run -p zzz-engine -- doctor

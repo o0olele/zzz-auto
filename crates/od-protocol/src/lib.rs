@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v28 接通按账号保存的运行结果提醒；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 28;
+// v29 接通应用组本次选择；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 29;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -62,12 +62,18 @@ pub enum Command {
     PreviewGroup {
         instance_id: u32,
         group_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        app_ids: Option<Vec<String>>,
     },
     StartGroupTrial {
         instance_id: u32,
         group_id: String,
         revision: u32,
         game_day: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        app_ids: Option<Vec<String>>,
         #[serde(default)]
         allow_input: bool,
         #[serde(default)]

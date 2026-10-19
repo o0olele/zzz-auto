@@ -1,5 +1,8 @@
 use anyhow::{Context, Result, ensure};
-use od_core::engagement_reward::{AREAS, MASK_SHA256, RAW_SHA256};
+use od_core::engagement_reward::{
+    AREAS, BUNDLE_SCHEMA_VERSION, DAILY_TAB, DAILY_TAB_RGB_RANGE, DAILY_TAB_SOURCE, MASK_SHA256,
+    RAW_SHA256,
+};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::Path};
@@ -48,13 +51,44 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
         );
         let [x, y, x2, y2] = expected.rect;
         conversions.push(json!({
-            "area":expected.legacy_name,"node":format!("EngagementReward.ReadOnly.{}",expected.alias),
+            "source":source_path,"area":expected.legacy_name,"node":format!("EngagementReward.ReadOnly.{}",expected.alias),
             "legacy_rect":expected.rect,"roi":[x,y,x2-x,y2-y],
             "matching":if expected.text.is_empty(){"binary_mask_to_green_mask"}else{"exact_regex_not_legacy_lcs"}
         }));
     }
     let mut sources =
         vec![json!({"path":source_path,"sha256":hex::encode(Sha256::digest(&source))})];
+    od_core::config::reject_links(&reference.join(DAILY_TAB_SOURCE))?;
+    let daily_source = crate::mail::read_within(&reference, DAILY_TAB_SOURCE)?;
+    let daily_screen: crate::resources::LegacyScreen = serde_yaml::from_slice(&daily_source)?;
+    ensure!(
+        daily_screen.screen_id == "compendium_errands"
+            && daily_screen.screen_name == "快捷手册-日常"
+            && !daily_screen.pc_alt,
+        "日常页签来源画面已变化，请重新核对"
+    );
+    let daily_tab = crate::mail::area(&daily_screen, DAILY_TAB.legacy_name)?;
+    ensure!(
+        daily_tab.pc_rect == DAILY_TAB.rect
+            && daily_tab.text == DAILY_TAB.text
+            && daily_tab.lcs_percent == Some(1.0)
+            && daily_tab.color_range == Some(json!(DAILY_TAB_RGB_RANGE))
+            && daily_tab.id_mark
+            && daily_tab.goto_list == ["快捷手册-日常"]
+            && daily_tab.template_sub_dir.is_empty()
+            && daily_tab.template_id.is_empty()
+            && daily_tab.template_match_threshold == Some(0.7),
+        "日常页签区域、颜色或识别规则已变化，请重新核对"
+    );
+    let [x, y, x2, y2] = DAILY_TAB.rect;
+    conversions.push(json!({
+        "source":DAILY_TAB_SOURCE,"area":DAILY_TAB.legacy_name,
+        "node":format!("EngagementReward.ReadOnly.{}",DAILY_TAB.alias),
+        "legacy_rect":DAILY_TAB.rect,"roi":[x,y,x2-x,y2-y],
+        "color_range":DAILY_TAB_RGB_RANGE,"matching":"rgb_color_filter_and_exact_regex_not_legacy_lcs"
+    }));
+    sources
+        .push(json!({"path":DAILY_TAB_SOURCE,"sha256":hex::encode(Sha256::digest(&daily_source))}));
     let mut inputs = Vec::new();
     for (name, pinned) in [("raw.png", RAW_SHA256), ("mask.png", MASK_SHA256)] {
         let relative = format!("assets/template/compendium/completed/{name}");
@@ -119,10 +153,10 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
         }
     }
     let manifest = json!({
-        "schema_version":1,"sdk_version":lock.sdk_version,"base_size":[1920,1080],
+        "schema_version":BUNDLE_SCHEMA_VERSION,"sdk_version":lock.sdk_version,"base_size":[1920,1080],
         "read_only":true,"accepted":false,"sources":sources,"areas":conversions,
         "files":files.iter().map(|(path,bytes)|json!({"path":path,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>(),
-        "limitations":["固定 OCR 精确正则与旧 LCS 不等价，未迁移日常 TAB 黄色过滤",
+        "limitations":["固定 OCR 精确正则与旧 LCS 包装器不等价；日常选中态要求黄色页签和标题同时命中",
         "真实素材只有已满日常页；领取确认、奖励预览、未满和可领取状态待补",
         "只报告可见文字及标记，不判断本次领取成功，不写每日记录或投递输入"]
     });

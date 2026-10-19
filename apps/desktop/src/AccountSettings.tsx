@@ -7,6 +7,8 @@ import { GroupRuns } from './GroupRuns';
 import { ConfigImport } from './ConfigImport';
 import { ConfigBackups } from './ConfigBackups';
 import { CoffeeSettings } from './CoffeeSettings';
+import { GameLaunchEditor } from './GameLaunch';
+import { RunNotificationEditor } from './RunNotifications';
 
 const groupName = (group: AppGroup) => group.name ?? (group.id === 'one_dragon' ? '一条龙' : group.id);
 const validName = (name: string) => !!name.trim() && [...name].length <= 80 && !/[\u0000-\u001f\u007f-\u009f]/.test(name);
@@ -29,6 +31,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
   const [busy, setBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
+  const [pickerBusy, setPickerBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const generation = useRef(0);
@@ -36,7 +39,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
   const instance = config?.instances.find(item => item.id === instanceId);
   const group = instance?.groups.find(item => item.id === groupId);
   const recordUnsaved = !!snapshot?.record_error;
-  const disabled = !connected || blocked || busy || importBusy || backupBusy || active || recordUnsaved;
+  const disabled = !connected || blocked || busy || importBusy || backupBusy || pickerBusy || active || recordUnsaved;
 
   function accept(value: AccountConfig) {
     setConfig(value);
@@ -99,6 +102,8 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       else if (change.type === 'reorder_instances') setMessage('账号顺序已保存，当前账号保持不变。');
       else if (change.type === 'reorder_groups') setMessage('应用组顺序已保存。');
       else if (change.type === 'save_coffee') setMessage('咖啡设置已保存，可在原生诊断中采用所选组参数。');
+      else if (change.type === 'save_game_launch') setMessage('游戏启动设置已保存，可在总览核对当前账号后手动启动。');
+      else if (change.type === 'save_run_notifications') setMessage('运行提醒设置已保存，下次由桌面启动的应用组采用该设置。');
       if (change.type === 'create_group') {
         const before = config.instances.find(item => item.id === change.instance_id)?.groups ?? [];
         const created = result.data.instances.find(item => item.id === change.instance_id)?.groups.find(item => !before.some(old => old.id === item.id));
@@ -142,7 +147,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
   }
 
   return <>
-    <div className="page-heading"><div><div className="eyebrow">ACCOUNTS AND APPLICATIONS</div><h1>账号与应用组</h1><p>管理本地账号配置和应用顺序。切换配置后，请自行确认游戏登录账号。</p></div><Button disabled={!connected || busy || importBusy || backupBusy || blocked} onClick={async () => {
+    <div className="page-heading"><div><div className="eyebrow">ACCOUNTS AND APPLICATIONS</div><h1>账号与应用组</h1><p>管理本地账号配置和应用顺序。切换配置后，请自行确认游戏登录账号。</p></div><Button disabled={!connected || busy || importBusy || backupBusy || pickerBusy || blocked} onClick={async () => {
       const requested = generation.current;
       setBusy(true); setError(''); setMessage(''); setDeleting(false); setDeleteConfirmed(false);
       try { const value = await load(); if (generation.current === requested) accept(value); } catch (reason) { if (generation.current === requested) setError(errorMessage(reason)); } finally { if (generation.current === requested) setBusy(false); }
@@ -151,14 +156,14 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
     {message && <MessageBar intent="success"><MessageBarBody>{message}</MessageBarBody></MessageBar>}
     {active && <MessageBar intent="info"><MessageBarBody>任务仍在运行或收尾，请停止任务后再修改账号及应用组。</MessageBarBody></MessageBar>}
     {recordUnsaved && <MessageBar intent="warning"><MessageBarBody>运行记录尚未保存，请先在账号运行历史中重试保存，再修改配置。</MessageBarBody></MessageBar>}
-    <ConfigImport connected={connected} active={active} blocked={blocked || busy || backupBusy} current={config} apps={apps} onBusy={setImportBusy} onImported={value => { accept(value); setError(''); onImported(value); }}/>
-    <ConfigBackups connected={connected} active={active} blocked={blocked || busy || importBusy} current={config} apps={apps} onBusy={setBackupBusy} onLoaded={value => { accept(value); setError(''); onImported(value); }}/>
+    <ConfigImport connected={connected} active={active} blocked={blocked || busy || backupBusy || pickerBusy} current={config} apps={apps} onBusy={setImportBusy} onImported={value => { accept(value); setError(''); onImported(value); }}/>
+    <ConfigBackups connected={connected} active={active} blocked={blocked || busy || importBusy || pickerBusy} current={config} apps={apps} onBusy={setBackupBusy} onLoaded={value => { accept(value); setError(''); onImported(value); }}/>
     {!config && <Card><p>{connected ? '正在读取账号配置。读取失败时可点击“读取最新配置”重试。' : '连接桌面引擎后可读取和编辑本地配置。'}</p></Card>}
     {config && <>
       <Card><div className="card-title"><h2>账号配置</h2><Badge appearance="outline">修订 {config.revision}</Badge></div>
         <p>当前账号：{config.instances.find(item => item.id === config.active_instance)?.name}</p>
         <div className="input-fields">
-          <Field label="编辑账号"><Select value={instanceId} disabled={busy || importBusy || backupBusy} onChange={(_, data) => { setInstanceId(Number(data.value)); setMessage(''); }}>{config.instances.map(item => <option key={item.id} value={item.id}>{item.name}{item.id === config.active_instance ? '（当前）' : ''}</option>)}</Select></Field>
+          <Field label="编辑账号"><Select value={instanceId} disabled={busy || importBusy || backupBusy || pickerBusy} onChange={(_, data) => { setInstanceId(Number(data.value)); setMessage(''); }}>{config.instances.map(item => <option key={item.id} value={item.id}>{item.name}{item.id === config.active_instance ? '（当前）' : ''}</option>)}</Select></Field>
           <Field label="账号名称"><Input value={name} maxLength={80} disabled={disabled} onChange={(_, data) => setName(data.value)}/></Field>
         </div>
         <Checkbox label="参与一条龙" checked={enabled} disabled={disabled} onChange={(_, data) => setEnabled(data.checked === true)}/>
@@ -183,8 +188,10 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
         <div className="account-create"><Field label="新增账号名称"><Input value={newName} maxLength={80} disabled={disabled} onChange={(_, data) => setNewName(data.value)}/></Field><Button disabled={disabled || !validName(newName) || config.instances.length >= 128} onClick={() => void update({ type: 'create_instance', name: newName })}>新增账号</Button><Button disabled={disabled || !instance || !validName(newName) || config.instances.length >= 128} onClick={() => instance && void update({ type: 'copy_instance', instance_id: instance.id, name: newName })}>复制账号配置</Button></div>
         <p>复制保留所选账号的区服、应用组顺序、启用项和运行策略；使用新编号，副本默认不参与一条龙。凭据、历史和每日完成记录不复制。</p>
       </Card>
+      {instance && <GameLaunchEditor key={`launch-${instance.id}-${config.revision}-${connected}`} settings={instance.game_launch} disabled={disabled} onPickerBusy={setPickerBusy} onSave={settings => void update({ type: 'save_game_launch', instance_id: instance.id, settings })}/>}
+      {instance && <RunNotificationEditor key={`notifications-${instance.id}-${config.revision}-${connected}`} settings={instance.run_notifications} disabled={disabled} onSave={settings => void update({ type: 'save_run_notifications', instance_id: instance.id, settings })}/>}
       {instance && <Card><div className="card-title"><h2>应用组顺序</h2><Badge appearance="outline">{group?.apps.length ?? 0} 项</Badge></div>
-        <Field label="应用组"><Select value={groupId} disabled={busy || importBusy || backupBusy} onChange={(_, data) => { setGroupId(data.value); setMessage(''); }}>{instance.groups.map(item => <option key={item.id} value={item.id}>{groupName(item)}</option>)}</Select></Field>
+        <Field label="应用组"><Select value={groupId} disabled={busy || importBusy || backupBusy || pickerBusy} onChange={(_, data) => { setGroupId(data.value); setMessage(''); }}>{instance.groups.map(item => <option key={item.id} value={item.id}>{groupName(item)}</option>)}</Select></Field>
         <div className="button-row"><Button disabled={disabled || !group || instance.groups[0].id === group.id} onClick={() => moveGroup(-1)}>上移应用组</Button><Button disabled={disabled || !group || instance.groups.at(-1)?.id === group.id} onClick={() => moveGroup(1)}>下移应用组</Button></div>
         <div className="account-create"><Field label="应用组名称"><Input value={groupLabel} maxLength={80} disabled={disabled || !group} onChange={(_, data) => { setGroupLabel(data.value); setMessage(''); }}/></Field>
           <Button disabled={disabled || !group || !validName(groupLabel) || groupLabel.trim() === groupName(group)} onClick={() => group && void update({ type: 'rename_group', instance_id: instance.id, group_id: group.id, name: groupLabel })}>保存组名</Button>

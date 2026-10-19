@@ -2,6 +2,7 @@ pub mod baseline;
 pub mod coffee;
 pub mod coffee_run;
 pub mod config_import;
+pub mod engagement_reward;
 pub mod flash_model;
 pub mod inventory;
 pub mod mail;

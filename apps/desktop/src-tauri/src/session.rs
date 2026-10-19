@@ -176,7 +176,9 @@ impl EngineSession {
     pub async fn request(&mut self, command: Command) -> Result<Payload, ApiError> {
         if matches!(
             command,
-            Command::PreviewConfigImport { .. } | Command::ApplyConfigImport { .. }
+            Command::PreviewConfigImport { .. }
+                | Command::ApplyConfigImport { .. }
+                | Command::LaunchGame { .. }
         ) {
             self.require_recovered()?;
             if let Some(journal) = &self.journal {
@@ -411,7 +413,12 @@ impl EngineSession {
             }
             response.result.ok_or_else(|| offline("引擎返回空响应"))
         };
-        match tokio::time::timeout(Duration::from_secs(15), call).await {
+        let timeout = if matches!(&request.command, Command::LaunchGame { .. }) {
+            120
+        } else {
+            15
+        };
+        match tokio::time::timeout(Duration::from_secs(timeout), call).await {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(error)) if error.code != "engine_offline" => Err(error),
             result => {

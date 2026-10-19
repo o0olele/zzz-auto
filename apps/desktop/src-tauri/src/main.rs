@@ -46,6 +46,26 @@ async fn engine_request(
 }
 
 #[tauri::command]
+fn run_notification_state(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+) -> Result<od_core::run_notifications::RunNotifications, ApiError> {
+    main_window(&window)?;
+    Ok(state.notification_state())
+}
+
+#[tauri::command]
+fn update_run_notifications(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+    ids: Vec<uuid::Uuid>,
+    remove: bool,
+) -> Result<od_core::run_notifications::RunNotifications, ApiError> {
+    main_window(&window)?;
+    state.update_notifications(&ids, remove)
+}
+
+#[tauri::command]
 fn cancel_after_done(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, Host>,
@@ -141,6 +161,20 @@ async fn pick_config_import_source(
 }
 
 #[tauri::command]
+async fn pick_game_executable(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+) -> Result<Option<String>, ApiError> {
+    main_window(&window)?;
+    state.after_done.require_available()?;
+    state.resources.require_available()?;
+    let owner = window.hwnd().map_err(session::offline)?.0 as isize;
+    tokio::task::spawn_blocking(move || archive_picker::pick_game(owner))
+        .await
+        .map_err(session::offline)?
+}
+
+#[tauri::command]
 fn start_runtime_resource_job(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -221,6 +255,9 @@ fn main() {
         .manage(Host::new())
         .invoke_handler(tauri::generate_handler![
             engine_request,
+            run_notification_state,
+            update_run_notifications,
+            pick_game_executable,
             cancel_after_done,
             reconnect_engine,
             elevate_engine,
@@ -277,7 +314,14 @@ fn main() {
             let quit = MenuItem::with_id(app, "quit", "停止并退出", true, None::<&str>)?;
             let cancel_after =
                 MenuItem::with_id(app, "cancel_after", "取消结束后动作", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &cancel_after, &quit])?;
+            let notifications = MenuItem::with_id(
+                app,
+                "run_notifications",
+                "运行提醒（0 条未读）",
+                true,
+                None::<&str>,
+            )?;
+            let menu = Menu::with_items(app, &[&show, &notifications, &cancel_after, &quit])?;
             let pixels: Vec<u8> = (0..32 * 32)
                 .flat_map(|index| {
                     let x = index % 32;
@@ -293,11 +337,22 @@ fn main() {
                     }
                 })
                 .collect();
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("main")
                 .icon(tauri::image::Image::new_owned(pixels, 32, 32))
                 .tooltip("绝区零一条龙 · Rust 原型")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
+                    "run_notifications" => {
+                        if let Ok(channel) = app.state::<Host>().channel.lock()
+                            && let Some(channel) = channel.as_ref()
+                        {
+                            let _ = channel.send(DesktopUpdate::OpenRunNotifications);
+                        }
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
                     "cancel_after" => {
                         if let Some(status) = app.state::<Host>().after_done.snapshot() {
                             let _ = app.state::<Host>().after_done.cancel(status.id);
@@ -345,8 +400,10 @@ fn main() {
                 if let Err(error) = initial {
                     eprintln!("{error}");
                 }
+                let mut last_unread = usize::MAX;
                 loop {
                     if handle.state::<Host>().resources.switching() {
+                        handle.state::<Host>().notifications_disconnected();
                         handle
                             .state::<Host>()
                             .after_done
@@ -356,6 +413,17 @@ fn main() {
                         continue;
                     }
                     let (privilege, snapshot) = handle.state::<Host>().poll(&handle).await;
+                    let notices = handle.state::<Host>().notification_state();
+                    let unread = notices.items.iter().filter(|item| !item.read).count();
+                    if unread != last_unread {
+                        if let Some(tray) = handle.tray_by_id("main") {
+                            let _ = tray.set_tooltip(Some(format!(
+                                "绝区零一条龙 · {unread} 条未读运行提醒"
+                            )));
+                        }
+                        let _ = notifications.set_text(format!("运行提醒（{unread} 条未读）"));
+                        last_unread = unread;
+                    }
                     let update = match snapshot {
                         Ok(Payload::Snapshot(snapshot)) => DesktopUpdate::Snapshot(snapshot),
                         Err(error) => DesktopUpdate::Offline(error),
@@ -372,6 +440,7 @@ fn main() {
                             let _ = channel.send(DesktopUpdate::AfterDone(
                                 handle.state::<Host>().after_done.snapshot(),
                             ));
+                            let _ = channel.send(DesktopUpdate::RunNotifications(notices));
                             channel.send(update).is_err()
                         })
                     {

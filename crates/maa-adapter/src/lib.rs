@@ -1,8 +1,10 @@
 mod coffee;
 mod coffee_run;
+mod engagement_reward;
 pub use coffee_run::{
     CoffeeRunObservation, validate_coffee_approach_bundle, validate_coffee_run_bundle,
 };
+pub use engagement_reward::{EngagementRewardObservation, validate_engagement_reward_bundle};
 mod events;
 mod fixture;
 pub mod flash;

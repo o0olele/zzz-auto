@@ -86,6 +86,23 @@ struct LegacyEnvironment {
 #[derive(Deserialize)]
 struct LegacyGameAccount {
     game_region: Option<crate::daily::GameRegion>,
+    game_path: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct LegacyGameLaunch {
+    launch_argument: Option<bool>,
+    screen_size: Option<String>,
+    full_screen: Option<String>,
+    popup_window: Option<bool>,
+    monitor: Option<String>,
+    launch_argument_advance: Option<String>,
+    hdr: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct LegacyRunNotifications {
+    enable_notify: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -338,11 +355,17 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             active.push(item.idx);
         }
         let prefix = format!("{:02}/", item.idx);
+        let mut game_launch = crate::game_launch::GameLaunchSettings::default();
         let game_region = if let Some(file) = files
             .iter()
             .find(|file| file.relative == format!("{prefix}game_account.yml"))
         {
             let account: LegacyGameAccount = parse(file)?;
+            game_launch.executable = account.game_path.unwrap_or_default();
+            if game_launch.validate().is_err() {
+                game_launch.executable.clear();
+                warnings.push(format!("账号 {} 的旧游戏路径不符合本地 ZenlessZoneZero.exe 路径规则，原值只归档，请重新选择。", item.idx));
+            }
             converted.insert(file.relative.clone());
             account.game_region
         } else {
@@ -353,6 +376,65 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 "账号 {} 缺少区服，采用旧版默认国服；启用按日跳过前请核对。",
                 item.idx
             ));
+        }
+        if let Some(file) = files
+            .iter()
+            .find(|file| file.relative == format!("{prefix}game.yml"))
+        {
+            let legacy: LegacyGameLaunch = parse(file)?;
+            game_launch.use_arguments = legacy.launch_argument.unwrap_or(false);
+            game_launch.fullscreen = legacy.full_screen.as_deref() == Some("1");
+            game_launch.borderless = legacy.popup_window.unwrap_or(false);
+            game_launch.monitor = match legacy.monitor.as_deref() {
+                None | Some("1") => 1,
+                Some("2") => 2,
+                Some("3") => 3,
+                Some("4") => 4,
+                _ => {
+                    warnings.push(format!(
+                        "账号 {} 的旧显示器序号不受支持，采用 1，请导入后核对。",
+                        item.idx
+                    ));
+                    1
+                }
+            };
+            if legacy
+                .full_screen
+                .as_deref()
+                .is_some_and(|value| !matches!(value, "0" | "1"))
+            {
+                warnings.push(format!(
+                    "账号 {} 的旧全屏选项未知，采用窗口化，请导入后核对。",
+                    item.idx
+                ));
+            }
+            if legacy
+                .screen_size
+                .as_deref()
+                .is_some_and(|value| value != "1920x1080")
+            {
+                warnings.push(format!(
+                    "账号 {} 的旧分辨率不适用当前 1080p 基准，启动参数固定为 1920×1080，请核对。",
+                    item.idx
+                ));
+            }
+            if legacy
+                .launch_argument_advance
+                .as_deref()
+                .is_some_and(|value| !value.is_empty())
+            {
+                warnings.push(format!(
+                    "账号 {} 的旧高级启动参数只归档，不执行，请核对新的固定启动参数。",
+                    item.idx
+                ));
+            }
+            if legacy.hdr.is_some() {
+                warnings.push(format!(
+                    "账号 {} 的 HDR 设置只归档，游戏启动不修改系统 HDR。",
+                    item.idx
+                ));
+            }
+            converted.insert(file.relative.clone());
         }
         let mut groups = Vec::new();
         for file in files {
@@ -450,11 +532,27 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 warnings.push(format!("账号 {} 的 {} 组旧咖啡选择由体力计划动态决定，未转换为固定咖啡；采用汀曼特调、60000ms 超时、3000ms 延时，请导入后核对。咖啡为试运行，完整领取仍待实机验收。", item.idx, group.id));
             }
         }
+        let mut run_notifications = crate::run_notifications::RunNotificationSettings::default();
+        if let Some(file) = files
+            .iter()
+            .find(|file| file.relative == format!("{prefix}notify.yml"))
+        {
+            let old: LegacyRunNotifications = parse(file)?;
+            run_notifications.mode = if old.enable_notify.unwrap_or(true) {
+                crate::run_notifications::RunNotificationMode::All
+            } else {
+                crate::run_notifications::RunNotificationMode::Off
+            };
+            warnings.push(format!("账号 {} 的旧通知开关仅转换为本机应用组结果提醒；应用、节点、开始通知及远程渠道设置只归档，请导入后核对。", item.idx));
+            converted.insert(file.relative.clone());
+        }
         instances.push(AccountInstance {
             id: item.idx,
             name: item.name,
             active_in_od: item.active_in_od,
             game_region: game_region.unwrap_or_default(),
+            game_launch,
+            run_notifications,
             groups,
         });
     }
@@ -484,7 +582,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v6\0");
+    hash.update(b"zzz-auto-config-import-v8\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());

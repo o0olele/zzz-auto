@@ -6,6 +6,8 @@ import { errorMessage, request } from './bridge';
 import { captureNames } from './captureSettings';
 import { coffeeSummary } from './CoffeeSettings';
 import { afterDoneName } from './AfterDoneBanner';
+import { gameLaunchSummary } from './GameLaunch';
+import { runNotificationName } from './RunNotifications';
 
 const label = (group: AppGroup) => group.name ?? (group.id === 'one_dragon' ? '一条龙' : group.id);
 const same = (before: unknown, after: unknown) => JSON.stringify(before) === JSON.stringify(after);
@@ -40,6 +42,8 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
       return <option key={id} value={id}>{next?.name ?? old?.name}（编号 {id} · {changeName(old, next)}）</option>;
     })}</Select></Field>
     <p>账号名称：{before?.name ?? '无此账号'} → {after?.name ?? '无此账号'}；区服：{region(before)} → {region(after)}；参与一条龙：{before ? before.active_in_od ? '是' : '否' : '无此账号'} → {after ? after.active_in_od ? '是' : '否' : '无此账号'}。</p>
+    <p className="path-value">游戏启动：{before ? gameLaunchSummary(before.game_launch) : '无此账号'} → {after ? gameLaunchSummary(after.game_launch) : '无此账号'}。</p>
+    <p>运行结果提醒：{before ? runNotificationName(before.run_notifications) : '无此账号'} → {after ? runNotificationName(after.run_notifications) : '无此账号'}。</p>
     <p>当前应用组顺序：{before?.groups.map(label).join(' → ') ?? '无此账号'}；恢复后：{after?.groups.map(label).join(' → ') ?? '无此账号'}。</p>
     <Field label="核对应用组"><Select value={groupId} onChange={(_, data) => setGroupId(data.value)}>{groups.map(id => {
       const old = before?.groups.find(item => item.id === id); const next = after?.groups.find(item => item.id === id);

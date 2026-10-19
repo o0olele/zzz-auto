@@ -12,6 +12,15 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// 生成活跃度奖励离线只读识别包，不包含游戏动作。
+    EngagementRewardBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/engagement-reward-preview")]
+        output: PathBuf,
+    },
     CoffeeRunBundle {
         #[arg(long)]
         reference: PathBuf,
@@ -95,6 +104,15 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::EngagementRewardBundle {
+            reference,
+            models,
+            output,
+        } => {
+            od_tools::engagement_reward::build_bundle(&reference, &models, &output)?;
+            println!("已生成活跃度奖励只读资源：{}", output.display());
+            Ok(())
+        }
         Tool::CoffeeRunBundle {
             reference,
             models,
@@ -206,6 +224,13 @@ fn main() -> Result<()> {
                 od_core::shortcuts::ShortcutStatus::decl(),
                 od_core::config::AppGroup::decl(),
                 od_core::config::AccountInstance::decl(),
+                od_core::run_notifications::RunNotificationMode::decl(),
+                od_core::run_notifications::RunNotificationSettings::decl(),
+                od_core::run_notifications::RunNoticeLevel::decl(),
+                od_core::run_notifications::RunNotice::decl(),
+                od_core::run_notifications::RunNotifications::decl(),
+                od_core::game_launch::GameLaunchSettings::decl(),
+                od_core::game_launch::GameLaunchResult::decl(),
                 od_core::config::AccountConfig::decl(),
                 od_core::config::ConfigBackup::decl(),
                 od_core::config::ConfigBackups::decl(),
@@ -301,7 +326,7 @@ fn main() -> Result<()> {
             std::fs::write(
                 output,
                 format!(
-                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\n",
+                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\nexport const gameLaunchDefaultConfig = {} as const;\nexport const runNotificationOptions = {} as const;\n",
                     declarations
                         .into_iter()
                         .map(|decl| format!("export {decl}"))
@@ -313,7 +338,13 @@ fn main() -> Result<()> {
                     serde_json::to_string_pretty(&od_core::shortcuts::ShortcutKey::ALL)?,
                     serde_json::to_string_pretty(&od_core::coffee_run::CoffeeConfig::fields())?,
                     serde_json::to_string_pretty(&od_core::coffee_run::CoffeeConfig::default())?,
-                    serde_json::to_string_pretty(&od_core::after_done::AfterDoneAction::options())?
+                    serde_json::to_string_pretty(&od_core::after_done::AfterDoneAction::options())?,
+                    serde_json::to_string_pretty(
+                        &od_core::game_launch::GameLaunchSettings::default()
+                    )?,
+                    serde_json::to_string_pretty(
+                        &od_core::run_notifications::RunNotificationMode::options()
+                    )?
                 ),
             )?;
             Ok(())

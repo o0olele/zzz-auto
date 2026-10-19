@@ -27,8 +27,11 @@ import { CoffeeDiagnostics } from './CoffeeDiagnostics';
 import { OfflineConfigRecovery, useConfigRecovery } from './OfflineConfigRecovery';
 import { captureNames, captureHints } from './captureSettings';
 import { useAppearance } from './appearance';
+import { LaunchGameCard } from './GameLaunch';
+import { RunNotificationBanner, RunNotifications } from './RunNotifications';
+import type { RunNotifications as NoticeState } from './generated/protocol';
 
-type Page = 'home' | 'run' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'history' | 'logs' | 'apps' | 'native' | 'progress';
+type Page = 'home' | 'run' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'history' | 'logs' | 'notifications' | 'apps' | 'native' | 'progress';
 const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'home', label: '总览', icon: <Home24Regular /> },
   { id: 'run', label: '一条龙运行', icon: <Play20Regular /> },
@@ -38,6 +41,7 @@ const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'runtime_resources', label: '运行资源', icon: <Apps24Regular /> },
   { id: 'logs', label: '运行日志', icon: <DocumentText24Regular /> },
   { id: 'history', label: '运行记录', icon: <DocumentText24Regular /> },
+  { id: 'notifications', label: '运行提醒', icon: <CheckmarkCircle20Regular /> },
   { id: 'apps', label: '应用迁移', icon: <Apps24Regular /> },
   { id: 'native', label: '原生诊断', icon: <Desktop24Regular /> },
   { id: 'progress', label: '开发与验收', icon: <DocumentText24Regular /> },
@@ -71,6 +75,9 @@ export default function App() {
   const [error, setError] = useState('');
   const [actionBusy, setBusy] = useState(false);
   const [afterDone, setAfterDone] = useState<AfterDoneStatus | null>(null);
+  const [notices, setNotices] = useState<NoticeState | null>(null);
+  const unreadNotices = notices?.items.filter(item => !item.read).length ?? 0;
+  const acceptNotices = useCallback((value: NoticeState) => setNotices(current => !current || value.revision >= current.revision ? value : current), []);
   const afterDoneBusy = afterDone?.state === 'counting_down' || afterDone?.state === 'executing';
   const [resourcesVisited, setResourcesVisited] = useState(false);
   const runtimeResources = useRuntimeResources(resourcesVisited);
@@ -119,6 +126,8 @@ export default function App() {
       if (update.type === 'privilege') { setPrivilege(update.data); }
       else if (update.type === 'shortcuts') { setShortcuts(update.data); }
       else if (update.type === 'after_done') { setAfterDone(update.data); }
+      else if (update.type === 'run_notifications') { acceptNotices(update.data); }
+      else if (update.type === 'open_run_notifications') { setPage('notifications'); }
       else if (update.type === 'snapshot') { setSnapshot(update.data); setConnected(true); }
       else { setConnected(false); setSnapshot(null); setScreenshot(null); setError(update.data.message); if (update.data.code.startsWith('input_recovery')) setRecoveryRequired(true); }
     }).catch(reason => { if (alive) setError(errorMessage(reason)); });
@@ -159,7 +168,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand"><div className="brand-mark">Z</div><div><strong>绝区零一条龙</strong><span>Rust · 原生自动化</span></div></div>
         <div className="workspace-label">工作台</div>
-        <nav aria-label="主导航">{pages.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'selected' : ''}`} onClick={() => { setPage(item.id); if (item.id === 'runtime_resources') setResourcesVisited(true); }} aria-current={page === item.id ? 'page' : undefined}>{item.icon}<span>{item.label}</span>{page === item.id && <ChevronRight20Regular />}</button>)}</nav>
+        <nav aria-label="主导航">{pages.map(item => <button key={item.id} className={`nav-item ${item.id === 'notifications' ? 'notification-nav' : ''} ${page === item.id ? 'selected' : ''}`} onClick={() => { setPage(item.id); if (item.id === 'runtime_resources') setResourcesVisited(true); }} aria-current={page === item.id ? 'page' : undefined}>{item.icon}<span>{item.label}</span>{item.id === 'notifications' && unreadNotices > 0 && <Badge className="notification-count" appearance="filled" aria-label={`${unreadNotices} 条未读`}>{unreadNotices}</Badge>}{page === item.id && <ChevronRight20Regular />}</button>)}</nav>
         <div className="sidebar-note"><Code24Regular/><strong>迁移原型 · v0.1</strong><p>邮件主流程通过，边界继续验收；账号区服与应用组每日计划已接通。</p><Badge appearance="tint" color="brand">M3 进行中</Badge></div>
         <div className="sidebar-footer"><span><i className={`status-dot ${connected && snapshot?.sdk.ready ? 'ready' : ''}`}/>{status}</span><Tooltip content="切换明暗主题" relationship="label"><Button appearance="subtle" icon={dark ? <WeatherSunny20Regular/> : <WeatherMoon20Regular/>} onClick={() => updateAppearance({ theme: dark ? 'light' : 'dark' })} aria-label="切换明暗主题"/></Tooltip></div>
       </aside>
@@ -171,6 +180,7 @@ export default function App() {
           {appearanceWarning && <MessageBar intent="warning"><MessageBarBody>{appearanceWarning} <Button size="small" onClick={retryAppearanceSave}>重试保存外观</Button></MessageBarBody></MessageBar>}
           {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
           <AfterDoneBanner status={afterDone} connected={connected} onChange={setAfterDone}/>
+          {page !== 'notifications' && <RunNotificationBanner data={notices} onOpen={() => setPage('notifications')}/>}
           {shortcuts?.registration_error && <MessageBar intent="warning"><MessageBarBody>全局快捷键未生效：{shortcuts.registration_error}。请在通用设置中修改或重试。</MessageBarBody></MessageBar>}
           {shortcuts?.action_error && <MessageBar intent="warning"><MessageBarBody>快捷键控制未完成：{shortcuts.action_error}</MessageBarBody></MessageBar>}
           {(recoveryRequired || recoveryMessage) && <Card><div className="card-title"><h2>输入恢复</h2><Badge appearance="outline">{recoveryRequired ? '需要恢复' : '已处理'}</Badge></div>
@@ -186,6 +196,7 @@ export default function App() {
           {page === 'home' && <>
             <div className="page-heading"><div><div className="eyebrow">AUTOMATION WORKSPACE</div><h1>控制台</h1><p>连接游戏窗口，查看引擎状态与迁移进展。</p></div><Button icon={<ArrowClockwise20Regular/>} disabled={!desktop || busy || active || recoveryRequired} onClick={() => act(async () => { await reconnect(); await scanWindows(); })}>重连引擎</Button></div>
             {(!connected || configRecovery.snapshot.job) && <OfflineConfigRecovery manager={configRecovery} connected={connected} blocked={recoveryRequired || resourceSwitching || actionBusy || active} apps={apps}/>}
+            <LaunchGameCard connected={connected} blocked={busy || active || recoveryRequired || !!snapshot?.record_error} execute={async command => { setBusy(true); try { return await request(command); } finally { setBusy(false); } }}/>
             <div className="stats-grid">
               <Card className="stat"><span className="stat-label">原生引擎<PlugConnected24Regular/></span><strong>{snapshot?.sdk.ready ? '已就绪' : '等待连接'}</strong><span>{snapshot?.sdk.version ? `MaaFramework ${snapshot.sdk.version}` : 'Rust + MaaFramework'}</span></Card>
               <Card className="stat"><span className="stat-label">游戏窗口<Desktop24Regular/></span><strong>{snapshot?.window ? '已连接' : '未连接'}</strong><span>{snapshot?.window ? `${snapshot.window.width} × ${snapshot.window.height}` : '1080p 基准 · 客户区'}</span></Card>
@@ -220,6 +231,7 @@ export default function App() {
 
           {page === 'logs' && <RunLogs enabled={desktop} connected={connected}/>}
           {page === 'history' && <RunHistory connected={desktop && connected}/>}
+          {page === 'notifications' && <RunNotifications data={notices} onChange={acceptNotices} onHistory={() => setPage('history')}/>}
 
           {page === 'apps' && <>
             <div className="page-heading"><div><div className="eyebrow">APPLICATION CATALOG</div><h1>应用迁移</h1><p>保留现有应用 ID，逐项记录实现与验收状态。</p></div><Badge appearance="tint" color="brand">{apps.length} 个已登记</Badge></div>

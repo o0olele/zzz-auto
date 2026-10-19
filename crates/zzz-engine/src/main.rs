@@ -152,6 +152,18 @@ enum Action {
         #[arg(long)]
         bundle: PathBuf,
     },
+    /// 只校验活跃度奖励只读包，不加载 SDK 或读取用户资源选择。
+    EngagementRewardBundleCheck {
+        #[arg(long)]
+        bundle: PathBuf,
+    },
+    /// 检查固定 1080p 截图，不连接游戏或写入运行记录。
+    EngagementRewardInspect {
+        #[arg(long)]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+    },
     CoffeeRunBundleCheck {
         #[arg(long)]
         bundle: PathBuf,
@@ -423,6 +435,8 @@ async fn main() -> Result<()> {
                 | Action::RecognitionCompare { .. }
                 | Action::MapBundleCheck { .. }
                 | Action::CoffeeBundleCheck { .. }
+                | Action::EngagementRewardBundleCheck { .. }
+                | Action::EngagementRewardInspect { .. }
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
         )
@@ -623,6 +637,14 @@ async fn main() -> Result<()> {
                 serde_json::json!({"valid":true,"read_only":true,"bundle":maa_adapter::validate_coffee_bundle(bundle)?}),
             );
         }
+        Action::EngagementRewardBundleCheck { ref bundle } => {
+            return print(
+                serde_json::json!({"valid":true,"read_only":true,"bundle":maa_adapter::validate_engagement_reward_bundle(bundle)?}),
+            );
+        }
+        Action::EngagementRewardInspect { ref bundle, .. } => {
+            maa_adapter::validate_engagement_reward_bundle(bundle)?;
+        }
         Action::CoffeeRunBundleCheck { ref bundle } => {
             return print(
                 serde_json::json!({"valid":true,"prototype_only":true,"bundle":maa_adapter::validate_coffee_run_bundle(bundle)?}),
@@ -666,6 +688,10 @@ async fn main() -> Result<()> {
     let sdk = maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"))?;
     match args.command {
         Action::Doctor => print(sdk),
+        Action::EngagementRewardInspect { bundle, image } => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            print(native.inspect_engagement_reward_fixture(&image)?)
+        }
         Action::CoffeeInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_coffee_fixture(&image)?)

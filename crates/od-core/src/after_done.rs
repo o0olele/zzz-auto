@@ -1,4 +1,4 @@
-use crate::{RunRecord, RunState, Snapshot, group_run::GroupStepState, run_plan::RunContext};
+use crate::{RunRecord, RunState, Snapshot, run_plan::RunContext};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use ts_rs::TS;
@@ -196,27 +196,7 @@ impl AfterDoneTracker {
             }
             return;
         }
-        let complete = run.state == RunState::Succeeded
-            && run.finished_at.is_some_and(|at| at >= run.started_at)
-            && run.matches_account_context()
-            && run.inputs_released()
-            && run.group.as_ref().is_some_and(|g| {
-                g.state == RunState::Succeeded
-                    && g.current_index.is_none()
-                    && !g.steps.is_empty()
-                    && g.steps.iter().any(|s| s.state == GroupStepState::Succeeded)
-                    && g.steps.iter().all(|s| {
-                        matches!(s.state, GroupStepState::Succeeded | GroupStepState::Skipped)
-                    })
-            })
-            && run
-                .mail
-                .as_ref()
-                .is_none_or(|p| p.state == crate::mail::MailState::Succeeded)
-            && run
-                .coffee
-                .as_ref()
-                .is_none_or(|p| p.state == crate::coffee_run::CoffeeState::Succeeded);
+        let complete = run.completed_group_successfully();
         if !complete {
             self.invalidate("应用组未正常完成或输入未释放，结束后动作已取消");
             return;

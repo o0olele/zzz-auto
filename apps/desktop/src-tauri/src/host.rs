@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 pub struct Host {
+    pub run_notifications: std::sync::Mutex<od_core::run_notifications::RunNotificationBook>,
     pub after_done: crate::after_done::DesktopAfterDone,
     session: crate::resources::SharedSession,
     pub resources: crate::resources::ResourceManager,
@@ -40,6 +41,9 @@ impl Host {
         let runtime = tauri::async_runtime::handle().inner().clone();
         let resources = crate::resources::ResourceManager::new(session.clone(), runtime.clone());
         Self {
+            run_notifications: std::sync::Mutex::new(
+                od_core::run_notifications::RunNotificationBook::default(),
+            ),
             after_done: crate::after_done::DesktopAfterDone::default(),
             config_recovery: crate::config_recovery::ConfigRecoveryManager::new(
                 resources.clone(),
@@ -73,6 +77,7 @@ impl Host {
             session.require_recovered()?;
         }
         state.take();
+        self.notifications_disconnected();
         self.shortcuts.clear_target();
         *state = Some(EngineSession::launch(&layout(app)?, false).await?);
         Ok(())
@@ -96,6 +101,7 @@ impl Host {
             .switch_to(EngineSession::launch(&layout, true))
             .await?;
         *state = Some(candidate);
+        self.notifications_disconnected();
         self.shortcuts.clear_target();
         Ok(())
     }
@@ -109,7 +115,12 @@ impl Host {
         let session = state
             .as_mut()
             .ok_or_else(|| offline("引擎未连接，使用“重连引擎”重新启动"))?;
-        let after = if let Command::StartGroupTrial { revision, .. } = &command {
+        let after = if let Command::StartGroupTrial {
+            revision,
+            instance_id,
+            ..
+        } = &command
+        {
             let Payload::AccountConfig(config) = session.request(Command::AccountConfig).await?
             else {
                 return Err(offline("无法读取结束后动作设置"));
@@ -121,25 +132,46 @@ impl Host {
                 ));
             }
             let action = config.general.after_done;
+            let notifications = config
+                .instances
+                .iter()
+                .find(|instance| instance.id == *instance_id)
+                .ok_or_else(|| ApiError::new("account_changed", "账号不存在，请重新预览"))?
+                .run_notifications;
+            let Payload::Snapshot(snapshot) = session.request(Command::Snapshot).await? else {
+                return Err(offline("无法确认运行状态"));
+            };
+            self.run_notifications.lock().expect("运行提醒锁").observe(
+                session.id,
+                &snapshot,
+                std::time::SystemTime::now().into(),
+            );
             let target = if action != od_core::after_done::AfterDoneAction::None {
-                let Payload::Snapshot(snapshot) = session.request(Command::Snapshot).await? else {
-                    return Err(offline("无法确认游戏进程"));
-                };
                 let window = snapshot.window.ok_or_else(|| offline("请先连接游戏窗口"))?;
                 Some(od_platform::after_done::AfterDoneTarget::capture(window).map_err(offline)?)
             } else {
                 None
             };
-            Some((action, target))
+            Some((action, target, notifications))
         } else {
             None
         };
         if let Command::Stop { run_id } = &command {
             self.after_done.stop_requested(*run_id);
         }
+        if matches!(&command, Command::LaunchGame { .. }) {
+            self.after_done
+                .invalidate("已请求启动游戏，上一任务的结束后动作已取消");
+        }
         let result = session.request(command).await;
-        if let (Some((action, target)), Ok(Payload::Run(run))) = (after, &result) {
+        if let (Some((action, target, settings)), Ok(Payload::Run(run))) = (after, &result) {
             self.after_done.arm(session.id, action, run, target);
+            self.run_notifications.lock().expect("运行提醒锁").arm(
+                session.id,
+                run,
+                settings,
+                std::time::SystemTime::now().into(),
+            );
         }
         if result
             .as_ref()
@@ -148,6 +180,13 @@ impl Host {
         {
             self.after_done
                 .invalidate("引擎连接或输入恢复异常，结束后动作已取消");
+        }
+        if let Ok(Payload::Snapshot(snapshot)) = &result {
+            self.run_notifications.lock().expect("运行提醒锁").observe(
+                session.id,
+                snapshot,
+                std::time::SystemTime::now().into(),
+            );
         }
         self.observe_logs(session.id, &result);
         self.shortcuts.observe(&result);
@@ -207,6 +246,7 @@ impl Host {
     ) -> (Option<EnginePrivilege>, Result<Payload, ApiError>) {
         let mut state = self.session.lock().await;
         let Some(session) = state.as_mut() else {
+            self.notifications_disconnected();
             self.after_done.invalidate("引擎未连接，结束后动作已取消");
             self.shortcuts.clear_target();
             let recovery = layout(app).and_then(|layout| {
@@ -221,6 +261,11 @@ impl Host {
         let privilege = session.privilege.clone();
         let result = session.request(Command::Snapshot).await;
         if let Ok(Payload::Snapshot(snapshot)) = &result {
+            self.run_notifications.lock().expect("运行提醒锁").observe(
+                session.id,
+                snapshot,
+                std::time::SystemTime::now().into(),
+            );
             let began = self.after_done.observe(session.id, snapshot);
             if self.after_done.require_available().is_err() {
                 let models_idle = matches!(session.request(Command::ModelResources).await, Ok(Payload::ModelResources(resources)) if resources.job.as_ref().is_none_or(|job| job.state.is_terminal()));
@@ -240,6 +285,7 @@ impl Host {
                 }
             }
         } else {
+            self.notifications_disconnected();
             self.after_done.invalidate("引擎连接中断，结束后动作已取消");
         }
         self.observe_logs(session.id, &result);
@@ -342,7 +388,32 @@ impl Host {
             return Err(error);
         }
         state.take();
+        self.run_notifications.lock().expect("运行提醒锁").closing();
         Ok(())
+    }
+
+    pub fn notification_state(&self) -> od_core::run_notifications::RunNotifications {
+        self.run_notifications
+            .lock()
+            .expect("运行提醒锁")
+            .snapshot()
+    }
+    pub fn notifications_disconnected(&self) {
+        self.run_notifications
+            .lock()
+            .expect("运行提醒锁")
+            .disconnected(std::time::SystemTime::now().into());
+    }
+    pub fn update_notifications(
+        &self,
+        ids: &[uuid::Uuid],
+        remove: bool,
+    ) -> Result<od_core::run_notifications::RunNotifications, ApiError> {
+        self.run_notifications
+            .lock()
+            .expect("运行提醒锁")
+            .update(ids, remove)
+            .map_err(|error| ApiError::new("notification_error", error))
     }
 
     pub fn start_resources(

@@ -99,6 +99,15 @@ pub struct AccountInstance {
     pub active_in_od: bool,
     #[serde(default)]
     pub game_region: crate::daily::GameRegion,
+    #[serde(default)]
+    #[ts(as = "Option<crate::game_launch::GameLaunchSettings>", optional)]
+    pub game_launch: crate::game_launch::GameLaunchSettings,
+    #[serde(default)]
+    #[ts(
+        as = "Option<crate::run_notifications::RunNotificationSettings>",
+        optional
+    )]
+    pub run_notifications: crate::run_notifications::RunNotificationSettings,
     pub groups: Vec<AppGroup>,
 }
 
@@ -123,6 +132,14 @@ pub struct AccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConfigChange {
+    SaveRunNotifications {
+        instance_id: u32,
+        settings: crate::run_notifications::RunNotificationSettings,
+    },
+    SaveGameLaunch {
+        instance_id: u32,
+        settings: crate::game_launch::GameLaunchSettings,
+    },
     SetAfterDone {
         action: crate::after_done::AfterDoneAction,
     },
@@ -240,6 +257,8 @@ impl Default for AccountConfig {
                 name: "默认账号".into(),
                 active_in_od: true,
                 game_region: crate::daily::GameRegion::default(),
+                game_launch: crate::game_launch::GameLaunchSettings::default(),
+                run_notifications: crate::run_notifications::RunNotificationSettings::default(),
                 groups: vec![default_group()],
             }],
             import_id: None,
@@ -277,6 +296,7 @@ impl AccountConfig {
                 return Err(invalid("账号编号重复或不在 1..9999 范围内"));
             }
             validate_name(&instance.name)?;
+            instance.game_launch.validate().map_err(invalid)?;
             if instance.groups.is_empty() || instance.groups.len() > 64 {
                 return Err(invalid("每个账号的应用组数量必须为 1..64"));
             }
@@ -308,6 +328,18 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::SaveRunNotifications {
+                instance_id,
+                settings,
+            } => {
+                self.instance_mut(instance_id)?.run_notifications = settings;
+            }
+            ConfigChange::SaveGameLaunch {
+                instance_id,
+                settings,
+            } => {
+                self.instance_mut(instance_id)?.game_launch = settings;
+            }
             ConfigChange::SetAfterDone { action } => self.general.after_done = action,
             ConfigChange::SaveCoffee {
                 instance_id,
@@ -473,6 +505,8 @@ impl AccountConfig {
                     name,
                     active_in_od: true,
                     game_region: crate::daily::GameRegion::default(),
+                    game_launch: crate::game_launch::GameLaunchSettings::default(),
+                    run_notifications: crate::run_notifications::RunNotificationSettings::default(),
                     groups: vec![default_group()],
                 });
             }

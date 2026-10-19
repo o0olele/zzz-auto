@@ -17,6 +17,24 @@ pub fn pick(owner: isize) -> Result<Option<String>, ApiError> {
     })
 }
 
+pub fn pick_game(owner: isize) -> Result<Option<String>, ApiError> {
+    let result = pick_file(
+        owner,
+        "绝区零游戏程序\0ZenlessZoneZero.exe\0\0",
+        "选择 ZenlessZoneZero.exe\0",
+    )?;
+    if let Some(path) = &result {
+        let settings = od_core::game_launch::GameLaunchSettings {
+            executable: path.clone(),
+            ..Default::default()
+        };
+        settings
+            .validate()
+            .map_err(|error| ApiError::new("invalid_game_launch", error))?;
+    }
+    Ok(result)
+}
+
 pub fn pick_config_source(owner: isize) -> Result<Option<String>, ApiError> {
     let Some(file) = pick_file(
         owner,

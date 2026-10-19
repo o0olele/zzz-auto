@@ -5,6 +5,8 @@ pub mod coffee_run;
 pub mod config;
 pub mod config_import;
 pub mod daily;
+pub mod engagement_reward;
+pub mod game_launch;
 pub mod group_run;
 pub mod mail;
 pub mod map_transport;
@@ -13,6 +15,7 @@ pub mod ocr;
 pub mod pipeline;
 pub mod run_history;
 pub mod run_logs;
+pub mod run_notifications;
 pub mod run_plan;
 pub mod runtime_resources;
 pub mod shortcuts;
@@ -94,6 +97,30 @@ pub struct RunRecord {
 }
 
 impl RunRecord {
+    pub fn completed_group_successfully(&self) -> bool {
+        use group_run::GroupStepState;
+        self.state == RunState::Succeeded
+            && self.finished_at.is_some_and(|at| at >= self.started_at)
+            && self.matches_account_context()
+            && self.inputs_released()
+            && self.group.as_ref().is_some_and(|g| {
+                g.state == RunState::Succeeded
+                    && g.current_index.is_none()
+                    && !g.steps.is_empty()
+                    && g.steps.iter().any(|s| s.state == GroupStepState::Succeeded)
+                    && g.steps.iter().all(|s| {
+                        matches!(s.state, GroupStepState::Succeeded | GroupStepState::Skipped)
+                    })
+            })
+            && self
+                .mail
+                .as_ref()
+                .is_none_or(|p| p.state == mail::MailState::Succeeded)
+            && self
+                .coffee
+                .as_ref()
+                .is_none_or(|p| p.state == coffee_run::CoffeeState::Succeeded)
+    }
     pub fn inputs_released(&self) -> bool {
         self.input_probe.as_ref().is_none_or(|p| p.released)
             && self

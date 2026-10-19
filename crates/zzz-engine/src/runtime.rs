@@ -167,6 +167,7 @@ enum InputOutcome {
 
 #[derive(Clone)]
 pub struct Engine {
+    game_launcher: Arc<Mutex<Box<dyn od_platform::game_launch::GameLauncher>>>,
     resources: Arc<crate::model_resources::ModelResourceService>,
     state: Arc<Mutex<State>>,
     sender: mpsc::SyncSender<Work>,
@@ -192,6 +193,15 @@ fn config_error(error: ConfigError) -> ApiError {
 }
 
 impl Engine {
+    // 独立测试仓注入执行器，不启动用户游戏；CLI / IPC 不开放此入口。
+    pub fn with_game_launcher(
+        paths: EnginePaths,
+        launcher: Box<dyn od_platform::game_launch::GameLauncher>,
+    ) -> anyhow::Result<Self> {
+        let mut engine = Self::new(paths)?;
+        engine.game_launcher = Arc::new(Mutex::new(launcher));
+        Ok(engine)
+    }
     pub fn new(paths: EnginePaths) -> anyhow::Result<Self> {
         Self::with_factory(paths, None)
     }
@@ -292,6 +302,9 @@ impl Engine {
                 worker(paths, worker_state, receiver, factory, resource_id);
             })?;
         Ok(Self {
+            game_launcher: Arc::new(Mutex::new(Box::new(
+                od_platform::game_launch::NativeGameLauncher::default(),
+            ))),
             resources,
             state,
             sender,
@@ -350,6 +363,11 @@ impl Engine {
 
     pub async fn execute(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
+            Command::LaunchGame {
+                instance_id,
+                revision,
+                confirm,
+            } => self.launch_game(instance_id, revision, confirm).await,
             Command::ModelResources => Ok(Payload::ModelResources(self.resources.snapshot())),
             Command::StartModelResources {
                 kind,
@@ -1147,6 +1165,72 @@ impl Engine {
             state: self.state.clone(),
             _owner: self._config_owner.clone(),
         })
+    }
+
+    async fn launch_game(
+        &self,
+        instance_id: u32,
+        revision: u32,
+        confirm: bool,
+    ) -> Result<Payload, ApiError> {
+        if !confirm {
+            return Err(ApiError::new(
+                "game_launch_not_confirmed",
+                "请核对当前账号、保存路径和启动参数，并确认启动游戏",
+            ));
+        }
+        let pending = self.config_work_guard()?;
+        let store = self.config.clone();
+        let launcher = self.game_launcher.clone();
+        tokio::task::spawn_blocking(move || {
+            let saved = store.read().map_err(config_error)?;
+            if saved.revision != revision {
+                return Err(config_error(ConfigError::Conflict(Box::new(saved))));
+            }
+            if saved.active_instance != instance_id {
+                return Err(ApiError::new(
+                    "account_changed",
+                    "当前账号已变化，请重新读取并确认",
+                ));
+            }
+            let account = saved
+                .instances
+                .iter()
+                .find(|item| item.id == instance_id)
+                .expect("配置已验证当前账号");
+            account
+                .game_launch
+                .validate()
+                .map_err(|e| ApiError::new("invalid_game_launch", e))?;
+            if account.game_launch.executable.is_empty() {
+                return Err(ApiError::new(
+                    "invalid_game_launch",
+                    "请先在账号与应用组中保存游戏路径",
+                ));
+            }
+            let pid = launcher
+                .lock()
+                .map_err(|_| ApiError::new("game_launch_failed", "启动状态不可用，请重连引擎"))?
+                .launch(&account.game_launch)
+                .map_err(|error| ApiError::new("game_launch_failed", format!("{error:#}")))?;
+            pending.state.lock().expect("运行状态锁失效").event(
+                None,
+                "info",
+                format!(
+                    "Windows 已接受账号 {instance_id} 的游戏启动，进程 {pid}；请手动登录并连接游戏"
+                ),
+            );
+            Ok(Payload::GameLaunched(
+                od_core::game_launch::GameLaunchResult { instance_id, pid },
+            ))
+        })
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                "game_launch_failed",
+                "启动线程异常退出，请先检查游戏是否已打开，勿直接重复启动",
+            )
+        })?
     }
 
     async fn update_config(

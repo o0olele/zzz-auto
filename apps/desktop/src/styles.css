@@ -14,6 +14,8 @@ button, input, select { font: inherit; }
 .workspace-label { font-size: 11px; color: var(--muted); padding: 0 14px 12px; letter-spacing: 1px; }
 .nav-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 14px; margin-bottom: 5px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; text-align: left; }
 .nav-item span { flex: 1; }
+.nav-item.notification-nav { gap: 6px; padding-inline: 10px; }
+.nav-item .notification-count { flex: 0 0 auto; }
 .nav-item:hover { background: var(--line); }
 .nav-item.selected { background: var(--selected); color: var(--accent); font-weight: 600; box-shadow: inset 3px 0 var(--accent); }
 .sidebar-note { margin: auto 6px 22px; padding: 18px 14px; border: 1px solid var(--line); border-radius: 10px; }
@@ -172,3 +174,4 @@ p { color: var(--muted); font-size: 13px; line-height: 1.85; margin: 0; }
 .history-browser .fui-Input, .history-browser .fui-Select { min-width: 0; max-width: 100%; width: 100%; }
 .history-results { max-height: 640px; overflow: auto; }
 .history-results li { font-size: 12px; padding-block: 3px; }
+.path-value { overflow-wrap: anywhere; }

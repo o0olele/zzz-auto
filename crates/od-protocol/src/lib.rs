@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v26 接通一条龙结束后动作设置；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 26;
+// v28 接通按账号保存的运行结果提醒；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 28;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -43,6 +43,12 @@ pub struct Request {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "params", rename_all = "snake_case")]
 pub enum Command {
+    LaunchGame {
+        instance_id: u32,
+        revision: u32,
+        #[serde(default)]
+        confirm: bool,
+    },
     ModelResources,
     StartModelResources {
         kind: od_core::model_resources::ResourceJobKind,
@@ -166,6 +172,7 @@ pub enum Command {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum Payload {
+    GameLaunched(od_core::game_launch::GameLaunchResult),
     ModelResources(od_core::model_resources::ModelResources),
     GroupPlan(od_core::run_plan::GroupPlan),
     RunHistory(od_core::run_history::RunHistory),
@@ -221,6 +228,8 @@ pub struct Response {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum DesktopUpdate {
+    RunNotifications(od_core::run_notifications::RunNotifications),
+    OpenRunNotifications,
     AfterDone(Option<od_core::after_done::AfterDoneStatus>),
     Snapshot(Box<Snapshot>),
     Offline(ApiError),

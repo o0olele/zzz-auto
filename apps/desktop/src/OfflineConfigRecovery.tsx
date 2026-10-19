@@ -5,6 +5,8 @@ import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { configRecoveryState, desktop, errorMessage, startConfigRecovery } from './bridge';
 import { captureNames } from './captureSettings';
 import { coffeeSummary } from './CoffeeSettings';
+import { gameLaunchSummary } from './GameLaunch';
+import { runNotificationName } from './RunNotifications';
 import { afterDoneName } from './AfterDoneBanner';
 
 export function useConfigRecovery() {
@@ -65,6 +67,8 @@ function RecoveryContents({ config, apps }: { config: AccountConfig; apps: AppDe
     <p>结束后动作：{afterDoneName(config.general.after_done)}；正常完成后有 60 秒可取消倒计时。</p>
     <Field label="核对恢复账号"><Select value={accountId} onChange={(_, data) => { setAccountId(Number(data.value)); setGroupId(''); }}>{config.instances.map(item => <option key={item.id} value={item.id}>{item.name}（编号 {item.id}）</option>)}</Select></Field>
     <p>区服：{gameRegionOptions.find(item => item.value === account.game_region)?.label}；参与一条龙：{account.active_in_od ? '是' : '否'}。</p>
+    <p className="path-value">游戏启动：{gameLaunchSummary(account.game_launch)}。</p>
+    <p>运行结果提醒：{runNotificationName(account.run_notifications)}。</p>
     <p>应用组顺序：{account.groups.map(groupLabel).join(' → ')}。</p>
     <Field label="核对恢复应用组"><Select value={group.id} onChange={(_, data) => setGroupId(data.value)}>{account.groups.map(item => <option key={item.id} value={item.id}>{groupLabel(item)}</option>)}</Select></Field>
     <p>运行策略：{runPolicyOptions.find(item => item.value === group.run_policy)?.label}。</p>

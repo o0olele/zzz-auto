@@ -3,6 +3,20 @@ import type { ApiError, Command, DesktopUpdate, Payload, DesktopRuntimeResources
 
 export const desktop = isTauri();
 
+export async function runNotificationState(): Promise<import('./generated/protocol').RunNotifications> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('run_notification_state');
+}
+export async function updateRunNotifications(ids: string[], remove = false): Promise<import('./generated/protocol').RunNotifications> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('update_run_notifications', { ids, remove });
+}
+
+export async function pickGameExecutable(): Promise<string | null> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('pick_game_executable');
+}
+
 export async function cancelAfterDone(id: string): Promise<import('./generated/protocol').AfterDoneStatus | null> {
   if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
   return invoke('cancel_after_done', { id });

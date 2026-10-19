@@ -3,6 +3,8 @@ pub use paths::{DesktopLayout, desktop_layout};
 #[cfg(windows)]
 pub mod after_done;
 pub mod download;
+#[cfg(windows)]
+pub mod game_launch;
 pub mod model_cache;
 #[cfg(windows)]
 pub mod shortcuts;

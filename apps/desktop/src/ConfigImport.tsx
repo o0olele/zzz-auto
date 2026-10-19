@@ -5,6 +5,8 @@ import { gameRegionOptions } from './generated/protocol';
 import { errorMessage, pickConfigImportSource, request } from './bridge';
 import { captureNames } from './captureSettings';
 import { coffeeSummary } from './CoffeeSettings';
+import { gameLaunchSummary } from './GameLaunch';
+import { runNotificationName } from './RunNotifications';
 import { afterDoneName } from './AfterDoneBanner';
 
 export function ConfigImport({ connected, active, blocked, current, apps, onImported, onBusy }: {
@@ -83,6 +85,8 @@ export function ConfigImport({ connected, active, blocked, current, apps, onImpo
       {preview.config.instances.map(instance => <div key={instance.id}>
         <h3>{instance.name}{instance.id === preview.config.active_instance ? '（当前账号）' : ''}</h3>
         <p>编号 {instance.id} · {gameRegionOptions.find(option => option.value === instance.game_region)?.label} · {instance.active_in_od ? '参与一条龙' : '不参与一条龙'}</p>
+        <p className="path-value">游戏启动：{gameLaunchSummary(instance.game_launch)}</p>
+        <p>运行结果提醒：{runNotificationName(instance.run_notifications)}</p>
         {instance.groups.map(group => <details key={group.id}>
           <summary>{group.id === 'one_dragon' ? '一条龙' : group.id} · {group.apps.filter(app => app.enabled).length} 项启用 / {group.apps.length} 项</summary>
           <p>咖啡默认值：{coffeeSummary(group.coffee)}。旧动态选单未转换，请导入后核对。</p>

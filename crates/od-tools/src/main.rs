@@ -12,6 +12,24 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// 转换战斗角色资料、模板、脚本与声音模板，不执行 Python。
+    CombatBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/combat")]
+        output: PathBuf,
+    },
+    /// 生成活跃度、丽都城募与刮刮卡执行包，实机验收单独记录。
+    BasicDailyBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/basic-daily")]
+        output: PathBuf,
+    },
     /// 生成活跃度奖励离线只读识别包，不包含游戏动作。
     EngagementRewardBundle {
         #[arg(long)]
@@ -104,6 +122,11 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::CombatBundle { reference, models, output } => {
+            let manifest = od_tools::combat::build_bundle(&reference, &models, &output)?;
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
+            Ok(())
+        },
         Tool::EngagementRewardBundle {
             reference,
             models,
@@ -111,6 +134,15 @@ fn main() -> Result<()> {
         } => {
             od_tools::engagement_reward::build_bundle(&reference, &models, &output)?;
             println!("已生成活跃度奖励只读资源：{}", output.display());
+            Ok(())
+        }
+        Tool::BasicDailyBundle {
+            reference,
+            models,
+            output,
+        } => {
+            od_tools::basic_daily::build_bundle(&reference, &models, &output)?;
+            println!("已生成首批日常执行资源：{}", output.display());
             Ok(())
         }
         Tool::CoffeeRunBundle {
@@ -199,6 +231,12 @@ fn main() -> Result<()> {
         }
         Tool::Types { output } => {
             let declarations = [
+                od_core::combat::CombatConfig::decl(),
+                od_core::combat::CombatScriptCatalog::decl(),
+                od_core::combat_scripts::CombatScriptImportPreview::decl(),
+                od_core::combat::CombatProgress::decl(),
+                format!("const combatDefaultConfig = {} as const;",serde_json::to_string(&od_core::combat::CombatConfig::default())?),
+                format!("const combatButtonNames = {} as const;",serde_json::to_string(&od_core::combat::BUTTONS)?),
                 od_core::screen_samples::ScreenSampleKind::decl(),
                 od_core::screen_samples::ScreenSampleSource::decl(),
                 od_core::screen_samples::ScreenSamplePreview::decl(),
@@ -228,6 +266,7 @@ fn main() -> Result<()> {
                 od_core::run_history::HistoryExport::decl(),
                 od_core::config::GroupApp::decl(),
                 od_core::config::GeneralSettings::decl(),
+                od_core::download_proxy::DownloadProxy::decl(),
                 od_core::shortcuts::ShortcutKey::decl(),
                 od_core::shortcuts::ShortcutSettings::decl(),
                 od_core::shortcuts::ShortcutStatus::decl(),
@@ -274,6 +313,20 @@ fn main() -> Result<()> {
                 od_core::coffee_run::CoffeeState::decl(),
                 od_core::coffee_run::CoffeePhase::decl(),
                 od_core::coffee_run::CoffeeProgress::decl(),
+                od_core::basic_daily::DailyConfig::decl(),
+                od_core::basic_daily::DailyProgress::decl(),
+                format!(
+                    "const trialAppOptions = {} as const;",
+                    serde_json::to_string(
+                        &od_core::applications()?
+                            .into_iter()
+                            .filter(
+                                |app| od_core::run_plan::TRIAL_APP_IDS.contains(&app.id.as_str())
+                            )
+                            .map(|app| serde_json::json!({"id":app.id,"label":app.name}))
+                            .collect::<Vec<_>>()
+                    )?
+                ),
                 od_core::coffee_approach::CoffeeApproachPhase::decl(),
                 od_core::coffee_approach::CoffeeApproachProgress::decl(),
                 od_core::InputMode::decl(),
@@ -318,6 +371,10 @@ fn main() -> Result<()> {
                 od_core::runtime_resources::RuntimeDownloadProgress::decl(),
                 od_core::runtime_resources::RuntimeDownloadedArchive::decl(),
                 od_core::runtime_resources::DesktopRuntimeResources::decl(),
+                od_core::runtime_feed::RuntimeFeedSource::decl(),
+                od_core::runtime_feed::RuntimeRelease::decl(),
+                od_core::runtime_feed::RuntimeReleaseOption::decl(),
+                od_core::runtime_feed::RuntimeFeedCatalog::decl(),
                 od_core::Screenshot::decl(),
                 od_protocol::Command::decl(),
                 od_protocol::Request::decl(),
@@ -335,7 +392,7 @@ fn main() -> Result<()> {
             std::fs::write(
                 output,
                 format!(
-                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\nexport const gameLaunchDefaultConfig = {} as const;\nexport const runNotificationOptions = {} as const;\nexport const screenSampleKindOptions = {} as const;\n",
+                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const dailySettingsFields = {} as const;\nexport const dailyDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\nexport const gameLaunchDefaultConfig = {} as const;\nexport const runNotificationOptions = {} as const;\nexport const screenSampleKindOptions = {} as const;\n",
                     declarations
                         .into_iter()
                         .map(|decl| format!("export {decl}"))
@@ -347,6 +404,8 @@ fn main() -> Result<()> {
                     serde_json::to_string_pretty(&od_core::shortcuts::ShortcutKey::ALL)?,
                     serde_json::to_string_pretty(&od_core::coffee_run::CoffeeConfig::fields())?,
                     serde_json::to_string_pretty(&od_core::coffee_run::CoffeeConfig::default())?,
+                    serde_json::to_string_pretty(&od_core::basic_daily::DailyConfig::fields())?,
+                    serde_json::to_string_pretty(&od_core::basic_daily::DailyConfig::default())?,
                     serde_json::to_string_pretty(&od_core::after_done::AfterDoneAction::options())?,
                     serde_json::to_string_pretty(
                         &od_core::game_launch::GameLaunchSettings::default()

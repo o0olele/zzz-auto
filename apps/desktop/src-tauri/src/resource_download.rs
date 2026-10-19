@@ -18,12 +18,17 @@ fn error(message: impl ToString) -> ApiError {
     ApiError::new("resource_download_failed", message.to_string())
 }
 
-pub fn run(
+pub fn run_configured(
     layout: &DesktopLayout,
     source: &RuntimeDownloadSource,
+    proxy: od_core::download_proxy::DownloadProxy,
+    expected_release: Option<od_core::runtime_feed::RuntimeRelease>,
     cancel: &AtomicBool,
     mut observer: impl FnMut(RuntimeDownloadProgress),
 ) -> Result<Option<RuntimeDownloadedArchive>, ApiError> {
+    proxy
+        .validate()
+        .map_err(|message| ApiError::new("invalid_proxy", message))?;
     if cancel.load(Ordering::Acquire) {
         return Ok(None);
     }
@@ -43,13 +48,20 @@ pub fn run(
         .spawn()
         .map_err(|_| error("无法启动资源下载进程"))?;
     let mut input = child.stdin.take().expect("下载进程标准输入已连接");
-    let initial = serde_json::to_writer(&mut input, source)
-        .map_err(|_| error("无法提交资源下载信息"))
-        .and_then(|_| {
-            input
-                .write_all(b"\n")
-                .map_err(|_| error("无法提交资源下载信息"))
-        });
+    let initial = serde_json::to_writer(
+        &mut input,
+        &od_core::download_proxy::ManagedDownloadRequest {
+            source: source.clone(),
+            proxy,
+            expected_release,
+        },
+    )
+    .map_err(|_| error("无法提交资源下载信息"))
+    .and_then(|_| {
+        input
+            .write_all(b"\n")
+            .map_err(|_| error("无法提交资源下载信息"))
+    });
     if let Err(error) = initial {
         let _ = child.kill();
         let _ = child.wait();

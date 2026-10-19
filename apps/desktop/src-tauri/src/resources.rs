@@ -18,6 +18,13 @@ use uuid::Uuid;
 
 #[path = "resource_download.rs"]
 mod download;
+#[path = "resource_feed.rs"]
+mod feed;
+
+enum Source {
+    Download(od_core::download_proxy::ManagedDownloadRequest),
+    Feed(od_core::runtime_feed::ManagedFeedRequest),
+}
 
 pub fn require_switchable(snapshot: Payload) -> Result<(), ApiError> {
     require_idle(snapshot.clone())?;
@@ -56,6 +63,7 @@ struct State {
     closed: bool,
     maintenance: bool,
     cancel: Arc<AtomicBool>,
+    feed_sources: Vec<od_core::runtime_feed::RuntimeReleaseSource>,
 }
 
 #[derive(Clone)]
@@ -75,6 +83,7 @@ impl ResourceManager {
                 closed: false,
                 maintenance: false,
                 cancel: Arc::new(AtomicBool::new(false)),
+                feed_sources: Vec::new(),
             })),
             done,
             session,
@@ -119,7 +128,10 @@ impl ResourceManager {
         layout: DesktopLayout,
         request: RuntimeResourceRequest,
     ) -> Result<DesktopRuntimeResources, ApiError> {
-        if matches!(request, RuntimeResourceRequest::Download { .. }) {
+        if matches!(
+            request,
+            RuntimeResourceRequest::Download { .. } | RuntimeResourceRequest::Discover { .. }
+        ) {
             return Err(ApiError::new(
                 "invalid_resources",
                 "请使用下载入口提交完整资源包信息",
@@ -128,11 +140,15 @@ impl ResourceManager {
         self.begin(layout, request, None)
     }
 
-    pub fn start_download(
+    pub fn start_download_with_proxy(
         &self,
         layout: DesktopLayout,
         source: RuntimeDownloadSource,
+        proxy: od_core::download_proxy::DownloadProxy,
     ) -> Result<DesktopRuntimeResources, ApiError> {
+        proxy
+            .validate()
+            .map_err(|message| ApiError::new("invalid_proxy", message))?;
         od_platform::download::validate_https_url(&source.url)
             .map_err(|error| ApiError::new("invalid_resources", error.to_string()))?;
         self.begin(
@@ -141,7 +157,97 @@ impl ResourceManager {
                 bytes: source.bytes,
                 sha256: source.sha256.clone(),
             },
-            Some(source),
+            Some(Source::Download(
+                od_core::download_proxy::ManagedDownloadRequest {
+                    source,
+                    proxy,
+                    expected_release: None,
+                },
+            )),
+        )
+    }
+
+    pub fn discover_with_proxy(
+        &self,
+        layout: DesktopLayout,
+        source: od_core::runtime_feed::RuntimeFeedSource,
+        proxy: od_core::download_proxy::DownloadProxy,
+    ) -> Result<DesktopRuntimeResources, ApiError> {
+        od_platform::download::validate_https_url(&source.url)
+            .map_err(|e| ApiError::new("invalid_resources", e.to_string()))?;
+        proxy
+            .validate()
+            .map_err(|e| ApiError::new("invalid_proxy", e))?;
+        self.begin(
+            layout,
+            RuntimeResourceRequest::Discover {
+                sha256: source.sha256.clone(),
+            },
+            Some(Source::Feed(od_core::runtime_feed::ManagedFeedRequest {
+                source,
+                proxy,
+            })),
+        )
+    }
+
+    pub fn download_release(
+        &self,
+        layout: DesktopLayout,
+        catalog_id: &str,
+        sha256: &str,
+        proxy: od_core::download_proxy::DownloadProxy,
+    ) -> Result<DesktopRuntimeResources, ApiError> {
+        proxy
+            .validate()
+            .map_err(|e| ApiError::new("invalid_proxy", e))?;
+        let source = {
+            let state = self.state.lock().expect("资源管理状态锁失效");
+            let catalog = state
+                .snapshot
+                .feed
+                .as_ref()
+                .filter(|c| c.id == catalog_id)
+                .ok_or_else(|| {
+                    ApiError::new(
+                        "resource_feed_changed",
+                        "发布清单已变化，请重新读取并选择版本",
+                    )
+                })?;
+            let option = catalog
+                .releases
+                .iter()
+                .find(|o| o.release.sha256 == sha256 && o.compatible)
+                .ok_or_else(|| {
+                    ApiError::new("invalid_resources", "所选发布版本不存在或与当前引擎不兼容")
+                })?;
+            state
+                .feed_sources
+                .iter()
+                .find(|s| s.release == option.release)
+                .cloned()
+                .ok_or_else(|| {
+                    ApiError::new("resource_feed_changed", "发布来源已丢失，请重新读取清单")
+                })?
+        };
+        let release = source.release;
+        let archive = RuntimeDownloadSource {
+            url: source.url,
+            bytes: release.bytes,
+            sha256: release.sha256.clone(),
+        };
+        self.begin(
+            layout,
+            RuntimeResourceRequest::Download {
+                bytes: release.bytes,
+                sha256: release.sha256.clone(),
+            },
+            Some(Source::Download(
+                od_core::download_proxy::ManagedDownloadRequest {
+                    source: archive,
+                    proxy,
+                    expected_release: Some(release),
+                },
+            )),
         )
     }
 
@@ -149,7 +255,7 @@ impl ResourceManager {
         &self,
         layout: DesktopLayout,
         request: RuntimeResourceRequest,
-        source: Option<RuntimeDownloadSource>,
+        source: Option<Source>,
     ) -> Result<DesktopRuntimeResources, ApiError> {
         request
             .validate()
@@ -167,6 +273,10 @@ impl ResourceManager {
                 "resource_busy",
                 "已有运行资源任务或桌面正在退出",
             ));
+        }
+        if matches!(request, RuntimeResourceRequest::Discover { .. }) {
+            state.snapshot.feed = None;
+            state.feed_sources.clear();
         }
         state.snapshot.job = Some(RuntimeResourceJob {
             id: Uuid::new_v4(),
@@ -186,16 +296,51 @@ impl ResourceManager {
         let manager = self.clone();
         // 同步 Tauri 命令可以来自没有 Tokio 上下文的 UI 线程。
         self.runtime.spawn(async move {
-            if let Some(source) = source {
+            if let Some(Source::Feed(request)) = &source {
+                let request = request.clone();
+                let result =
+                    tokio::task::spawn_blocking(move || feed::run(&layout, request, &cancel))
+                        .await
+                        .map_err(offline)
+                        .and_then(|r| r);
+                let mut state = manager.state.lock().expect("资源管理状态锁失效");
+                let (job_state, error) = match result {
+                    Ok(Some((catalog, sources))) => {
+                        state.snapshot.feed = Some(catalog);
+                        state.feed_sources = sources;
+                        (RuntimeResourceJobState::Succeeded, None)
+                    }
+                    Ok(None) => (RuntimeResourceJobState::Cancelled, None),
+                    Err(error) => (RuntimeResourceJobState::Failed, Some(error)),
+                };
+                if let Some(job) = &mut state.snapshot.job {
+                    job.phase = "finished".into();
+                    job.state = job_state;
+                    if let Some(error) = error {
+                        job.error = Some(error.message);
+                        job.error_code = Some(error.code);
+                    }
+                }
+                manager.done.send_replace(true);
+                return;
+            }
+            if let Some(Source::Download(source)) = source {
                 let worker = manager.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    download::run(&layout, &source, &cancel, |progress| {
-                        let mut state = worker.state.lock().expect("资源管理状态锁失效");
-                        if let Some(job) = &mut state.snapshot.job {
-                            job.phase = progress.phase.clone();
-                            job.progress = Some(progress);
-                        }
-                    })
+                    download::run_configured(
+                        &layout,
+                        &source.source,
+                        source.proxy,
+                        source.expected_release,
+                        &cancel,
+                        |progress| {
+                            let mut state = worker.state.lock().expect("资源管理状态锁失效");
+                            if let Some(job) = &mut state.snapshot.job {
+                                job.phase = progress.phase.clone();
+                                job.progress = Some(progress);
+                            }
+                        },
+                    )
                 })
                 .await
                 .map_err(offline)
@@ -262,7 +407,12 @@ impl ResourceManager {
             .job
             .as_mut()
             .filter(|job| {
-                job.id == id && matches!(job.request, RuntimeResourceRequest::Download { .. })
+                job.id == id
+                    && matches!(
+                        job.request,
+                        RuntimeResourceRequest::Download { .. }
+                            | RuntimeResourceRequest::Discover { .. }
+                    )
             })
             .ok_or_else(|| ApiError::new("resource_job_changed", "下载任务已变化，请刷新后重试"))?;
         if !job.state.is_terminal() {
@@ -473,7 +623,9 @@ async fn helper(
             Some(RuntimeResourceRequest::Rollback { revision }) => {
                 command.args(["--rollback", "--revision", &revision]);
             }
-            Some(RuntimeResourceRequest::Download { .. }) => return Err(offline("下载入口无效")),
+            Some(
+                RuntimeResourceRequest::Download { .. } | RuntimeResourceRequest::Discover { .. },
+            ) => return Err(offline("下载入口无效")),
             Some(RuntimeResourceRequest::Refresh) | None => {}
         }
         let output = command.output().map_err(offline)?;

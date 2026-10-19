@@ -88,8 +88,11 @@ pub struct InputRecoveryPlan {
 
 impl InputRecoveryPlan {
     pub fn validate(&self) -> Result<()> {
-        ensure!(matches!(self.version, 1..=6), "输入恢复记录版本不支持");
-        if self.version == 1 {
+        ensure!(matches!(self.version, 1..=8), "输入恢复记录版本不支持");
+        if self.version == 8 {
+            ensure!(self.additional_inputs.len()<=128 && self.additional_inputs.iter().all(|input|input.mode==self.config.mode), "v8 战斗恢复输入过多或输入模式不一致");
+            for input in &self.additional_inputs {input.validate().map_err(anyhow::Error::msg)?;}
+        } else if self.version == 1 {
             ensure!(self.additional_inputs.is_empty(), "v1 恢复记录不能增加输入");
         } else if self.version == 2 {
             let expected = od_core::mail::MailConfig::recovery_inputs();
@@ -98,6 +101,12 @@ impl InputRecoveryPlan {
                     && self.config == expected[0]
                     && self.additional_inputs[0] == expected[1],
                 "v2 邮件恢复仅允许释放 Alt 和鼠标左键"
+            );
+        } else if self.version == 7 {
+            let expected = od_core::basic_daily::recovery_inputs();
+            ensure!(
+                self.config == expected[0] && self.additional_inputs == expected[1..],
+                "v7 首批日常恢复仅允许释放 Alt、鼠标左键、N、F、Escape 和 W"
             );
         } else if self.version == 6 {
             let expected = od_core::group_run::recovery_inputs();

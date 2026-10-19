@@ -1,4 +1,5 @@
 use anyhow::{Result, ensure};
+use od_core::download_proxy::DownloadProxy;
 use std::{
     io::Read,
     sync::atomic::{AtomicBool, Ordering},
@@ -39,7 +40,7 @@ pub struct HttpsDownloader;
 
 impl ResourceDownloader for HttpsDownloader {
     fn open(&self, url: &str) -> Result<Box<dyn Read>> {
-        open_https(url, None)
+        open_https(url, None, &DownloadProxy::System)
     }
 
     fn open_cancellable<'a>(
@@ -47,8 +48,41 @@ impl ResourceDownloader for HttpsDownloader {
         url: &str,
         cancel: &'a AtomicBool,
     ) -> Result<Box<dyn Read + 'a>> {
-        open_https(url, Some(cancel))
+        open_https(url, Some(cancel), &DownloadProxy::System)
     }
+}
+
+pub struct ConfiguredHttpsDownloader {
+    proxy: DownloadProxy,
+}
+
+impl ConfiguredHttpsDownloader {
+    pub fn new(proxy: DownloadProxy) -> Result<Self> {
+        proxy.validate().map_err(anyhow::Error::msg)?;
+        Ok(Self { proxy })
+    }
+}
+
+impl ResourceDownloader for ConfiguredHttpsDownloader {
+    fn open(&self, url: &str) -> Result<Box<dyn Read>> {
+        open_https(url, None, &self.proxy)
+    }
+
+    fn open_cancellable<'a>(
+        &self,
+        url: &str,
+        cancel: &'a AtomicBool,
+    ) -> Result<Box<dyn Read + 'a>> {
+        open_https(url, Some(cancel), &self.proxy)
+    }
+}
+
+fn network_error(error: reqwest::Error) -> anyhow::Error {
+    anyhow::anyhow!(if error.is_timeout() {
+        "下载网络请求超时"
+    } else {
+        "下载网络请求失败，请检查连接和代理设置"
+    })
 }
 
 fn wait_network<T>(
@@ -64,7 +98,7 @@ fn wait_network<T>(
                 "资源下载已取消"
             );
             tokio::select! {
-                result = &mut future => return Ok(result.map_err(|error| error.without_url())?),
+                result = &mut future => return result.map_err(network_error),
                 _ = tokio::time::sleep(Duration::from_millis(25)) => {}
             }
         }
@@ -100,8 +134,13 @@ impl Read for HttpsReader<'_> {
     }
 }
 
-fn open_https<'a>(url: &str, cancel: Option<&'a AtomicBool>) -> Result<Box<dyn Read + 'a>> {
+fn open_https<'a>(
+    url: &str,
+    cancel: Option<&'a AtomicBool>,
+    proxy: &DownloadProxy,
+) -> Result<Box<dyn Read + 'a>> {
     validate_https_url(url)?;
+    proxy.validate().map_err(anyhow::Error::msg)?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -112,11 +151,19 @@ fn open_https<'a>(url: &str, cancel: Option<&'a AtomicBool>) -> Result<Box<dyn R
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(120))
             .redirect(reqwest::redirect::Policy::limited(10))
-            .user_agent(concat!("zzz-auto/", env!("CARGO_PKG_VERSION")))
-            .build()?;
+            .user_agent(concat!("zzz-auto/", env!("CARGO_PKG_VERSION")));
+        let client = match proxy {
+            DownloadProxy::System => client,
+            DownloadProxy::Direct => client.no_proxy(),
+            DownloadProxy::Custom { url } => client
+                .no_proxy()
+                .proxy(reqwest::Proxy::all(url).map_err(network_error)?),
+        }
+        .build()
+        .map_err(network_error)?;
         wait_network(&runtime, cancel, client.get(url).send())?
             .error_for_status()
-            .map_err(|error| error.without_url())?
+            .map_err(network_error)?
     };
     ensure!(
         response.status() == reqwest::StatusCode::OK,

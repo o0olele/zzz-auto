@@ -30,14 +30,33 @@ pub fn managed(output: &Path) -> Result<()> {
         line.len() <= 16384 && line.last() == Some(&b'\n'),
         "下载请求无效"
     );
-    let source: RuntimeDownloadSource =
-        serde_json::from_slice(&line).map_err(|_| anyhow::anyhow!("下载请求无效"))?;
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Request {
+        Configured(od_core::download_proxy::ManagedDownloadRequest),
+        Legacy(RuntimeDownloadSource),
+    }
+    let (source, proxy, expected_release) = match serde_json::from_slice::<Request>(&line)
+        .map_err(|_| anyhow::anyhow!("下载请求无效"))?
+    {
+        Request::Configured(request) => (request.source, request.proxy, request.expected_release),
+        Request::Legacy(source) => (source, od_core::download_proxy::DownloadProxy::System, None),
+    };
+    proxy.validate().map_err(anyhow::Error::msg)?;
     let source = ResourceDownloadSource {
         url: source.url,
         bytes: source.bytes,
         sha256: source.sha256,
     };
     source.validate()?;
+    if let Some(release) = &expected_release {
+        ensure!(
+            release.sha256 == source.sha256
+                && release.bytes == source.bytes
+                && crate::runtime_feed::compatible(release),
+            "所选发布资源与下载元数据不匹配或不兼容"
+        );
+    }
     let cancel = Arc::new(AtomicBool::new(false));
     let disconnected = cancel.clone();
     std::thread::spawn(move || {
@@ -52,7 +71,7 @@ pub fn managed(output: &Path) -> Result<()> {
         Ok(())
     };
     let mut previous = ("", 0_u64);
-    let result = download(&source, output, &cancel, |progress| {
+    let result = download_with_proxy(&source, output, proxy, &cancel, |progress| {
         let megabytes = progress.completed_bytes / (1024 * 1024);
         if previous != (progress.phase, megabytes) {
             if emit(Event::Progress(RuntimeDownloadProgress {
@@ -66,6 +85,15 @@ pub fn managed(output: &Path) -> Result<()> {
             }
             previous = (progress.phase, megabytes);
         }
+    });
+    let result = result.and_then(|result| {
+        ensure!(
+            expected_release.as_ref().is_none_or(|release| {
+                crate::runtime_feed::matches_manifest(release, &result.manifest)
+            }),
+            "下载包实际版本与发布清单不匹配"
+        );
+        Ok(result)
     });
     match result {
         Ok(result) => emit(Event::Completed(RuntimeDownloadedArchive {
@@ -121,6 +149,17 @@ pub fn download(
     observer: impl FnMut(ResourceDownloadProgress),
 ) -> Result<DownloadedResources> {
     download_with(source, output, &HttpsDownloader, cancel, observer)
+}
+
+pub fn download_with_proxy(
+    source: &ResourceDownloadSource,
+    output: &Path,
+    proxy: od_core::download_proxy::DownloadProxy,
+    cancel: &AtomicBool,
+    observer: impl FnMut(ResourceDownloadProgress),
+) -> Result<DownloadedResources> {
+    let downloader = od_platform::download::ConfiguredHttpsDownloader::new(proxy)?;
+    download_with(source, output, &downloader, cancel, observer)
 }
 
 /// 显式 CLI 或桌面提交来源；测试可以替换传输。

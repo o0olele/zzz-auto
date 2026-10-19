@@ -187,14 +187,39 @@ fn start_runtime_resource_job(
 }
 
 #[tauri::command]
-fn start_runtime_resource_download(
+async fn start_runtime_resource_download(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     state: tauri::State<'_, Host>,
     source: od_core::runtime_resources::RuntimeDownloadSource,
 ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
     main_window(&window)?;
-    state.download_resources(&app, source)
+    state.download_resources(&app, source).await
+}
+
+#[tauri::command]
+async fn discover_runtime_resources(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+    source: od_core::runtime_feed::RuntimeFeedSource,
+) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+    main_window(&window)?;
+    state.discover_resources(&app, source).await
+}
+
+#[tauri::command]
+async fn download_runtime_resource_release(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+    catalog_id: String,
+    sha256: String,
+) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+    main_window(&window)?;
+    state
+        .download_resource_release(&app, catalog_id, sha256)
+        .await
 }
 
 #[tauri::command]
@@ -330,6 +355,8 @@ fn main() {
             pick_config_import_source,
             start_runtime_resource_job,
             start_runtime_resource_download,
+            discover_runtime_resources,
+            download_runtime_resource_release,
             cancel_runtime_resource_download,
             subscribe_engine,
             retry_shortcuts,

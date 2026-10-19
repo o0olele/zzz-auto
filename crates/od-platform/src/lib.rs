@@ -1,4 +1,6 @@
 mod paths;
+#[cfg(windows)]
+pub mod audio;
 pub use paths::{DesktopLayout, desktop_layout};
 #[cfg(windows)]
 pub mod after_done;

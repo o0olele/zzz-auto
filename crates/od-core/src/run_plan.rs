@@ -8,6 +8,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub const TRIAL_APP_IDS: [&str; 5] = [
+    "email",
+    "coffee",
+    "engagement_reward",
+    "city_fund",
+    "scratch_card",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct RunContext {
@@ -19,6 +27,12 @@ pub struct RunContext {
     pub group_name: Option<String>,
     pub config_revision: u32,
     pub app_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub rerun_completed: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub standalone: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub game_day: Option<GameDay>,
@@ -51,6 +65,9 @@ impl RunContext {
         if unique.len() != self.app_ids.len() {
             return Err("运行计划的应用重复");
         }
+        if self.standalone && (self.app_ids.len() != 1 || self.rerun_completed) {
+            return Err("独立运行必须只包含一个应用");
+        }
         Ok(())
     }
 }
@@ -60,6 +77,7 @@ impl RunContext {
 pub enum AppAvailability {
     MailTrial,
     CoffeeTrial,
+    DailyTrial,
     Unmigrated,
     Unknown,
 }
@@ -90,6 +108,9 @@ pub struct GroupPlan {
     pub context: RunContext,
     pub mail_config: crate::mail::MailConfig,
     pub coffee_config: crate::coffee_run::CoffeeConfig,
+    #[serde(default)]
+    #[ts(as = "Option<crate::basic_daily::DailyConfig>", optional)]
+    pub daily_config: crate::basic_daily::DailyConfig,
     pub items: Vec<PlannedApp>,
     pub blockers: Vec<String>,
     pub executable: bool,
@@ -128,6 +149,55 @@ pub fn plan_group_selection_at(
     completed: Option<&DailyCompletions>,
     selection: Option<&[String]>,
 ) -> Result<GroupPlan, String> {
+    plan_group_with_options_at(
+        config,
+        instance_id,
+        group_id,
+        now,
+        completed,
+        GroupRunOptions {
+            app_ids: selection,
+            rerun_completed: false,
+        },
+    )
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GroupRunOptions<'a> {
+    pub app_ids: Option<&'a [String]>,
+    pub rerun_completed: bool,
+}
+
+/// 临时运行选项只影响当前计划，保留保存策略及已有每日证明。
+pub fn plan_group_with_options_at(
+    config: &AccountConfig,
+    instance_id: u32,
+    group_id: &str,
+    now: DateTime<Utc>,
+    completed: Option<&DailyCompletions>,
+    options: GroupRunOptions<'_>,
+) -> Result<GroupPlan, String> {
+    plan_account_at(
+        config,
+        instance_id,
+        group_id,
+        now,
+        completed,
+        options,
+        false,
+    )
+}
+
+fn plan_account_at(
+    config: &AccountConfig,
+    instance_id: u32,
+    group_id: &str,
+    now: DateTime<Utc>,
+    completed: Option<&DailyCompletions>,
+    options: GroupRunOptions<'_>,
+    standalone: bool,
+) -> Result<GroupPlan, String> {
+    let selection = options.app_ids;
     config.validate().map_err(|error| error.to_string())?;
     let instance = config
         .instances
@@ -159,6 +229,15 @@ pub fn plan_group_selection_at(
         return Err("完成记录的游戏日与计划不符，请重新预览".into());
     }
     let mut warnings = Vec::new();
+    if standalone {
+        warnings.push("独立运行每次执行所选应用；不会重置每日记录或增加游戏内领取次数".into());
+    }
+    if options.rerun_completed {
+        warnings.push(
+            "仅本次重新运行所选应用，包括本游戏日已完成项；不会重置每日记录或增加游戏内领取次数"
+                .into(),
+        );
+    }
     if let Some(index) = completed
         && index.unreadable > 0
     {
@@ -182,6 +261,7 @@ pub fn plan_group_selection_at(
         let availability = match (definition.is_some(), item.app_id.as_str()) {
             (true, "email") => AppAvailability::MailTrial,
             (true, "coffee") => AppAvailability::CoffeeTrial,
+            (true, id) if crate::basic_daily::APP_IDS.contains(&id) => AppAvailability::DailyTrial,
             (true, _) => AppAvailability::Unmigrated,
             (false, _) => AppAvailability::Unknown,
         };
@@ -190,11 +270,15 @@ pub fn plan_group_selection_at(
         if enabled {
             app_ids.push(item.app_id.clone());
             match availability {
-                AppAvailability::MailTrial | AppAvailability::CoffeeTrial => {
+                AppAvailability::MailTrial
+                | AppAvailability::CoffeeTrial
+                | AppAvailability::DailyTrial => {
                     completed_run_id = completed
                         .and_then(|index| index.apps.get(&item.app_id))
                         .copied();
                     decision = if group.run_policy == RunPolicy::SkipDailySuccess
+                        && !options.rerun_completed
+                        && !standalone
                         && completed_run_id.is_some()
                     {
                         PlanDecision::AlreadyDone
@@ -228,14 +312,23 @@ pub fn plan_group_selection_at(
     let executable = blockers.is_empty() && has_pending;
     let all_done = blockers.is_empty() && !has_pending;
     Ok(GroupPlan {
-        after_done: config.general.after_done,
+        after_done: if standalone {
+            crate::after_done::AfterDoneAction::None
+        } else {
+            config.general.after_done
+        },
         valid_until: game_day.ends_at().map_err(str::to_owned)?,
         all_done,
         game_day: game_day.clone(),
-        run_policy: group.run_policy,
+        run_policy: if standalone {
+            RunPolicy::Always
+        } else {
+            group.run_policy
+        },
         warnings,
         mail_config: config.general.mail,
         coffee_config: group.coffee,
+        daily_config: group.daily,
         context: RunContext {
             instance_id,
             instance_name: instance.name.clone(),
@@ -243,10 +336,36 @@ pub fn plan_group_selection_at(
             group_name: Some(group.display_name().into()),
             config_revision: config.revision,
             app_ids,
+            rerun_completed: options.rerun_completed,
+            standalone,
             game_day: Some(game_day),
         },
         items,
         blockers,
         executable,
     })
+}
+
+/// 独立运行只借用组的参数，不改变启用项、每日策略和结束后动作。
+pub fn plan_standalone_at(
+    config: &AccountConfig,
+    instance_id: u32,
+    group_id: &str,
+    app_id: &str,
+    now: DateTime<Utc>,
+    completed: Option<&DailyCompletions>,
+) -> Result<GroupPlan, String> {
+    let selection = [app_id.to_owned()];
+    plan_account_at(
+        config,
+        instance_id,
+        group_id,
+        now,
+        completed,
+        GroupRunOptions {
+            app_ids: Some(&selection),
+            rerun_completed: false,
+        },
+        true,
+    )
 }

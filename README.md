@@ -1,6 +1,6 @@
 # 绝区零一条龙 · Rust 原型
 
-按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，M1 集成原型待验证，M2 **主流程通过，边界待验收**，M3 进行中。邮件大世界和菜单起点已获实机测试通过反馈，详见[邮件试运行说明](docs/develop/mail-pipeline.md)；M3 已实现[账号、配置导入与应用组基础](docs/develop/account-config.md)，并接通[应用组邮件试运行与账号记录](docs/develop/group-runs.md)。暂停、异常收尾等场景继续验收，30 个游戏应用的正式可用标记仍待验收，尚不能代替旧一条龙。
+按 [路线图](docs/ROADMAP.md) 迁移到 Rust、Tauri 2 和 MaaFramework。M0 清单与基线已完成，M1 集成原型待验证，M2 **主流程通过，边界待验收**，M3 **开发完成，待验收**。M3 [首批日常](docs/develop/basic-daily-runs.md)为邮件、咖啡、活跃度奖励、丽都城募和刮刮卡，已接通账号、配置导入与恢复、应用组和独立运行、每日记录、桌面设置与日志，以及[资源版本发现和下载](docs/develop/runtime-resources.md#资源版本发现)。真实素材、游戏连续执行和异常边界继续验收，30 个游戏应用的正式可用标记保持待验收，尚不能代替旧一条龙。
 
 界面采用 React、TypeScript、Vite 与 Fluent UI React v9；自动化运行在独立 Rust 进程中。运行程序不启动 Python 或 Node 服务。前端构建需要 Node，Rust 和 MSVC 用于开发；正式发行的完整验收属于 M7。
 
@@ -23,6 +23,8 @@ npm run tauri dev
 
 运行页可开启“仅本次选择应用”，临时勾选邮件、咖啡或其他组内应用，按保存顺序预检及执行，不改变应用组配置；未迁移项被选中时仍会拦截。刷新配置、换组、断线或离开页面后恢复保存的默认启用项。
 
+如需重试本游戏日已完成的应用，可开启“仅本次重新运行已完成应用”，重新预览并确认后运行。可与本次选择组合使用，保留保存的每日策略和已有成功记录；不会增加游戏内领取次数。
+
 一条龙运行页可保存[结束后动作](docs/develop/after-done.md)：无、关闭游戏、关机、休眠或睡眠。整组正常完成并确认保存及输入释放后进入 60 秒倒计时，可在任意页面或托盘取消本次动作；失败、停止和独立诊断不执行。
 
 总览提供[手动启动游戏](docs/develop/game-launch.md)：先在“账号与应用组”按账号保存游戏路径及可选的固定 1080p 参数，再回总览核对并确认启动。启动后手动登录、扫描和连接窗口，随后进入一条龙运行。
@@ -41,7 +43,7 @@ npm run tauri dev
 
 下列命令在工程根目录执行，不需要 Tauri。SDK 必须先完成安装。
 
-[活跃度奖励识别准备](docs/develop/engagement-reward.md)提供 `engagement-reward-bundle`、`engagement-reward-bundle-check` 和 `engagement-reward-inspect`，用于生成、校验只读资源及检查固定 1080p 截图。日常页要求黄色选中页签和正文标题同时命中，报告保留可见完成标记；旧只读包需重新生成为 schema 2。自动领取及应用组入口仍待补充奖励画面后实现。
+[活跃度奖励识别准备](docs/develop/engagement-reward.md)提供 `engagement-reward-bundle`、`engagement-reward-bundle-check` 和 `engagement-reward-inspect`，用于生成、校验只读资源及检查固定 1080p 截图。日常页要求黄色选中页签和正文标题同时命中，报告保留可见完成标记；旧只读包需重新生成为 schema 2。完整领取另由 `basic-daily-bundle` 生成的执行包提供，可从应用组或独立应用试运行，真实奖励后态继续待验收。
 
 ```powershell
 cargo run -p zzz-engine -- doctor
@@ -65,7 +67,7 @@ CLI `input-probe` 使用同一实现，指定 `--hwnd`、`--key`、`--hold-ms`�
 cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode background --key 87 --hold-ms 1000 --start-delay-ms 3000 --cancel-after-ms 3200 --allow-input
 ```
 
-CLI 键盘使用 Win32 VK，可选 `--mode foreground-legacy` 或 `background-post` 对照 Maa 的兼容方式；手柄参数、计时边界和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。邮件暂停 / 继续见[试运行说明](docs/develop/mail-pipeline.md)，旧配置的账号与应用组导入见[M3 使用说明](docs/develop/account-config.md#使用)。声音闪避、HTTP、MCP、其余设置转换及多应用执行继续迁移。
+CLI 键盘使用 Win32 VK，可选 `--mode foreground-legacy` 或 `background-post` 对照 Maa 的兼容方式；手柄参数、计时边界和未完成的实机检查见 [验收记录](docs/migration/acceptance.md)。邮件暂停 / 继续见[试运行说明](docs/develop/mail-pipeline.md)，旧配置的账号与应用组导入见[M3 使用说明](docs/develop/account-config.md#使用)。声音闪避、HTTP、MCP 和其余游戏应用按后续阶段迁移。
 
 新动作使用 `--action mouse|stick|trigger`，其余停止、确认与计时参数相同。示例中的句柄需要替换为 `windows` 命令返回的游戏句柄：
 
@@ -85,13 +87,17 @@ cargo run -p zzz-engine -- input-probe --hwnd <十六进制句柄> --mode ds4 --
 
 同页“配置备份与恢复”可读取自动备份，预览账号、应用组和通用设置差异，确认后恢复。恢复前保存当前配置，修订继续递增，已移除账号的编号不分配给新账号。当前配置须能正常读取；用法与范围见[配置备份说明](docs/develop/config-backups.md)。
 
-当前协议为 v28，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline、地图与咖啡点单试运行、应用组试运行、账号历史及模型资源任务。账号与组可保存[咖啡参数](docs/develop/coffee-settings.md)，原生诊断选择来源后采用，应用组由引擎读取并冻结参数。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
+当前协议为 v33，桌面与引擎必须使用同一版本。托管引擎通过桌面持有的私有管道回连，支持引擎单独提权、受控输入 Pipeline、五项首批日常、应用组及独立运行、账号历史、模型资源及运行资源版本发现。账号与组可保存[咖啡参数](docs/develop/coffee-settings.md)和[日常参数](docs/develop/basic-daily-runs.md)，由引擎读取并冻结；原生咖啡诊断也可选择来源。旧数字按键命令继续支持 `--key`，已保存的旧运行记录可以读取；新运行记录使用明确的动作结构。
+
+“通用设置 → 下载代理”可保存系统代理、直连或自定义 HTTP / HTTPS 代理，供下一次模型准备及运行资源包下载使用。自定义代理暂不支持用户名和密码。CLI 两类下载命令支持 `--proxy system|direct|<地址>`，完整规则见[下载代理说明](docs/develop/download-proxy.md)。
+
+“独立应用运行”可从当前账号的应用组选择邮件或咖啡，单独执行保存为禁用或本游戏日已完成的应用。参数沿用保存配置，成功会更新每日记录，独立运行不会触发一条龙结束后动作；暂停、继续、停止和结果提醒共用现有机制。详见[独立应用运行说明](docs/develop/standalone-run.md)。
 
 “原生诊断 → 咖啡点单试运行”支持已打开点单选项，以及“从大世界传送并点单”两种起点。新起点会按 N 开图、沿澄辉坪 → 汀曼咖啡传送、按 F 交互并推进对话，再接入已有点单、电量确认和返回流程；需要 v2 咖啡执行包。先更新配套桌面、引擎与资源。独立诊断只保存诊断记录；[应用组](docs/develop/coffee-group-runs.md)可顺序试运行邮件和咖啡，写账号分项与每日记录。完整领取与实际游戏串联仍待验收，当前素材缺口和资源包校验值见[咖啡点单与顺序调度](docs/develop/coffee-and-groups.md)。
 
 咖啡前置的“澄辉坪 → 汀曼咖啡”已接入“原生诊断 → 地图传送试运行”，2026 年 10 月 17 日获正常传送流程实机通过反馈，暂停、停止及异常恢复等边界继续待验收。先按 N 打开普通地图，确认本次路线后启动，在延时期间切回游戏；暂停保留检查点，继续前重新识别，停止等待输入释放。地图与其他任务共用运行槽及崩溃输入恢复，结果只保存为诊断记录。`map-bundle` 生成 v2 资源，`map-bundle-check` 校验资源，`map-inspect` 只读检查留档；命令、资源准备及实机待验项见[地图传送说明](docs/develop/map-transport.md)。
 
-桌面在发送真实输入探针或输入 Pipeline 前，把恢复计划写入数据目录的 `input-recovery.json`。引擎崩溃、应答丢失或收尾未确认时会阻止重连，请点击“恢复遗留输入”：确认旧进程退出后，由独立进程只发送对应释放；原管理员引擎可能需要再次授权 Windows。恢复后先确认游戏状态，再手动重连，不自动重放任务。桌面重启也保留拦截；失败或取消授权不会清除记录。当前覆盖桌面托管的单次输入、受控 Pipeline、邮件及地图试运行，CLI 和未来业务 Pipeline 须单独接入。真实游戏、跨权限释放与 ViGEm 卸载仍需实机验收，见[实现说明](docs/develop/implementation.md#m1-崩溃后的独立输入恢复)。
+桌面在发送真实输入探针、输入 Pipeline 或首批日常前，把恢复计划写入数据目录的 `input-recovery.json`。引擎崩溃、应答丢失或收尾未确认时会阻止重连，请点击“恢复遗留输入”：确认旧进程退出后，由独立进程只发送对应释放；原管理员引擎可能需要再次授权 Windows。恢复后先确认游戏状态，再手动重连，不自动重放任务。桌面重启也保留拦截；失败或取消授权不会清除记录。当前覆盖桌面托管的单次输入、受控 Pipeline、邮件、地图、咖啡及首批五项应用组 / 独立运行；v7 增加 Escape 与 W，旧恢复记录保持原义。CLI 和未来业务 Pipeline 须单独接入。真实游戏、跨权限释放与 ViGEm 卸载仍需实机验收，见[实现说明](docs/develop/implementation.md#m1-崩溃后的独立输入恢复)。
 
 实机带输入 Pipeline 在“原生诊断 → 真实输入诊断 → 执行方式”选择 **Maa Pipeline**。支持键盘 / Xbox / DS4 数字键及鼠标按键；设置按住、启动延时和 Pipeline 超时，勾选输入确认后运行，再在延时期间切回游戏。流程按下一个键，经不超过 25ms 的无输入间隔等待后释放；停止或超时会等待原生队列并显式释放。超时不包含启动延时、截图准备和控制器重建，不能作为强制终止。摇杆与扳机使用“直接输入”；游戏响应及停止残留需实机观察。完整边界和复测入口见[输入 Pipeline 说明](docs/develop/input-pipeline.md)。
 

@@ -16,7 +16,7 @@ use od_core::{
 use od_core::{mail::MailConfig, pipeline::PipelineRequest};
 use od_core::{
     run_history::RunStore,
-    run_plan::{GroupPlan, plan_group_selection_at},
+    run_plan::{GroupPlan, GroupRunOptions, plan_group_with_options_at, plan_standalone_at},
 };
 use od_protocol::{ApiError, Command, Payload};
 use std::{
@@ -40,7 +40,67 @@ pub struct EnginePaths {
     pub data: PathBuf,
 }
 
+enum AccountPlanSelection {
+    Group {
+        app_ids: Option<Vec<String>>,
+        rerun_completed: bool,
+    },
+    Standalone(String),
+}
+
+impl AccountPlanSelection {
+    fn plan(
+        &self,
+        config: &od_core::config::AccountConfig,
+        instance_id: u32,
+        group_id: &str,
+        now: chrono::DateTime<Utc>,
+        completed: Option<&od_core::run_history::DailyCompletions>,
+    ) -> Result<GroupPlan, String> {
+        match self {
+            Self::Group {
+                app_ids,
+                rerun_completed,
+            } => plan_group_with_options_at(
+                config,
+                instance_id,
+                group_id,
+                now,
+                completed,
+                GroupRunOptions {
+                    app_ids: app_ids.as_deref(),
+                    rerun_completed: *rerun_completed,
+                },
+            ),
+            Self::Standalone(app_id) => {
+                plan_standalone_at(config, instance_id, group_id, app_id, now, completed)
+            }
+        }
+    }
+    fn needs_daily_proof(&self) -> bool {
+        matches!(
+            self,
+            Self::Standalone(_)
+                | Self::Group {
+                    rerun_completed: true,
+                    ..
+                }
+        )
+    }
+}
+
+struct AccountRunRequest {
+    instance_id: u32,
+    group_id: String,
+    revision: u32,
+    game_day: String,
+    selection: AccountPlanSelection,
+    allow_input: bool,
+    confirm_account: bool,
+}
+
 struct State {
+    combat_recognition:Option<Arc<Mutex<Option<maa_adapter::RawRecognitionControl>>>>,
     record_error: Option<String>,
     failed_save: Option<RunRecord>,
     sdk: SdkStatus,
@@ -88,6 +148,7 @@ impl State {
 }
 
 enum Work {
+    Combat(Box<CombatWork>),
     Group(Box<GroupWork>),
     Mail(MailWork),
     Map(MapWork),
@@ -109,6 +170,15 @@ enum Work {
         cancel: Arc<AtomicBool>,
     },
     Shutdown(oneshot::Sender<()>),
+}
+
+struct CombatWork {
+    run: crate::combat::CombatRun,
+    recognizer: maa_adapter::combat_vision::CombatRecognizer,
+    window: WindowInfo,
+    capture: CaptureMethod,
+    prepared: bool,
+    fixture: bool,
 }
 
 // 即使请求方断线或取消等待，也要等文件工作结束后再开放任务。
@@ -167,6 +237,8 @@ enum InputOutcome {
 
 #[derive(Clone)]
 pub struct Engine {
+    combat_root: Arc<PathBuf>,
+    combat_data:Arc<PathBuf>,
     game_launcher: Arc<Mutex<Box<dyn od_platform::game_launch::GameLauncher>>>,
     resources: Arc<crate::model_resources::ModelResourceService>,
     state: Arc<Mutex<State>>,
@@ -227,6 +299,11 @@ impl Engine {
         Self::for_mail_fixture(paths, callback)
     }
 
+    pub fn for_combat_fixture(paths:EnginePaths, callback:impl maa_adapter::CustomControllerCallback+'static, mode:InputMode)->anyhow::Result<Self> {
+        let resources=paths.resources.join("generated/combat");
+        Self::with_factory(paths,Some(Box::new(move||NativeSession::for_custom_controller(callback,&resources,mode))))
+    }
+
     pub fn for_coffee_fixture(
         paths: EnginePaths,
         callback: impl maa_adapter::CustomControllerCallback + 'static,
@@ -271,6 +348,7 @@ impl Engine {
         let history = RunStore::new(&paths.data)?;
         std::fs::create_dir_all(paths.data.join("runs"))?;
         let state = Arc::new(Mutex::new(State {
+            combat_recognition:None,
             record_error: None,
             failed_save: None,
             sdk: SdkStatus {
@@ -293,6 +371,8 @@ impl Engine {
             callback_dropped: Arc::new(AtomicU64::new(0)),
         }));
         let (sender, receiver) = mpsc::sync_channel(8);
+        let combat_root = Arc::new(paths.resources.join("generated/combat"));
+        let combat_data=Arc::new(paths.data.clone());
         let worker_state = state.clone();
         let worker_owner = config_owner.clone();
         std::thread::Builder::new()
@@ -302,6 +382,8 @@ impl Engine {
                 worker(paths, worker_state, receiver, factory, resource_id);
             })?;
         Ok(Self {
+            combat_root,
+            combat_data,
             game_launcher: Arc::new(Mutex::new(Box::new(
                 od_platform::game_launch::NativeGameLauncher::default(),
             ))),
@@ -328,6 +410,7 @@ impl Engine {
         if let Some(control) = &state.pipeline_control {
             control.stop();
         }
+        if let Some(raw)=&state.combat_recognition && let Some(control)=raw.lock().expect("战斗推理取消锁失效").as_ref() {let _=control.cancel();}
         if let Some(id) = state
             .slot
             .current()
@@ -373,10 +456,17 @@ impl Engine {
                 kind,
                 models,
                 offline,
-            } => self
-                .resources
-                .start(kind, models, offline)
-                .map(Payload::ModelResources),
+            } => {
+                let proxy = self
+                    .config
+                    .read()
+                    .map_err(config_error)?
+                    .general
+                    .download_proxy;
+                self.resources
+                    .start_with_proxy(kind, models, offline, proxy)
+                    .map(Payload::ModelResources)
+            }
             Command::CancelModelResources { job_id } => {
                 self.resources.cancel(job_id).map(Payload::ModelResources)
             }
@@ -403,11 +493,35 @@ impl Engine {
                 instance_id,
                 group_id,
                 app_ids,
+                rerun_completed,
             } => {
                 let config = self.config.read().map_err(config_error)?;
-                self.group_plan(config, instance_id, group_id, app_ids)
-                    .await
-                    .map(Payload::GroupPlan)
+                self.group_plan(
+                    config,
+                    instance_id,
+                    group_id,
+                    AccountPlanSelection::Group {
+                        app_ids,
+                        rerun_completed,
+                    },
+                )
+                .await
+                .map(Payload::GroupPlan)
+            }
+            Command::PreviewStandalone {
+                instance_id,
+                group_id,
+                app_id,
+            } => {
+                let config = self.config.read().map_err(config_error)?;
+                self.group_plan(
+                    config,
+                    instance_id,
+                    group_id,
+                    AccountPlanSelection::Standalone(app_id),
+                )
+                .await
+                .map(Payload::GroupPlan)
             }
             Command::QueryRunHistory { instance_id, query } => {
                 self.query_history(instance_id, query, None).await
@@ -456,45 +570,43 @@ impl Engine {
                 revision,
                 game_day,
                 app_ids,
+                rerun_completed,
                 allow_input,
                 confirm_account,
             } => {
-                if !confirm_account {
-                    return Err(ApiError::new(
-                        "account_not_confirmed",
-                        "请先确认游戏登录账号与所选账号一致",
-                    ));
-                }
-                if !allow_input {
-                    return Err(ApiError::new("input_not_confirmed", "请先确认允许真实输入"));
-                }
-                let previous_run = {
-                    let state = self.state.lock().expect("运行状态锁失效");
-                    if state.record_error.is_some() {
-                        return Err(ApiError::new(
-                            "history_error",
-                            "请先修复目录并重试保存运行记录",
-                        ));
-                    }
-                    if state.slot.busy() || state.native_pending {
-                        return Err(ApiError::new("busy", "已有任务或原生请求尚未完成"));
-                    }
-                    state.slot.current().map(|run| run.id)
-                };
-                let saved = self.config.read().map_err(config_error)?;
-                if saved.revision != revision {
-                    return Err(config_error(ConfigError::Conflict(Box::new(saved))));
-                }
-                let plan = self
-                    .group_plan(saved, instance_id, group_id, app_ids)
-                    .await?;
-                if plan.game_day.date != game_day {
-                    return Err(ApiError::new(
-                        "plan_expired",
-                        "预览的游戏日已过期，请重新预览并确认",
-                    ));
-                }
-                self.start_mail(None, true, Some(PreparedGroup { plan, previous_run }))
+                self.start_account_run(AccountRunRequest {
+                    instance_id,
+                    group_id,
+                    revision,
+                    game_day,
+                    selection: AccountPlanSelection::Group {
+                        app_ids,
+                        rerun_completed,
+                    },
+                    allow_input,
+                    confirm_account,
+                })
+                .await
+            }
+            Command::StartStandaloneTrial {
+                instance_id,
+                group_id,
+                app_id,
+                revision,
+                game_day,
+                allow_input,
+                confirm_account,
+            } => {
+                self.start_account_run(AccountRunRequest {
+                    instance_id,
+                    group_id,
+                    revision,
+                    game_day,
+                    selection: AccountPlanSelection::Standalone(app_id),
+                    allow_input,
+                    confirm_account,
+                })
+                .await
             }
             Command::AccountConfig => self
                 .config
@@ -511,6 +623,17 @@ impl Engine {
             Command::UpdateAccountConfig { revision, change } => {
                 self.update_config(revision, change).await
             }
+            Command::CombatScripts => {
+                let root=self.combat_root.clone();
+                let data=self.combat_data.clone();
+                tokio::task::spawn_blocking(move || {
+                    let bundle=maa_adapter::combat_vision::CombatBundle::load(&root).map_err(native_error)?;
+                    Ok(Payload::CombatScripts(crate::combat::script_catalog(&bundle,&data).map_err(native_error)?))
+                }).await.map_err(|_|ApiError::new("combat_resources_error","战斗资源检查线程异常"))?
+            },
+            Command::StartCombat { instance_id,revision,script_revision,allow_input,confirm_account } => self.start_combat(instance_id,revision,script_revision,allow_input,confirm_account).await,
+            Command::PreviewCombatScriptImport {source} => self.combat_script_import(source,None).await,
+            Command::ApplyCombatScriptImport {source,preview_id} => self.combat_script_import(source,Some(preview_id)).await,
             Command::StartMail {
                 config,
                 allow_input,
@@ -536,6 +659,7 @@ impl Engine {
                 if let Some(control) = &state.pipeline_control {
                     control.pause();
                 }
+                if let Some(raw)=&state.combat_recognition && let Some(control)=raw.lock().expect("战斗推理取消锁失效").as_ref() {let _=control.cancel();}
                 Ok(Payload::Run(record))
             }
             Command::Resume { run_id } => {
@@ -552,7 +676,11 @@ impl Engine {
                     .filter(|run| {
                         run.id == run_id
                             && run.state == RunState::Paused
-                            && (run.mail.is_some() || run.map.is_some() || run.coffee.is_some())
+                            && (run.mail.is_some()
+                                || run.map.is_some()
+                                || run.coffee.is_some()
+                                || run.combat.is_some()
+                                || !run.daily.is_empty())
                     })
                     .ok_or_else(|| {
                         ApiError::new("invalid_run_state", "只有已确认暂停的流程可以继续")
@@ -671,6 +799,7 @@ impl Engine {
                 } else if record.group.is_some() && !was_stopping {
                     let _ = self.sender.try_send(Work::PipelineControl(run_id, false));
                 }
+                if let Some(raw)=&state.combat_recognition && let Some(control)=raw.lock().expect("战斗推理取消锁失效").as_ref() {let _=control.cancel();}
                 Ok(Payload::Run(record))
             }
             Command::Attach {
@@ -733,24 +862,66 @@ impl Engine {
         .map_err(|error| ApiError::new("history_error", error.to_string()))
     }
 
+    async fn start_account_run(&self, request: AccountRunRequest) -> Result<Payload, ApiError> {
+        let AccountRunRequest {
+            instance_id,
+            group_id,
+            revision,
+            game_day,
+            selection,
+            allow_input,
+            confirm_account,
+        } = request;
+        if !confirm_account {
+            return Err(ApiError::new(
+                "account_not_confirmed",
+                "请先确认游戏登录账号与所选账号一致",
+            ));
+        }
+        if !allow_input {
+            return Err(ApiError::new("input_not_confirmed", "请先确认允许真实输入"));
+        }
+        let previous_run = {
+            let state = self.state.lock().expect("运行状态锁失效");
+            if state.record_error.is_some() {
+                return Err(ApiError::new(
+                    "history_error",
+                    "请先修复目录并重试保存运行记录",
+                ));
+            }
+            if state.slot.busy() || state.native_pending {
+                return Err(ApiError::new("busy", "已有任务或原生请求尚未完成"));
+            }
+            state.slot.current().map(|run| run.id)
+        };
+        let saved = self.config.read().map_err(config_error)?;
+        if saved.revision != revision {
+            return Err(config_error(ConfigError::Conflict(Box::new(saved))));
+        }
+        let plan = self
+            .group_plan(saved, instance_id, group_id, selection)
+            .await?;
+        if plan.game_day.date != game_day {
+            return Err(ApiError::new(
+                "plan_expired",
+                "预览的游戏日已过期，请重新预览并确认",
+            ));
+        }
+        self.start_mail(None, true, Some(PreparedGroup { plan, previous_run }))
+    }
+
     async fn group_plan(
         &self,
         config: od_core::config::AccountConfig,
         instance_id: u32,
         group_id: String,
-        app_ids: Option<Vec<String>>,
+        selection: AccountPlanSelection,
     ) -> Result<GroupPlan, ApiError> {
         let now = Utc::now();
-        let plan = plan_group_selection_at(
-            &config,
-            instance_id,
-            &group_id,
-            now,
-            None,
-            app_ids.as_deref(),
-        )
-        .map_err(|error| ApiError::new("invalid_group", error))?;
-        if plan.run_policy == RunPolicy::Always {
+        let plan = selection
+            .plan(&config, instance_id, &group_id, now, None)
+            .map_err(|error| ApiError::new("invalid_group", error))?;
+        if plan.run_policy == RunPolicy::Always && !selection.needs_daily_proof() {
             return Ok(plan);
         }
         let history = self.history.clone();
@@ -758,15 +929,9 @@ impl Engine {
             let completed = history
                 .daily_completions(instance_id, plan.game_day, now)
                 .map_err(|error| ApiError::new("history_error", error.to_string()))?;
-            plan_group_selection_at(
-                &config,
-                instance_id,
-                &group_id,
-                now,
-                Some(&completed),
-                app_ids.as_deref(),
-            )
-            .map_err(|error| ApiError::new("invalid_group", error))
+            selection
+                .plan(&config, instance_id, &group_id, now, Some(&completed))
+                .map_err(|error| ApiError::new("invalid_group", error))
         })
         .await
         .map_err(|_| ApiError::new("history_error", "每日记录查询线程异常退出"))?
@@ -978,6 +1143,61 @@ impl Engine {
         Ok(Payload::Run(record))
     }
 
+    async fn combat_script_import(&self,source:String,preview_id:Option<String>)->Result<Payload,ApiError> {
+        let pending=self.config_work_guard()?;let data=self.combat_data.clone();
+        tokio::task::spawn_blocking(move||{
+            let _pending=pending;
+            let result=if let Some(id)=preview_id {od_core::combat_scripts::apply(std::path::Path::new(&source),&data,&id)} else {od_core::combat_scripts::preview(std::path::Path::new(&source),&data)};
+            result.map(Payload::CombatScriptImport).map_err(native_error)
+        }).await.map_err(|_|ApiError::new("combat_import_failed","战斗脚本导入线程异常"))?
+    }
+
+    async fn start_combat(&self, instance_id:u32, revision:u32, script_revision:String, allow_input:bool, confirm_account:bool) -> Result<Payload,ApiError> {
+        if !allow_input||!confirm_account { return Err(ApiError::new("input_not_confirmed","请确认当前账号与战斗真实输入")); }
+        let pending=self.config_work_guard()?;
+        let engine=self.clone();
+        tokio::task::spawn_blocking(move || {
+            let _pending=pending;
+            let config=engine.config.read().map_err(config_error)?;
+            if config.revision!=revision { return Err(config_error(ConfigError::Conflict(Box::new(config)))); }
+            if config.active_instance!=instance_id { return Err(ApiError::new("account_changed","当前账号已变化，请重新读取并确认")); }
+            let instance=config.instances.iter().find(|a|a.id==instance_id).ok_or_else(||ApiError::new("invalid_account","账号不存在"))?;
+            let settings=instance.combat.clone();
+            let bundle=maa_adapter::combat_vision::CombatBundle::load(&engine.combat_root).map_err(native_error)?;
+            let catalog=crate::combat::script_catalog(&bundle,&engine.combat_data).map_err(native_error)?;
+            if catalog.revision!=script_revision {return Err(ApiError::new("combat_scripts_changed","战斗脚本或资源已变化，请重新读取并确认"));}
+            let (category,script_name)=if settings.dodge_only {("dodge",&settings.dodge_script)}else{("auto_battle",&settings.script)};
+            let script_root=od_core::combat_scripts::select_root(&engine.combat_data,&bundle.root.join("scripts"),category,script_name).map_err(native_error)?;
+            let script=od_core::conditional::Script::load_entry(&script_root,category,script_name,settings.use_merged).map_err(native_error)?;
+            let app_id=if settings.dodge_only {"dodge_assistant"}else{"auto_battle"};
+            let context=od_core::run_plan::RunContext { instance_id,instance_name:instance.name.clone(),group_id:"combat".into(),group_name:Some("战斗".into()),config_revision:revision,app_ids:vec![app_id.into()],rerun_completed:false,standalone:true,game_day:None };
+            let mut state=engine.state.lock().expect("运行状态锁失效");
+            if !state.sdk.ready { return Err(ApiError::new("sdk_not_ready",state.sdk.message.clone())); }
+            let window=state.window.clone().ok_or_else(||ApiError::new("not_connected","请先连接游戏窗口"))?;
+            let record=state.slot.begin_combat(settings.clone(),context).map_err(|e|ApiError::new("busy",e))?;
+            if let Err(error)=engine.history.save(&record) {
+                let mut progress=record.combat.clone().expect("战斗进度已创建");progress.state=RunState::Failed;progress.inputs_released=true;
+                let failed=state.slot.update_combat(record.id,progress,"战斗检查点保存失败，未投递输入".into()).map_err(|e|ApiError::new("invalid_run_state",e))?;
+                state.failed_save=Some(failed);state.record_error=Some(error.to_string());
+                return Err(ApiError::new("history_error","战斗检查点保存失败，请先重试保存"));
+            }
+            let run=crate::combat::CombatRun::new(record.id,settings,script).map_err(native_error)?;
+            let control=run.control();
+            let recognizer=maa_adapter::combat_vision::CombatRecognizer::new(bundle);
+            state.combat_recognition=Some(recognizer.cancellation_handle());
+            let work=CombatWork {run,recognizer,window,capture:state.capture_method.unwrap_or_default(),prepared:false,fixture:engine.fixture};
+            if engine.sender.try_send(Work::Combat(Box::new(work))).is_err() {
+                let mut progress=record.combat.clone().expect("战斗进度已创建");progress.state=RunState::Failed;progress.inputs_released=true;
+                let failed=state.slot.update_combat(record.id,progress,"工作线程不可用，未投递输入".into()).map_err(|e|ApiError::new("invalid_run_state",e))?;
+                if let Err(error)=engine.history.save(&failed) {state.failed_save=Some(failed);state.record_error=Some(error.to_string());}
+                return Err(ApiError::new("worker_unavailable","战斗工作线程不可用"));
+            }
+            state.pipeline_control=Some(control);
+            state.event(Some(record.id),"info","战斗已登记，请在启动延时内切回游戏；F9 暂停 / 继续，F10 停止".into());
+            Ok(Payload::Run(record))
+        }).await.map_err(|_|ApiError::new("combat_start_failed","战斗准备线程异常"))?
+    }
+
     fn start_coffee(
         &self,
         config: CoffeeConfig,
@@ -1156,9 +1376,12 @@ impl Engine {
                 return Err(ApiError::new("history_error", "请先重试保存运行记录"));
             }
             if state.slot.current().is_some_and(|run| {
-                run.mail
-                    .as_ref()
-                    .is_some_and(|value| !value.inputs_released)
+                run.combat.as_ref().is_some_and(|value|!value.inputs_released) ||
+                !run.daily.iter().all(|value| value.inputs_released)
+                    || run
+                        .mail
+                        .as_ref()
+                        .is_some_and(|value| !value.inputs_released)
                     || run.map.as_ref().is_some_and(|value| !value.inputs_released)
                     || run
                         .coffee
@@ -1448,8 +1671,10 @@ fn worker(
     let mut paused_map: Option<MapWork> = None;
     let mut paused_coffee: Option<CoffeeWork> = None;
     let mut paused_group: Option<Box<GroupWork>> = None;
+    let mut paused_combat: Option<Box<CombatWork>> = None;
     for command in receiver {
         match command {
+            Work::Combat(work) => paused_combat=run_combat_work(work,&paths,&state,&mut native),
             Work::Group(work) => paused_group = run_group_work(work, &paths, &state, &mut native),
             Work::Mail(work) => {
                 paused_mail = run_mail_work(work, &paths, &state, &mut native);
@@ -1461,6 +1686,13 @@ fn worker(
                 paused_map = run_map_work(work, &paths, &state, &mut native);
             }
             Work::PipelineControl(id, resume) => {
+                if paused_combat.as_ref().is_some_and(|work|work.run.id==id) {
+                    let mut work=paused_combat.take().expect("已有暂停战斗");
+                    if resume && !work.run.stopping() {
+                        if let Err(error)=work.run.resume() { work.run.progress.state=RunState::Failed;work.run.message=format!("战斗继续失败：{error:#}"); }
+                    } else {work.run.control().stop();}
+                    paused_combat=run_combat_work(work,&paths,&state,&mut native);
+                }
                 if paused_group.as_ref().is_some_and(|work| work.id() == id) {
                     let mut work = paused_group.take().expect("已有暂停应用组");
                     work.control(resume);
@@ -1805,6 +2037,7 @@ fn worker(
                 state.cancel = None;
             }
             Work::Shutdown(reply) => {
+                if let Some(work)=paused_combat.take() {work.run.control().stop();let _=run_combat_work(work,&paths,&state,&mut native);}
                 if let Some(mut work) = paused_group.take() {
                     work.control(false);
                     let _ = run_group_work(work, &paths, &state, &mut native);
@@ -1831,6 +2064,7 @@ fn worker(
         work.control(false);
         let _ = run_group_work(work, &paths, &state, &mut native);
     }
+    if let Some(work)=paused_combat.take() {work.run.control().stop();let _=run_combat_work(work,&paths,&state,&mut native);}
     if let Some(work) = paused_mail.take() {
         work.run.control().stop();
         let _ = run_mail_work(work, &paths, &state, &mut native);
@@ -1843,6 +2077,34 @@ fn worker(
         work.run.control().stop();
         let _ = run_map_work(work, &paths, &state, &mut native);
     }
+}
+
+fn run_combat_work(mut work:Box<CombatWork>, paths:&EnginePaths, shared:&Arc<Mutex<State>>, native:&mut Option<NativeSession>) -> Option<Box<CombatWork>> {
+    let result=(|| -> anyhow::Result<()> {
+        if work.run.progress.state.is_terminal() {return Ok(());}
+        if !work.prepared && !work.fixture {
+            if let Some(controller)=native.as_mut() {controller.release_inputs()?;}
+            native.take();
+            let current=od_platform::parse_game_window(&work.window.hwnd)?;
+            anyhow::ensure!(current.pid==work.window.pid&&current.width==1920&&current.height==1080,"战斗游戏窗口身份或尺寸已变化");
+            let device=work.run.progress.config.directml_device.map_or(InferenceDevice::Cpu,InferenceDevice::DirectMl);
+            *native=Some(NativeSession::for_game(&current,&work.recognizer.bundle.root,work.capture,work.run.progress.config.mode,device)?);
+        }
+        work.prepared=true;
+        let controller=native.as_mut().ok_or_else(||anyhow::anyhow!("战斗控制器未连接"))?;
+        let id=work.run.id;
+        work.run.execute(controller,&mut work.recognizer,!work.fixture,|progress|{
+            let mut state=shared.lock().expect("运行状态锁失效");
+            if progress.state==RunState::Running {let _=state.slot.update_combat(id,progress,"战斗运行中".into());}
+        })
+    })();
+    if let Err(error)=result {work.run.progress.state=RunState::Failed;work.run.message=format!("战斗失败：{error:#}");work.run.progress.inputs_released=native.as_mut().is_none_or(|controller|controller.release_inputs().is_ok());}
+    let mut state=shared.lock().expect("运行状态锁失效");
+    if let Ok(record)=state.slot.update_combat(work.run.id,work.run.progress.clone(),work.run.message.clone()) {
+        save_run(paths,&mut state,&record);
+        state.event(Some(record.id),if record.state==RunState::Failed{"error"}else{"info"},record.message);
+    }
+    if work.run.progress.state==RunState::Paused {Some(work)} else {state.pipeline_control=None;state.combat_recognition=None;None}
 }
 
 fn run_map_work(

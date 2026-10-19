@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
-import type { AccountConfig, CaptureMethod, GeneralSettings as Settings, ShortcutKey, ShortcutSettings, ShortcutStatus } from './generated/protocol';
+import type { AccountConfig, CaptureMethod, GeneralSettings as Settings, ShortcutKey, ShortcutSettings, ShortcutStatus, DownloadProxy } from './generated/protocol';
 import { generalSettingsFields, shortcutKeys } from './generated/protocol';
 import { errorMessage, request, retryShortcuts } from './bridge';
 import { captureHints } from './captureSettings';
 import { AppearanceSettings } from './AppearanceSettings';
+import { DownloadProxyFields, validProxyUrl } from './DownloadProxySettings';
 
 const integer = (value: string, min: number, max: number) => value.trim() !== '' && Number.isSafeInteger(Number(value)) && Number(value) >= min && Number(value) <= max;
 
-export function GeneralSettings({ connected, active, blocked, onLoaded, shortcuts, onShortcuts }: {
+export function GeneralSettings({ connected, active, blocked, onLoaded, shortcuts, onShortcuts, recordError }: {
   connected: boolean; active: boolean; blocked: boolean; onLoaded: (settings: Settings) => void;
   shortcuts: ShortcutStatus | null; onShortcuts: (status: ShortcutStatus) => void;
+  recordError?: string;
 }) {
   const [config, setConfig] = useState<AccountConfig | null>(null);
   const [values, setValues] = useState<Record<typeof generalSettingsFields[number]['key'], string>>({ capture_method: 'frame_pool', timeout_ms: '', start_delay_ms: '' });
@@ -18,16 +20,20 @@ export function GeneralSettings({ connected, active, blocked, onLoaded, shortcut
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [keys, setKeys] = useState<ShortcutSettings>({ pause_resume: 'f9', stop: 'f10' });
+  const [proxyMode, setProxyMode] = useState<DownloadProxy['mode']>('system');
+  const [proxyUrl, setProxyUrl] = useState('');
   const generation = useRef(0);
-  const disabled = !connected || blocked || busy || active || !config;
+  const disabled = !connected || blocked || busy || active || !config || !!recordError;
   const duplicate = keys.pause_resume !== null && keys.pause_resume === keys.stop;
-  const valid = !duplicate && generalSettingsFields.every(field => field.kind === 'select'
+  const valid = !duplicate && (proxyMode !== 'custom' || validProxyUrl(proxyUrl)) && generalSettingsFields.every(field => field.kind === 'select'
     ? field.options.some(option => option.value === values[field.key])
     : integer(values[field.key], field.min, field.max));
 
   function accept(value: AccountConfig) {
     setConfig(value); setValues({ capture_method: value.general.capture_method, timeout_ms: String(value.general.mail.timeout_ms), start_delay_ms: String(value.general.mail.start_delay_ms) });
     setKeys(value.general.shortcuts);
+    setProxyMode(value.general.download_proxy?.mode ?? 'system');
+    setProxyUrl(value.general.download_proxy?.mode === 'custom' ? value.general.download_proxy.url : '');
     onLoaded(value.general);
   }
 
@@ -50,7 +56,8 @@ export function GeneralSettings({ connected, active, blocked, onLoaded, shortcut
     const requested = generation.current;
     setBusy(true); setError(''); setMessage('');
     try {
-      const result = await request({ type: 'update_account_config', params: { revision: config.revision, change: { type: 'save_general', settings: { ...config.general, capture_method: values.capture_method as CaptureMethod, mail: { timeout_ms: Number(values.timeout_ms), start_delay_ms: Number(values.start_delay_ms) }, shortcuts: keys } } } });
+      const download_proxy: DownloadProxy = proxyMode === 'custom' ? { mode: 'custom', url: proxyUrl } : { mode: proxyMode };
+      const result = await request({ type: 'update_account_config', params: { revision: config.revision, change: { type: 'save_general', settings: { ...config.general, capture_method: values.capture_method as CaptureMethod, mail: { timeout_ms: Number(values.timeout_ms), start_delay_ms: Number(values.start_delay_ms) }, shortcuts: keys, download_proxy } } } });
       if (generation.current !== requested) return;
       if (result.type !== 'account_config') throw new Error('引擎未返回保存结果');
       accept(result.data); setMessage('通用设置已保存。截图默认值在下次连接或获取截图时应用。');
@@ -73,6 +80,7 @@ export function GeneralSettings({ connected, active, blocked, onLoaded, shortcut
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     {message && <MessageBar intent="success"><MessageBarBody>{message}</MessageBarBody></MessageBar>}
     {active && <MessageBar intent="info"><MessageBarBody>任务仍在运行或收尾，请停止任务后再修改通用设置。</MessageBarBody></MessageBar>}
+    {recordError && <MessageBar intent="warning"><MessageBarBody>运行记录尚未保存，请先到运行页重试保存，再修改通用设置。</MessageBarBody></MessageBar>}
     {!config && <Card><p>{connected ? '正在读取通用设置。读取失败时可点击“读取最新设置”重试。' : '连接桌面引擎后可读取和编辑本地设置。'}</p></Card>}
     <Card><div className="card-title"><h2>截图与邮件运行</h2>{config && <Badge appearance="outline">修订 {config.revision}</Badge>}</div>
       <div className="input-fields">
@@ -100,6 +108,7 @@ export function GeneralSettings({ connected, active, blocked, onLoaded, shortcut
         catch (reason) { if (generation.current === requested) setError(errorMessage(reason)); }
         finally { if (generation.current === requested) setBusy(false); }
       }}>重试注册快捷键</Button>
+      <DownloadProxyFields mode={proxyMode} url={proxyUrl} disabled={disabled} onMode={mode => { setProxyMode(mode); setMessage(''); }} onUrl={url => { setProxyUrl(url); setMessage(''); }}/>
       <div className="button-row"><Button appearance="primary" disabled={disabled || !valid} onClick={() => void save()}>保存通用设置</Button>{busy && <Spinner size="tiny" label="保存设置"/>}</div>
     </Card>
   </>;

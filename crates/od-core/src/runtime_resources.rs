@@ -30,6 +30,9 @@ pub struct RuntimeResourceCatalog {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RuntimeResourceRequest {
+    Discover {
+        sha256: String,
+    },
     Refresh,
     Download {
         #[ts(type = "number")]
@@ -69,6 +72,7 @@ impl RuntimeResourceRequest {
                     .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
         };
         let valid = match self {
+            Self::Discover { sha256 } => hash(sha256),
             Self::Refresh => true,
             Self::Download { bytes, sha256 } => (1..=536870912).contains(bytes) && hash(sha256),
             Self::Install { archive, sha256 } => {
@@ -169,4 +173,7 @@ pub enum RuntimeDownloadEvent {
 pub struct DesktopRuntimeResources {
     pub catalog: Option<RuntimeResourceCatalog>,
     pub job: Option<RuntimeResourceJob>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub feed: Option<crate::runtime_feed::RuntimeFeedCatalog>,
 }

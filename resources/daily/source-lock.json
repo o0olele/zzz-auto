@@ -1,0 +1,47 @@
+[
+  {
+    "path": "assets/game_data/screen_info/compendium.yml",
+    "sha256": "4653ff15c14ba24e6b6ee9556c809699fd0174fc99f39a8745f4df6e04cf4286",
+    "normalization": "crlf_to_lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/compendium_errands.yml",
+    "sha256": "924b94cf08dcc5212493207a88449e848cc5d85d22e79689c8f029aa54da8390",
+    "normalization": "crlf_to_lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/normal_world.yml",
+    "sha256": "b9b6be9ca171ea50bd02752ca5a9c32b30f7dfc151f3c2672e34e444f5b64950",
+    "normalization": "crlf_to_lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/normal_world_basic.yml",
+    "sha256": "5aa6b43829a1387babe90591959b8dfa70abc7032959ecc1c0116bfbc0704f5f",
+    "normalization": "crlf_to_lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/menu.yml",
+    "sha256": "a0bb70becd7beb9e4a7b9faf6e666c5860f50d052bcae1f53a86c8e19fde1efc",
+    "normalization": "crlf_to_lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/city_fund.yml",
+    "sha256": "5abcd6fdc197c312bf4f4f4a8b14f6ed0b8e1251a2ea7dab9feb555f36e5c61e",
+    "normalization": "crlf_to_lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/news_stand.yml",
+    "sha256": "9af12cd66fbecab18fde31ed052b237f780668c042fe7848f59dd94208f7088f",
+    "normalization": "crlf_to_lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/map.yml",
+    "sha256": "4cd93a99c45d50d3f66c4ebe33e2c05e23e3e76af4abd522da6ee68ae6e6408f",
+    "normalization": "crlf_to_lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/common_screen.yml",
+    "sha256": "6cbeb0f60ecd9b9fcc729b7bd5bcd28849b5cdcd997c9fada29e60014d6ab31f",
+    "normalization": "crlf_to_lf"
+  }
+]

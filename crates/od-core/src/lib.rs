@@ -1,10 +1,19 @@
 pub mod after_done;
+pub mod audio_dodge;
+pub mod basic_daily;
 pub mod coffee;
 pub mod coffee_approach;
 pub mod coffee_run;
+pub mod combat;
+pub mod combat_inputs;
+pub mod combat_legacy;
+pub mod combat_scripts;
+pub mod combat_vision;
+pub mod conditional;
 pub mod config;
 pub mod config_import;
 pub mod daily;
+pub mod download_proxy;
 pub mod engagement_reward;
 pub mod game_launch;
 pub mod group_run;
@@ -17,6 +26,7 @@ pub mod run_history;
 pub mod run_logs;
 pub mod run_notifications;
 pub mod run_plan;
+pub mod runtime_feed;
 pub mod runtime_resources;
 pub mod screen_sample_library;
 pub mod screen_samples;
@@ -93,6 +103,12 @@ pub struct RunRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub coffee: Option<coffee_run::CoffeeProgress>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<basic_daily::DailyProgress>>", optional)]
+    pub daily: Vec<basic_daily::DailyProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub combat: Option<combat::CombatProgress>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub group: Option<group_run::GroupProgress>,
@@ -105,6 +121,10 @@ impl RunRecord {
             && self.finished_at.is_some_and(|at| at >= self.started_at)
             && self.matches_account_context()
             && self.inputs_released()
+            && self
+                .daily
+                .iter()
+                .all(|p| p.state == mail::MailState::Succeeded && p.completed())
             && self.group.as_ref().is_some_and(|g| {
                 g.state == RunState::Succeeded
                     && g.current_index.is_none()
@@ -112,6 +132,11 @@ impl RunRecord {
                     && g.steps.iter().any(|s| s.state == GroupStepState::Succeeded)
                     && g.steps.iter().all(|s| {
                         matches!(s.state, GroupStepState::Succeeded | GroupStepState::Skipped)
+                    })
+                    && g.steps.iter().all(|s| {
+                        s.state != GroupStepState::Succeeded
+                            || !basic_daily::APP_IDS.contains(&s.app_id.as_str())
+                            || self.daily.iter().filter(|p| p.app_id == s.app_id).count() == 1
                     })
             })
             && self
@@ -131,6 +156,8 @@ impl RunRecord {
                 .is_none_or(|p| p.pipeline.released)
             && self.mail.as_ref().is_none_or(|p| p.inputs_released)
             && self.coffee.as_ref().is_none_or(|p| p.inputs_released)
+            && self.daily.iter().all(|p| p.inputs_released)
+            && self.combat.as_ref().is_none_or(|p| p.inputs_released)
             && self.map.as_ref().is_none_or(|p| p.inputs_released)
             && self
                 .group
@@ -395,16 +422,15 @@ impl RunSlot {
     ) -> Result<RunRecord, &'static str> {
         let mut schedule = group_run::GroupSchedule::new(plan)?;
         let permit = schedule.start_next(Utc::now())?.ok_or("应用组无需执行")?;
-        if plan
-            .context
-            .app_ids
-            .iter()
-            .any(|id| !matches!(id.as_str(), "email" | "coffee"))
-        {
-            return Err("当前执行器仅支持邮件和咖啡");
+        if plan.context.app_ids.iter().any(|id| {
+            !matches!(id.as_str(), "email" | "coffee")
+                && !basic_daily::APP_IDS.contains(&id.as_str())
+        }) {
+            return Err("当前分项没有可用日常执行器");
         }
         config.validate()?;
         plan.coffee_config.validate()?;
+        plan.daily_config.validate()?;
         self.begin(if plan.context.app_ids == ["email"] {
             "email"
         } else {
@@ -420,7 +446,7 @@ impl RunSlot {
         debug_assert!(schedule.permitted_app(&permit).is_none());
         self.current.as_mut().expect("运行已创建").group = Some(schedule.progress().clone());
         self.group_schedule = Some(schedule);
-        self.prepare_group_app(config, plan.coffee_config)?;
+        self.prepare_group_app(config, plan.coffee_config, plan.daily_config)?;
         Ok(self.current.as_ref().expect("运行已创建").clone())
     }
 
@@ -428,6 +454,7 @@ impl RunSlot {
         &mut self,
         mail: mail::MailConfig,
         coffee: coffee_run::CoffeeConfig,
+        daily: basic_daily::DailyConfig,
     ) -> Result<(), &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
         match self.group_schedule.as_ref().and_then(|s| s.current_app()) {
@@ -436,6 +463,9 @@ impl RunSlot {
                 let mut progress = coffee_run::CoffeeProgress::new(coffee);
                 progress.approach = Some(coffee_approach::CoffeeApproachProgress::default());
                 run.coffee = Some(progress);
+            }
+            Some(app) if basic_daily::APP_IDS.contains(&app) => {
+                run.daily.push(basic_daily::DailyProgress::new(app, daily)?);
             }
             _ => return Err("当前分项没有执行器"),
         }
@@ -450,7 +480,7 @@ impl RunSlot {
         schedule.start_next(Utc::now())?.ok_or("应用组已经结束")?;
         let run = self.current.as_mut().ok_or("当前没有任务")?;
         run.group = Some(schedule.progress().clone());
-        self.prepare_group_app(plan.mail_config, plan.coffee_config)?;
+        self.prepare_group_app(plan.mail_config, plan.coffee_config, plan.daily_config)?;
         Ok(self.current.as_ref().expect("运行存在").clone())
     }
 
@@ -659,7 +689,13 @@ impl RunSlot {
 
     pub fn request_pause(&mut self, id: Uuid) -> Result<RunRecord, &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
-        if run.id != id || (run.mail.is_none() && run.map.is_none() && run.coffee.is_none()) {
+        if run.id != id
+            || (run.mail.is_none()
+                && run.map.is_none()
+                && run.coffee.is_none()
+                && run.daily.is_empty()
+                && run.combat.is_none())
+        {
             return Err("流程运行 ID 已过期");
         }
         if !matches!(run.state, RunState::Running | RunState::Pausing) {
@@ -684,7 +720,13 @@ impl RunSlot {
 
     pub fn request_resume(&mut self, id: Uuid) -> Result<RunRecord, &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
-        if run.id != id || (run.mail.is_none() && run.map.is_none() && run.coffee.is_none()) {
+        if run.id != id
+            || (run.mail.is_none()
+                && run.map.is_none()
+                && run.coffee.is_none()
+                && run.daily.is_empty()
+                && run.combat.is_none())
+        {
             return Err("流程运行 ID 已过期");
         }
         if run.state != RunState::Paused {
@@ -695,7 +737,14 @@ impl RunSlot {
             run.group = Some(schedule.progress().clone());
         }
         run.state = RunState::Running;
+        if let Some(progress) = &mut run.combat { progress.state = RunState::Running; progress.inputs_released = false; }
         let current_app = self.group_schedule.as_ref().and_then(|s| s.current_app());
+        for progress in &mut run.daily {
+            if current_app == Some(progress.app_id.as_str()) {
+                progress.state = mail::MailState::Running;
+                progress.inputs_released = false;
+            }
+        }
         if let Some(progress) = &mut run.mail
             && (run.group.is_none() || current_app == Some("email"))
         {
@@ -712,6 +761,72 @@ impl RunSlot {
         {
             progress.state = coffee_run::CoffeeState::Running;
             progress.inputs_released = false;
+        }
+        Ok(run.clone())
+    }
+
+    pub fn update_daily(
+        &mut self,
+        id: Uuid,
+        mut progress: basic_daily::DailyProgress,
+        message: String,
+    ) -> Result<RunRecord, &'static str> {
+        use mail::MailState;
+        let run = self.current.as_mut().ok_or("当前没有任务")?;
+        if run.id != id || run.state.is_terminal() {
+            return Err("日常运行 ID 已过期或结束");
+        }
+        let schedule = self.group_schedule.as_mut().ok_or("日常运行缺少应用组")?;
+        if schedule.current_app() != Some(progress.app_id.as_str()) {
+            return Err("日常不是当前分项");
+        }
+        let previous = run
+            .daily
+            .iter_mut()
+            .find(|p| p.app_id == progress.app_id)
+            .ok_or("日常进度缺失")?;
+        if previous.config != progress.config || progress.scratch_rows > 3 {
+            return Err("日常冻结配置或进度无效");
+        }
+        if matches!(progress.state, MailState::Paused | MailState::Succeeded)
+            && !progress.inputs_released
+        {
+            return Err("日常输入尚未释放");
+        }
+        if progress.state == MailState::Succeeded && !progress.completed() {
+            return Err("日常完成证明不足");
+        }
+        if run.state == RunState::Stopping && progress.state == MailState::Succeeded {
+            progress.state = MailState::Stopped;
+        }
+        let next = match progress.state {
+            MailState::Running => run.state,
+            MailState::Paused if run.state == RunState::Stopping => RunState::Stopping,
+            MailState::Paused => RunState::Paused,
+            MailState::Succeeded => RunState::Succeeded,
+            MailState::Failed | MailState::TimedOut => RunState::Failed,
+            MailState::Stopped => RunState::Stopped,
+        };
+        if progress.state == MailState::Paused && next != RunState::Stopping {
+            schedule.acknowledge_pause(progress.inputs_released)?;
+        } else if next.is_terminal() {
+            schedule.complete_current(
+                &progress.app_id,
+                match next {
+                    RunState::Succeeded => group_run::AppOutcome::Succeeded,
+                    RunState::Stopped => group_run::AppOutcome::Stopped,
+                    _ => group_run::AppOutcome::Failed,
+                },
+                progress.inputs_released,
+                Utc::now(),
+            )?;
+        }
+        *previous = progress;
+        run.group = Some(schedule.progress().clone());
+        run.state = schedule.progress().state;
+        run.message = message;
+        if run.state.is_terminal() {
+            run.finished_at = Some(Utc::now());
         }
         Ok(run.clone())
     }
@@ -791,7 +906,7 @@ impl RunSlot {
         if self
             .current
             .as_ref()
-            .is_some_and(|run| run.group.is_some() && !run.inputs_released())
+            .is_some_and(|run| (run.group.is_some() || run.combat.is_some()) && !run.inputs_released())
         {
             return Err("上次应用组输入尚未确认释放，请先恢复遗留输入");
         }
@@ -811,6 +926,8 @@ impl RunSlot {
             mail: None,
             map: None,
             coffee: None,
+            daily: Vec::new(),
+            combat: None,
             group: None,
         };
         self.group_schedule = None;

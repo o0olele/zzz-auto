@@ -81,6 +81,8 @@ struct LegacyEnvironment {
     screenshot_method: Option<String>,
     key_start_running: Option<String>,
     key_stop_running: Option<String>,
+    proxy_type: Option<String>,
+    personal_proxy: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -299,7 +301,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     let mut instances = Vec::new();
     let mut active = Vec::new();
     let mut warnings = vec![
-        "转换账号及区服、应用组、可兼容的截图设置与任务快捷键；其余字段及 YAML 原样归档，凭据、战斗脚本和旧运行记录仍待迁移。"
+        "转换账号及区服、应用组、可兼容的截图设置、任务快捷键与下载代理；其余字段及 YAML 原样归档，凭据、战斗脚本和旧运行记录仍待迁移。"
             .into(),
     ];
     let mut general = GeneralSettings::default();
@@ -315,6 +317,26 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     );
     if let Some(env) = files.iter().find(|file| file.relative == "env.yml") {
         let environment: LegacyEnvironment = parse(env)?;
+        use crate::download_proxy::DownloadProxy;
+        general.download_proxy = match environment.proxy_type.as_deref() {
+            None => DownloadProxy::System,
+            Some("None") => DownloadProxy::Direct,
+            Some("personal") => {
+                let proxy = DownloadProxy::Custom {
+                    url: environment.personal_proxy.unwrap_or_default(),
+                };
+                if proxy.validate().is_ok() {
+                    proxy
+                } else {
+                    warnings.push("旧个人代理地址不受支持，采用系统代理；认证或其他参数只归档，请在通用设置中重新配置。".into());
+                    DownloadProxy::System
+                }
+            }
+            Some(_) => {
+                warnings.push("旧 GitHub 转发或未知代理模式仅归档，采用系统代理；不会把转发地址作为 HTTP 代理。".into());
+                DownloadProxy::System
+            }
+        };
         if environment.screenshot_method.as_deref() == Some("print_window") {
             general.capture_method = crate::CaptureMethod::PrintWindow;
         } else {
@@ -449,6 +471,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                     name: None,
                     run_policy: crate::daily::RunPolicy::default(),
                     coffee: crate::coffee_run::CoffeeConfig::default(),
+                    daily: crate::basic_daily::DailyConfig::default(),
                     apps: group
                         .app_list
                         .into_iter()
@@ -467,6 +490,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 name: None,
                 run_policy: crate::daily::RunPolicy::default(),
                 coffee: crate::coffee_run::CoffeeConfig::default(),
+                daily: crate::basic_daily::DailyConfig::default(),
                 apps: Vec::new(),
             };
             if let Some(file) = files
@@ -546,10 +570,18 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             warnings.push(format!("账号 {} 的旧通知开关仅转换为本机应用组结果提醒；应用、节点、开始通知及远程渠道设置只归档，请导入后核对。", item.idx));
             converted.insert(file.relative.clone());
         }
+        let battle_file=files.iter().find(|file|file.relative==format!("{prefix}battle_assistant.yml"));
+        let game_file=files.iter().find(|file|file.relative==format!("{prefix}game.yml"));
+        let battle:serde_json::Value=battle_file.map(parse).transpose()?.unwrap_or_default();
+        let game:serde_json::Value=game_file.map(parse).transpose()?.unwrap_or_default();
+        let (combat,combat_warnings)=crate::combat_legacy::settings(&battle,&game)?;
+        warnings.extend(combat_warnings.into_iter().map(|message|format!("账号 {}：{message}",item.idx)));
+        if let Some(file)=battle_file {converted.insert(file.relative.clone());warnings.push(format!("账号 {} 的战斗与闪避脚本名称、截图间隔、输入方式及开关已转换；脚本文件请在战斗页单独预览导入，声音默认关闭，请核对后启用。",item.idx));}
         instances.push(AccountInstance {
             id: item.idx,
             name: item.name,
             active_in_od: item.active_in_od,
+            combat,
             game_region: game_region.unwrap_or_default(),
             game_launch,
             run_notifications,
@@ -582,7 +614,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v8\0");
+    hash.update(b"zzz-auto-config-import-v10\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());
@@ -593,7 +625,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             path: format!("config/{}", file.relative),
             sha256: hex::encode(Sha256::digest(&file.bytes)),
             disposition: if file.relative == "env.yml" {
-                "已检查截图与任务快捷键；其他环境字段仅归档，待迁移"
+                "已检查截图、任务快捷键与下载代理；其他环境字段仅归档，待迁移"
             } else if file.relative.ends_with("/coffee.yml") && converted.contains(&file.relative) {
                 "已检查咖啡地点与后续计划；旧动态选单未转换，完整原文归档"
             } else if file.relative.ends_with("/game_account.yml")

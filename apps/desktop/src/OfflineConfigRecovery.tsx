@@ -5,9 +5,11 @@ import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { configRecoveryState, desktop, errorMessage, startConfigRecovery } from './bridge';
 import { captureNames } from './captureSettings';
 import { coffeeSummary } from './CoffeeSettings';
+import { dailySummary } from './DailySettings';
 import { gameLaunchSummary } from './GameLaunch';
 import { runNotificationName } from './RunNotifications';
 import { afterDoneName } from './AfterDoneBanner';
+import { downloadProxySummary } from './DownloadProxySettings';
 
 export function useConfigRecovery() {
   const [snapshot, setSnapshot] = useState<DesktopConfigRecovery>({ job: null, catalog: null, preview: null, restored: null });
@@ -65,6 +67,7 @@ function RecoveryContents({ config, apps }: { config: AccountConfig; apps: AppDe
     <p>默认截图：{captureNames[config.general.capture_method]}；邮件超时 {config.general.mail.timeout_ms} ms，启动 / 继续延时 {config.general.mail.start_delay_ms} ms。</p>
     <p>快捷键：暂停 / 继续 {config.general.shortcuts.pause_resume?.toUpperCase() ?? '关闭'}，停止 {config.general.shortcuts.stop?.toUpperCase() ?? '关闭'}。</p>
     <p>结束后动作：{afterDoneName(config.general.after_done)}；正常完成后有 60 秒可取消倒计时。</p>
+    <p>下载代理：{downloadProxySummary(config.general.download_proxy)}。</p>
     <Field label="核对恢复账号"><Select value={accountId} onChange={(_, data) => { setAccountId(Number(data.value)); setGroupId(''); }}>{config.instances.map(item => <option key={item.id} value={item.id}>{item.name}（编号 {item.id}）</option>)}</Select></Field>
     <p>区服：{gameRegionOptions.find(item => item.value === account.game_region)?.label}；参与一条龙：{account.active_in_od ? '是' : '否'}。</p>
     <p className="path-value">游戏启动：{gameLaunchSummary(account.game_launch)}。</p>
@@ -73,6 +76,7 @@ function RecoveryContents({ config, apps }: { config: AccountConfig; apps: AppDe
     <Field label="核对恢复应用组"><Select value={group.id} onChange={(_, data) => setGroupId(data.value)}>{account.groups.map(item => <option key={item.id} value={item.id}>{groupLabel(item)}</option>)}</Select></Field>
     <p>运行策略：{runPolicyOptions.find(item => item.value === group.run_policy)?.label}。</p>
     <p>咖啡设置：{coffeeSummary(group.coffee)}。</p>
+    <p>日常设置：{dailySummary(group.daily)}。</p>
     <ol aria-label="恢复后应用顺序" className="group-plan">{group.apps.map(item => <li key={item.app_id}>{apps.find(app => app.id === item.app_id)?.name ?? item.app_id} · {item.enabled ? '启用' : '禁用'}</li>)}</ol>
     <details><summary>保留的账号编号（{config.reserved_instance_ids?.length ?? 0} 个）</summary><p className="resource-path">{config.reserved_instance_ids?.join('、') || '无'}</p></details>
   </section>;

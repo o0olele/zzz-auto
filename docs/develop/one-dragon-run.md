@@ -17,7 +17,7 @@
 1. 在“账号与应用组”选择与实际游戏登录对应的当前账号，保存启用项、顺序及咖啡参数。
 2. 在总览连接游戏，从总览按钮或侧栏进入“一条龙运行”。
 3. 选择组；如只运行部分应用，开启“仅本次选择应用”并勾选。点击“预览运行计划”，核对游戏日、每日跳过、实际参数和阻止原因。
-4. 勾选本次账号和前台输入确认后启动，在启动延时内切回游戏。
+4. 如需重试本游戏日已完成的应用，开启“仅本次重新运行已完成应用”后重新预览；核对本次重跑及结束后动作，勾选账号和前台输入确认后启动，在启动延时内切回游戏。
 5. “当前任务”展示运行时账号、组、分项及输入状态，可暂停、继续或停止；“查看完整运行记录”进入历史筛选与导出。
 
 ## 仅本次选择应用
@@ -29,6 +29,18 @@
 预览和启动由同一引擎函数计算；启动再次读取修订、游戏日和本次列表，沿用账号与输入确认、运行互斥及完整资源预检。计划的 `enabled` 表示本次是否选择，运行上下文的 `app_ids` 只冻结本次列表；每日成功、历史、提醒及结束后动作均依据本次实际执行结果。全部已完成时不启动，也不触发结束后动作；有执行项时仍需在计划中确认已保存的结束后动作。
 
 勾选变化立即撤销旧计划和输入确认，迟到响应即使对应相同的最终选项也不恢复。执行期间选择冻结；切页返回从快照显示同一任务及实际应用，不能把页面默认选项当作正在运行的内容。账号页原有整组试运行继续使用省略列表的命令，旧运行资源包保持兼容。
+
+## 仅本次重新运行已完成应用
+
+运行页增加“仅本次重新运行已完成应用”。默认关闭，沿用应用组保存的运行策略；开启后，本次选择中的所有可运行应用都会执行，包括本游戏日已有成功记录的应用。可与“仅本次选择应用”一起使用，仍按保存顺序执行。刷新配置、切组、离开页面或断线会撤销临时选择，运行期间不能修改；任务自身的标记从引擎快照读取，切页返回仍可查看。
+
+预览保留长期 `run_policy` 和每项已有的成功运行 ID，单独提示“本游戏日已完成，本次重跑”，输入确认也明确包含已完成项。此操作不重置每日记录、不增加游戏内领取次数。取消开关后重新预览，恢复原有每日跳过；未知或未迁移应用、空列表、非当前账号、资源缺失、未释放输入和未保存结果继续拦截。结束后动作沿用已保存的设置，重跑正常成功后仍会按确认内容倒计时。
+
+保存为“每次运行”的组开启本次重跑时同样读取每日记录，显示此前成功证明；关闭临时重跑后仍沿用原有每次运行行为。
+
+协议升级为 v30，原预览和启动命令增加可省略的布尔值 `rerun_completed`。省略或 false 沿用原行为，null、数字及文字不作为布尔值接受。预览和启动使用同一个 `GroupRunOptions` 计划计算入口，启动重新读取修订、账号、游戏日、所选应用和每日证明。`RunContext.rerun_completed` 冻结到当前任务和持久历史中，缺少该字段的旧记录按 false 读取；false 不写入 JSON，已有配置文件不变。桌面核对返回标记，开关往返变化后旧预览与输入确认失效。账号页整组试运行保持默认行为，旧执行资源包继续兼容。
+
+重跑会新增独立运行记录，保留此前成功记录。只有本次实际成功且完整保存、输入释放的分项才能成为新每日证明；失败或停止的重跑不撤销此前成功。原有暂停、继续、停止、运行槽、恢复登记、提醒和结束后动作共用原实现。
 
 ## 验证
 
@@ -56,4 +68,26 @@ cargo build --locked -p zzz-desktop --features custom-protocol
 $env:ZZZ_AUTO_TEST_ENGINE = (Resolve-Path target/engagement-validation/debug/zzz-engine.exe).Path
 cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/engagement-validation --locked --test group_selection --test group_runs --test group_schedule --test daily_runs --test mail_pipeline -- --test-threads=1
 npm --prefix zzz-od-test/test/zzz_auto/frontend test -- one-dragon-run.spec.ts accounts.spec.ts run-history.spec.ts run-notifications.spec.ts --reporter=list
+```
+
+### 本次重跑验证
+
+2026 年 10 月 19 日新增 3 项核心及 2 项真实 SDK 模拟控制器回归。覆盖默认关闭与旧记录读取、严格布尔值、临时应用选择、原顺序与每日策略、已有成功证明、未知应用及账号 / 修订 / 游戏日 / 输入确认拦截。真实 SDK 邮件流程先正常完成，再以新运行 ID 重跑；再次失败后仍读取前一次成功证明，恢复默认运行时继续按日跳过。重跑前后配置原文字节相同；保存为“每次运行”的组开启重跑也展示已有成功证明。
+
+连同账号运行、每日计划、顺序调度、邮件、历史、结束后动作、结果提醒、宿主输入恢复及资源兼容，共 101 项 Rust 回归通过。资源兼容逐一复验 schema 1 的协议 15..30 和 schema 2 的协议 16..30，拒绝未知协议及 schema 2 的协议 15。宿主回归确认带重跑标记的请求在投递前仍登记 v6 全部恢复输入。初次管道回归误用旧版本引擎，明确指定本轮 `ZZZ_AUTO_TEST_ENGINE` 后通过；结果提醒入口同样补齐该测试变量支持，没有放宽版本校验。
+
+新增 5 项界面用例，连同运行页原有 23 项、账号 37 项、历史 7 项及提醒 8 项，共 80 项通过。覆盖已完成项重跑、本次选应用组合、配置不变、确认文案、运行中冻结、同一任务切页回看、开关往返迟到响应、刷新 / 换组 / 离页 / 断线重置、返回计划标记不符、未知应用及未保存结束后动作拦截。明暗主题及 960 像素宽布局截图已检查，保存在 `artifacts/m3-rerun-completed-{light,dark}.png`。
+
+生产前端、配套引擎及包含静态前端的原生 debug 桌面构建、主 workspace 与本次相关测试的严格 Clippy、主仓格式检查通过。前端保留已有大于 500KB 单块提示。引擎使用 `target/engagement-validation`，桌面使用 `target/rerun-validation`；随附引擎与新构建引擎 SHA-256 一致。本轮使用临时目录、模拟控制器及隔离浏览器，没有操作真实游戏或修改真实账号配置；WebView2 和游戏重跑仍待实机验收，咖啡与活跃度领取素材缺口继续保留。
+
+额外执行独立测试仓的全量 `cargo test --no-run` 未通过：既有 `desktop_runtime_resources.rs` 仍使用旧版 `ResourceManager::new` / `install` 和缺少 `archive` 的安装请求，尚未适配此前的宿主运行时与安装接口调整。这些文件及接口不属于本次变更；全量编译不计为通过，本次相关测试单独编译及运行通过。
+
+```powershell
+$env:ZZZ_AUTO_TEST_ENGINE = (Resolve-Path target/engagement-validation/debug/zzz-engine.exe).Path
+cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/engagement-validation --locked --test group_selection --test group_runs --test group_schedule --test daily_runs --test mail_pipeline --test run_history --test after_done --test run_notifications -- --test-threads=1
+cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/engagement-validation --locked --test input_recovery account_group_arms_union_journal_before_send_and_allows_readonly_queries -- --test-threads=1
+cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/engagement-validation --locked --test runtime_resources shortcut_protocol_preserves_existing_resource_protocols_and_rejects_unknown_versions -- --test-threads=1
+npm --prefix zzz-od-test/test/zzz_auto/frontend test -- one-dragon-run.spec.ts accounts.spec.ts run-history.spec.ts run-notifications.spec.ts --reporter=list
+npm --prefix apps/desktop run build
+cargo build --locked --target-dir target/rerun-validation -p zzz-desktop --features custom-protocol
 ```

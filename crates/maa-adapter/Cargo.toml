@@ -18,6 +18,7 @@ sha2.workspace = true
 hex.workspace = true
 walkdir.workspace = true
 base64.workspace = true
+imageproc = { version = "=0.27.0", default-features = false }
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "load-dynamic", "directml"] }
 
 [target.'cfg(windows)'.dependencies]

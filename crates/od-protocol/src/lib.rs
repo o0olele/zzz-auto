@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 use uuid::Uuid;
 
-// v29 接通应用组本次选择；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 29;
+// v34 接通 Rust 战斗；桌面与引擎须成套使用。
+pub const PROTOCOL_VERSION: u32 = 34;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -43,6 +43,18 @@ pub struct Request {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "params", rename_all = "snake_case")]
 pub enum Command {
+    CombatScripts,
+    StartCombat {
+        instance_id: u32,
+        revision: u32,
+        script_revision:String,
+        #[serde(default)]
+        allow_input: bool,
+        #[serde(default)]
+        confirm_account: bool,
+    },
+    PreviewCombatScriptImport {source:String},
+    ApplyCombatScriptImport {source:String,preview_id:String},
     LaunchGame {
         instance_id: u32,
         revision: u32,
@@ -59,12 +71,31 @@ pub enum Command {
     CancelModelResources {
         job_id: Uuid,
     },
+    PreviewStandalone {
+        instance_id: u32,
+        group_id: String,
+        app_id: String,
+    },
+    StartStandaloneTrial {
+        instance_id: u32,
+        group_id: String,
+        app_id: String,
+        revision: u32,
+        game_day: String,
+        #[serde(default)]
+        allow_input: bool,
+        #[serde(default)]
+        confirm_account: bool,
+    },
     PreviewGroup {
         instance_id: u32,
         group_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         app_ids: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        #[ts(as = "Option<bool>", optional)]
+        rerun_completed: bool,
     },
     StartGroupTrial {
         instance_id: u32,
@@ -74,6 +105,9 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         app_ids: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        #[ts(as = "Option<bool>", optional)]
+        rerun_completed: bool,
         #[serde(default)]
         allow_input: bool,
         #[serde(default)]
@@ -178,6 +212,8 @@ pub enum Command {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum Payload {
+    CombatScripts(od_core::combat::CombatScriptCatalog),
+    CombatScriptImport(od_core::combat_scripts::CombatScriptImportPreview),
     GameLaunched(od_core::game_launch::GameLaunchResult),
     ModelResources(od_core::model_resources::ModelResources),
     GroupPlan(od_core::run_plan::GroupPlan),
@@ -257,7 +293,11 @@ pub fn shortcut_command(
     match action {
         ShortcutAction::Stop => Some(Command::Stop { run_id }),
         ShortcutAction::PauseResume
-            if run.mail.is_some() || run.map.is_some() || run.coffee.is_some() =>
+            if run.mail.is_some()
+                || run.map.is_some()
+                || run.coffee.is_some()
+                || run.combat.is_some()
+                || !run.daily.is_empty() =>
         {
             match run.state {
                 RunState::Running => Some(Command::Pause { run_id }),

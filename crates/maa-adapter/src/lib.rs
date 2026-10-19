@@ -1,5 +1,10 @@
+mod basic_daily;
 mod coffee;
+pub use basic_daily::validate_basic_daily_bundle;
 mod coffee_run;
+mod combat_input;
+pub mod combat_contours;
+pub mod combat_vision;
 mod engagement_reward;
 pub use coffee_run::{
     CoffeeRunObservation, validate_coffee_approach_bundle, validate_coffee_run_bundle,
@@ -121,6 +126,7 @@ pub struct NativeSession {
     resource_root: PathBuf,
     map_bundle: Option<PathBuf>,
     coffee_bundle: Option<PathBuf>,
+    daily_bundle: Option<PathBuf>,
     inference_device: InferenceDevice,
     raw_cpu_threads: usize,
     controller: fixture::NativeController,
@@ -262,6 +268,7 @@ impl NativeSession {
             resource_root: path,
             map_bundle: None,
             coffee_bundle: None,
+            daily_bundle: None,
             inference_device: device,
             raw_cpu_threads: raw_inference::DEFAULT_RAW_CPU_THREADS,
             controller,

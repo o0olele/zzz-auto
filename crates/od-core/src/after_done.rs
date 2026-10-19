@@ -100,7 +100,14 @@ impl AfterDoneTracker {
         if action == AfterDoneAction::None {
             return Ok(());
         }
-        if run.state != RunState::Running || !run.matches_account_context() || run.group.is_none() {
+        if run.state != RunState::Running
+            || !run.matches_account_context()
+            || run.group.is_none()
+            || run
+                .context
+                .as_ref()
+                .is_some_and(|context| context.standalone)
+        {
             return Err("只能为本次启动的应用组登记结束后动作");
         }
         self.session = Some(session);

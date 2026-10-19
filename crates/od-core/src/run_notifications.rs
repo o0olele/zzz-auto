@@ -164,17 +164,33 @@ impl RunNotificationBook {
             match run.state {
                 RunState::Succeeded if run.completed_group_successfully() => (
                     RunNoticeLevel::Success,
-                    "应用组已完成",
-                    "应用组已正常完成，运行记录已保存，输入已释放。",
+                    if watch.context.standalone {
+                        "独立应用已完成"
+                    } else {
+                        "应用组已完成"
+                    },
+                    if watch.context.standalone {
+                        "独立应用已正常完成，运行记录已保存，输入已释放。"
+                    } else {
+                        "应用组已正常完成，运行记录已保存，输入已释放。"
+                    },
                 ),
                 RunState::Failed => (
                     RunNoticeLevel::Error,
-                    "应用组运行失败",
+                    if watch.context.standalone {
+                        "独立应用运行失败"
+                    } else {
+                        "应用组运行失败"
+                    },
                     "运行记录已保存，输入已释放。请查看运行记录中的失败原因。",
                 ),
                 RunState::Stopped => (
                     RunNoticeLevel::Info,
-                    "应用组已停止",
+                    if watch.context.standalone {
+                        "独立应用已停止"
+                    } else {
+                        "应用组已停止"
+                    },
                     "任务已主动停止，运行记录已保存，输入已释放。",
                 ),
                 _ => (

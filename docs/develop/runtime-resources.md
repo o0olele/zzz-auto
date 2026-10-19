@@ -1,12 +1,12 @@
 # M3 运行资源包首批
 
-本批把当前邮件、固定地图和独立咖啡试运行、健康检查与应用清单组成独立版本的完整运行资源包。模型下载仍只准备来源缓存；运行资源包使用已转换并校验的资源。咖啡仍为实机待验收的诊断入口，战斗模型和其他未迁移应用不因此开放。
+当前完整运行资源包包含邮件、固定地图、咖啡和首批日常执行包、健康检查与应用清单。模型下载仍只准备来源缓存；运行资源包使用已转换并校验的资源。五项首批日常可从应用组和独立应用入口试运行，正式可用标记及游戏验收仍按路线图保留。
 
 ## 版本与启用规则
 
-结束后动作接入后的当前桌面协议为 v26，资源内容未变。兼容 schema 1 / 协议 15..25 及 schema 2 / 协议 16..25，当前 v26 包按对应 schema 校验；未知协议及咖啡包协议 15 继续拒绝。原有包无需为结束后动作重新下载或打包。
+当前桌面协议为 v33。兼容 schema 1 / 协议 15..33、schema 2 / 协议 16..33 和 schema 3 / 协议 33；未知协议及低于各格式下限的包拒绝。schema 3 在原 26 个邮件 / 地图 / 咖啡文件上增加 12 个首批日常文件，共 38 个内容文件及一个总清单。旧包仍可运行其已有应用，缺少新日常包时明确拒绝后三项，不混读另一版本。下载代理规则见[说明](download-proxy.md)。
 
-原生引擎 CLI 提供 `runtime-resources pack|download|check|install|status|activate|rollback`。本地 ZIP 可通过 CLI 或桌面导入，安装必须给出预期 ZIP SHA-256；桌面和 CLI 均支持显式 HTTPS 下载，联网发现版本及签名发布后续实现。包记录内容版本、引擎、SDK、Rust 绑定、通信协议和资源格式，当前要求与本引擎精确匹配。逐文件校验之外，继续使用邮件和地图的固定流程及模型校验；健康检查和应用清单与编译时内容一致。
+原生引擎 CLI 提供 `runtime-resources pack|release-feed|discover|download|check|install|status|activate|rollback`。桌面和 CLI 均支持 HTTPS 清单发现及下载，本地 ZIP 安装也必须给出预期 SHA-256。包记录内容版本、引擎、SDK、Rust 绑定、通信协议和资源格式，按上述协议范围及当前引擎 / SDK / 绑定组合校验。逐文件校验之外，邮件、地图、咖啡和新日常的固定流程、模板及模型均复验；健康检查和应用清单与编译时内容一致。以下旧版本段落保留当时的验证范围，当前规则以本节为准。
 
 数据目录的 `runtime-resources/versions/<清单哈希>/` 保存完整版本，`selection.json` 单次替换当前与上一版本。安装仅准备版本，不自动启用；相同清单重复安装只校验复用。内容版本只是展示值，目录由清单哈希决定；已存在但损坏的版本报错并保留，不覆盖。ZIP 不允许额外条目、重复路径、目录链接、越界路径或原生二进制。
 
@@ -16,7 +16,7 @@
 
 ## 使用
 
-先用既有 `mail-bundle`、`map-bundle` 生成转换资源，再在工程根目录运行：
+先用 `mail-bundle`、`map-bundle`、`coffee-run-bundle` 和 `basic-daily-bundle` 生成转换资源（桌面准备脚本自动处理），再在工程根目录运行：
 
 ```powershell
 cargo run -p zzz-engine --locked -- runtime-resources pack --source resources --version m3-preview-1 --output artifacts/runtime-m3-preview-1.zip
@@ -32,6 +32,23 @@ cargo run -p zzz-engine --locked -- --data <绝对数据目录> runtime-resource
 ## 验证范围
 
 独立测试覆盖真实生成资源打包、ZIP 与逐文件校验、无 SDK 检查、重复安装、版本切换、回滚到随程序资源、损坏与不兼容包、额外或重复条目、目录联接、引擎所有权冲突、保存失败保留选择，以及引擎启动实际选择资源。所有导入在临时目录中进行；不改变用户当前选择或操作真实游戏。
+
+## 资源版本发现
+
+桌面“运行资源 → 发现资源版本”接收发布方的 HTTPS 清单地址及清单 SHA-256。原生工作进程按启动时冻结的代理读取最多 512 KiB，核对完整哈希并解析最多 64 个版本；界面显示每项内容版本、大小、ZIP 哈希与兼容结果。不兼容项不可下载，刷新清单使旧选择失效。选定版本后冻结私有下载来源和发布元数据，复验 ZIP 的实际清单版本，校验通过后才显示可安装结果；安装、启用仍分别操作。
+
+发布清单格式为 schema 1，`releases` 的每项包含 `url` 和 `release`。`release` 字段为 `version`、`engine_version`、`sdk_version`、`binding_version`、`protocol_version`、`resource_schema`、`bytes`、`sha256`。拒绝重复版本 / ZIP 哈希、未知字段、无效大小、带认证或 fragment 的 URL。引擎、SDK、绑定和协议兼容规则与安装器共用，不能通过修改清单绕过实际包校验。
+
+发布者可从已完整校验的 ZIP 生成单版本清单，已有输出不覆盖；随后发布清单和 ZIP，并向用户提供清单的 SHA-256。也可按相同结构维护多版本清单，修改后需重新计算其哈希。
+
+```powershell
+target/debug/zzz-engine.exe runtime-resources release-feed --archive artifacts/runtime-m3-preview-1.zip --sha256 <ZIP哈希> --url https://example.org/runtime-m3-preview-1.zip --output artifacts/releases-m3.json
+target/debug/zzz-engine.exe runtime-resources discover --url https://example.org/releases-m3.json --sha256 <清单生成输出的哈希> --proxy system
+```
+
+桌面快照只包含清单哈希和公开版本元数据，URL 与代理仅通过子进程标准输入传递。取消、退出或父进程断开后等待原生收尾，不发布迟到清单；页面切换后可查询终态。任务与配置恢复、资源切换及退出协调。清单 SHA-256 校验已实现；数字签名、正式资源服务器和发行凭据由 M7 发布工作处理。
+
+独立 `runtime_feed` 回归覆盖大小限制、哈希 / URL / 重复项拒绝、兼容范围、取消和额外输出、私有来源不进入快照、过期选择、冻结发布信息，以及真实 schema 3 ZIP 的清单生成、拒绝覆盖和托管缓存下载实际版本复验。`runtime-feed.spec.ts` 覆盖桌面预览、表单校验、兼容选择、跨页取消、错误和重试。测试不连接正式发布服务。
 
 ```powershell
 cargo build -p zzz-engine --locked

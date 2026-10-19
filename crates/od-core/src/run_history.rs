@@ -237,6 +237,14 @@ impl RunStore {
                                     a.phase == crate::coffee_approach::CoffeeApproachPhase::Done
                                 })
                         }),
+                        app if crate::basic_daily::APP_IDS.contains(&app) => {
+                            record.daily.iter().filter(|p| p.app_id == app).count() == 1
+                                && record.daily.iter().any(|p| {
+                                    p.app_id == app
+                                        && p.state == MailState::Succeeded
+                                        && p.completed()
+                                })
+                        }
                         _ => false,
                     };
                     if proof {

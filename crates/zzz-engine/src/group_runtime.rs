@@ -3,6 +3,17 @@ use super::*;
 enum GroupAppWork {
     Mail(MailWork),
     Coffee(CoffeeWork),
+    Daily(DailyWork),
+}
+
+struct DailyWork {
+    run: Box<crate::basic_daily::DailyRun>,
+    window: WindowInfo,
+    capture: CaptureMethod,
+    fixture: bool,
+    prepared: bool,
+    events: Option<maa_adapter::PipelineEvents>,
+    dropped: u64,
 }
 
 pub(super) struct GroupWork {
@@ -62,6 +73,26 @@ impl GroupWork {
                     control,
                 )
             }
+            app if od_core::basic_daily::APP_IDS.contains(&app) => {
+                let run = Box::new(crate::basic_daily::DailyRun::new(
+                    record.id,
+                    app,
+                    self.plan.daily_config,
+                )?);
+                let control = run.control();
+                (
+                    GroupAppWork::Daily(DailyWork {
+                        run,
+                        window: self.window.clone(),
+                        capture: self.capture,
+                        fixture: self.fixture,
+                        prepared: false,
+                        events: None,
+                        dropped: 0,
+                    }),
+                    control,
+                )
+            }
             _ => anyhow::bail!("分项没有执行器"),
         };
         self.current = Some(work);
@@ -88,6 +119,18 @@ impl GroupWork {
                 {
                     if let Err(error) = work.run.resume() {
                         work.run.progress.state = CoffeeState::Failed;
+                        work.run.message = error.to_string();
+                    }
+                } else {
+                    work.run.control().stop();
+                }
+            }
+            Some(GroupAppWork::Daily(work)) => {
+                if resume
+                    && work.run.interrupt_requested() != Some(od_core::pipeline::Interrupt::Stop)
+                {
+                    if let Err(error) = work.run.resume() {
+                        work.run.progress.state = MailState::Failed;
                         work.run.message = error.to_string();
                     }
                 } else {
@@ -147,7 +190,7 @@ impl Engine {
         state.event(
             Some(record.id),
             "info",
-            "开始应用组试运行，按保存顺序执行邮件和咖啡".into(),
+            "开始应用组试运行，按保存顺序执行首批日常".into(),
         );
         Ok(Payload::Run(record))
     }
@@ -172,6 +215,12 @@ fn fail_current(state: &mut State, message: String) -> Option<RunRecord> {
             p.state = CoffeeState::Failed;
             p.inputs_released = true;
             state.slot.update_coffee(record.id, p, message)
+        }
+        Some(app) if od_core::basic_daily::APP_IDS.contains(&app) => {
+            let mut p = record.daily.iter().find(|p| p.app_id == app)?.clone();
+            p.state = MailState::Failed;
+            p.inputs_released = true;
+            state.slot.update_daily(record.id, p, message)
         }
         _ => state.slot.finish(record.id, RunState::Failed, message),
     };
@@ -203,6 +252,11 @@ pub(super) fn run_group_work(
                             &paths.resources.join("generated/map-preview"),
                         )?;
                     }
+                    app if od_core::basic_daily::APP_IDS.contains(&app) => {
+                        maa_adapter::validate_basic_daily_bundle(
+                            &paths.resources.join("generated/basic-daily"),
+                        )?;
+                    }
                     _ => anyhow::bail!("分项没有执行器"),
                 }
             }
@@ -229,6 +283,9 @@ pub(super) fn run_group_work(
                 }
                 GroupAppWork::Coffee(app) => {
                     run_coffee_work(app, paths, shared, native).map(GroupAppWork::Coffee)
+                }
+                GroupAppWork::Daily(app) => {
+                    run_daily_work(app, paths, shared, native).map(GroupAppWork::Daily)
                 }
             };
             if work.current.is_some() {
@@ -286,5 +343,137 @@ pub(super) fn run_group_work(
                 return None;
             }
         }
+    }
+}
+
+fn run_daily_work(
+    mut work: DailyWork,
+    paths: &EnginePaths,
+    shared: &Arc<Mutex<State>>,
+    native: &mut Option<NativeSession>,
+) -> Option<DailyWork> {
+    let result = (|| -> anyhow::Result<()> {
+        if work.run.progress.state.is_terminal() {
+            return Ok(());
+        }
+        if !work.prepared && work.run.interrupt_requested().is_some() {
+            if let Some(controller) = native.as_mut() {
+                controller.release_inputs()?;
+            }
+            work.run.acknowledge_idle();
+            return Ok(());
+        }
+        if !work.prepared {
+            let bundle = maa_adapter::validate_basic_daily_bundle(
+                &paths.resources.join("generated/basic-daily"),
+            )?;
+            if work.fixture {
+                native
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("离线日常控制器未准备"))?
+                    .load_basic_daily_bundle(&bundle)?;
+            } else {
+                if let Some(controller) = native.as_mut() {
+                    controller.release_inputs()?;
+                }
+                native.take();
+                let current = od_platform::parse_game_window(&work.window.hwnd)?;
+                anyhow::ensure!(
+                    current.pid == work.window.pid
+                        && current.width == 1920
+                        && current.height == 1080,
+                    "游戏窗口身份或尺寸已变化，请重连"
+                );
+                let mut controller = NativeSession::for_game(
+                    &current,
+                    &paths.resources,
+                    work.capture,
+                    InputMode::Foreground,
+                    InferenceDevice::Cpu,
+                )?;
+                controller.load_basic_daily_bundle(&bundle)?;
+                *native = Some(controller);
+            }
+            work.events = Some(
+                native
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("日常控制器未连接"))?
+                    .pipeline_events(EVENT_CAPACITY)?,
+            );
+            work.prepared = true;
+        }
+        let id = work.run.id;
+        let events = work.events.as_ref();
+        let publish = |progress| -> anyhow::Result<()> {
+            let mut state = shared.lock().expect("运行状态锁失效");
+            if let Some(events) = events {
+                for event in events.receiver.try_iter() {
+                    state.event(
+                        Some(id),
+                        "debug",
+                        format!("{} {}", event.message, event.node.as_deref().unwrap_or("")),
+                    );
+                }
+            }
+            let record = state
+                .slot
+                .update_daily(id, progress, "日常流程执行中".into())
+                .map_err(anyhow::Error::msg)?;
+            save_run(paths, &mut state, &record);
+            anyhow::ensure!(
+                state.record_error.is_none(),
+                "日常检查点未保存，未投递后续输入"
+            );
+            Ok(())
+        };
+        work.run.execute(
+            native
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("日常控制器未连接"))?,
+            !work.fixture,
+            publish,
+        )
+    })();
+    if let Err(error) = result {
+        work.run.progress.state = MailState::Failed;
+        work.run.message = format!("日常流程失败：{error:#}");
+        work.run.progress.inputs_released = native
+            .as_mut()
+            .is_none_or(|controller| controller.release_inputs().is_ok());
+    }
+    let mut state = shared.lock().expect("运行状态锁失效");
+    if let Some(events) = &work.events {
+        for event in events.receiver.try_iter() {
+            state.event(
+                Some(work.run.id),
+                "debug",
+                format!("{} {}", event.message, event.node.as_deref().unwrap_or("")),
+            );
+        }
+        let dropped = events.dropped();
+        state.dropped += dropped.saturating_sub(work.dropped);
+        work.dropped = dropped;
+    }
+    if let Ok(record) = state.slot.update_daily(
+        work.run.id,
+        work.run.progress.clone(),
+        work.run.message.clone(),
+    ) {
+        save_run(paths, &mut state, &record);
+        state.event(
+            Some(record.id),
+            if record.state == RunState::Failed {
+                "error"
+            } else {
+                "info"
+            },
+            record.message,
+        );
+    }
+    if work.run.progress.state == MailState::Paused {
+        Some(work)
+    } else {
+        state.pipeline_control = None;
+        None
     }
 }

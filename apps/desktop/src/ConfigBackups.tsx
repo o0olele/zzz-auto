@@ -5,7 +5,9 @@ import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { errorMessage, request } from './bridge';
 import { captureNames } from './captureSettings';
 import { coffeeSummary } from './CoffeeSettings';
+import { dailySummary } from './DailySettings';
 import { afterDoneName } from './AfterDoneBanner';
+import { downloadProxySummary } from './DownloadProxySettings';
 import { gameLaunchSummary } from './GameLaunch';
 import { runNotificationName } from './RunNotifications';
 
@@ -37,6 +39,7 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     <p>邮件超时：{current.general.mail.timeout_ms} → {backup.general.mail.timeout_ms} ms；启动 / 继续延时：{current.general.mail.start_delay_ms} → {backup.general.mail.start_delay_ms} ms。</p>
     <p>快捷键：{keys(current)} → {keys(backup)}。</p>
     <p>结束后动作：{afterDoneName(current.general.after_done)} → {afterDoneName(backup.general.after_done)}。</p>
+    <p>下载代理：{downloadProxySummary(current.general.download_proxy)} → {downloadProxySummary(backup.general.download_proxy)}。</p>
     <Field label="核对账号"><Select value={accountId} onChange={(_, data) => setAccountId(Number(data.value))}>{ids.map(id => {
       const old = current.instances.find(item => item.id === id); const next = backup.instances.find(item => item.id === id);
       return <option key={id} value={id}>{next?.name ?? old?.name}（编号 {id} · {changeName(old, next)}）</option>;
@@ -51,6 +54,7 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     })}</Select></Field>
     <p>组名：{oldGroup ? label(oldGroup) : '无此组'} → {newGroup ? label(newGroup) : '无此组'}；运行策略：{policy(oldGroup)} → {policy(newGroup)}。</p>
     <p>咖啡设置：{oldGroup ? coffeeSummary(oldGroup.coffee) : '无此组'} → {newGroup ? coffeeSummary(newGroup.coffee) : '无此组'}。</p>
+    <p>日常设置：{oldGroup ? dailySummary(oldGroup.daily) : '无此组'} → {newGroup ? dailySummary(newGroup.daily) : '无此组'}。</p>
     <div className="input-fields">{[{ group: oldGroup, title: '当前应用顺序' }, { group: newGroup, title: '恢复后应用顺序' }].map(({ group, title }) => {
       return <div role="group" aria-label={title} key={title}><h3>{title}</h3>{group ? <ol className="group-plan">{group.apps.map(item => <li key={item.app_id}>{apps.find(app => app.id === item.app_id)?.name ?? item.app_id} · {item.enabled ? '启用' : '禁用'}</li>)}</ol> : <p>无此组</p>}</div>;
     })}</div>

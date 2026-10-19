@@ -193,6 +193,12 @@ impl EngineSession {
             }
         );
         let input = match &command {
+            Command::StartCombat {instance_id,revision,allow_input:true,confirm_account:true,..} => {
+                let Payload::AccountConfig(saved)=self.request_raw(Command::AccountConfig).await? else {return Err(offline("无法读取战斗账号配置"));};
+                if saved.revision!=*revision||saved.active_instance!=*instance_id {return Err(ApiError::new("account_changed","战斗账号或配置修订已变化，请重新读取"));}
+                let settings=&saved.instances.iter().find(|a|a.id==*instance_id).ok_or_else(||offline("当前战斗账号缺失"))?.combat;
+                Some(settings.recovery_inputs().map_err(|e|ApiError::new("invalid_input",e))?)
+            },
             Command::StartCoffeeFromWorld {
                 config,
                 allow_input: true,
@@ -231,7 +237,10 @@ impl EngineSession {
             }
             Command::StartGroupTrial {
                 allow_input: true, ..
-            } => Some(od_core::group_run::recovery_inputs()),
+            }
+            | Command::StartStandaloneTrial {
+                allow_input: true, ..
+            } => Some(od_core::basic_daily::recovery_inputs()),
             Command::StartInputProbe {
                 config,
                 allow_input: true,
@@ -266,8 +275,11 @@ impl EngineSession {
                 .window
                 .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
             let plan = od_platform::InputRecoveryPlan {
-                version: if matches!(command, Command::StartGroupTrial { .. }) {
-                    6
+                version: if matches!(command,Command::StartCombat {..}) {8} else if matches!(
+                    command,
+                    Command::StartGroupTrial { .. } | Command::StartStandaloneTrial { .. }
+                ) {
+                    7
                 } else if matches!(command, Command::StartCoffeeFromWorld { .. }) {
                     5
                 } else if matches!(command, Command::StartCoffee { .. }) {
@@ -299,15 +311,19 @@ impl EngineSession {
             if !snapshot.run.as_ref().is_some_and(|run| {
                 run.id == run_id
                     && run.state == od_core::RunState::Paused
-                    && (run.mail.is_some() || run.map.is_some() || run.coffee.is_some())
+                    && (run.mail.is_some()
+                        || run.map.is_some()
+                        || run.coffee.is_some()
+                        || run.combat.is_some()
+                        || !run.daily.is_empty())
             }) {
                 return Err(ApiError::new(
                     "invalid_run_state",
                     "流程尚未确认暂停或运行 ID 已过期",
                 ));
             }
-            let version = if snapshot.run.as_ref().is_some_and(|run| run.group.is_some()) {
-                6
+            let version = if snapshot.run.as_ref().is_some_and(|run|run.combat.is_some()) {8} else if snapshot.run.as_ref().is_some_and(|run| run.group.is_some()) {
+                7
             } else if snapshot
                 .run
                 .as_ref()
@@ -348,7 +364,9 @@ impl EngineSession {
                 | Command::StartModelResources { .. }
                 | Command::CancelModelResources { .. }
                 | Command::AccountConfig
+                | Command::CombatScripts
                 | Command::PreviewGroup { .. }
+                | Command::PreviewStandalone { .. }
                 | Command::RunHistory { .. }
                 | Command::QueryRunHistory { .. }
                 | Command::ExportRunHistory { .. }

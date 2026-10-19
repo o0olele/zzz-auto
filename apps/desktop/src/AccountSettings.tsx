@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
 import type { AccountConfig, AppDefinition, AppGroup, Command, ConfigChange, GameRegion, RunPolicy, Snapshot } from './generated/protocol';
-import { coffeeDefaultConfig, gameRegionOptions, runPolicyOptions } from './generated/protocol';
+import { coffeeDefaultConfig, gameRegionOptions, runPolicyOptions, trialAppOptions } from './generated/protocol';
+import { DailySettings } from './DailySettings';
 import { errorMessage, request } from './bridge';
 import { GroupRuns } from './GroupRuns';
 import { ConfigImport } from './ConfigImport';
@@ -102,6 +103,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       else if (change.type === 'reorder_instances') setMessage('账号顺序已保存，当前账号保持不变。');
       else if (change.type === 'reorder_groups') setMessage('应用组顺序已保存。');
       else if (change.type === 'save_coffee') setMessage('咖啡设置已保存，可在原生诊断中采用所选组参数。');
+      else if (change.type === 'save_daily') setMessage('日常设置已保存。');
       else if (change.type === 'save_game_launch') setMessage('游戏启动设置已保存，可在总览核对当前账号后手动启动。');
       else if (change.type === 'save_run_notifications') setMessage('运行提醒设置已保存，下次由桌面启动的应用组采用该设置。');
       if (change.type === 'create_group') {
@@ -214,13 +216,14 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
           const app = apps.find(app => app.id === item.app_id);
           return <div className="account-app" key={item.app_id} data-app-id={item.app_id}>
             <Checkbox label={app?.name ?? item.app_id} checked={item.enabled} disabled={disabled} onChange={(_, data) => void update({ type: 'save_group', instance_id: instance.id, group_id: group.id, apps: group.apps.map((entry, i) => i === index ? { ...entry, enabled: data.checked === true } : entry) })}/>
-            <Badge appearance="outline">{!app ? '未注册' : app.implemented ? '可运行' : '待迁移'}</Badge>
+            <Badge appearance="outline">{!app ? '未注册' : app.implemented ? '可运行' : trialAppOptions.some(option => option.id === app.id) ? '可试运行' : '待迁移'}</Badge>
             <Button size="small" disabled={disabled || index === 0} aria-label={`上移 ${app?.name ?? item.app_id}`} onClick={() => move(index, -1)}>上移</Button>
             <Button size="small" disabled={disabled || index === group.apps.length - 1} aria-label={`下移 ${app?.name ?? item.app_id}`} onClick={() => move(index, 1)}>下移</Button>
           </div>;
         })}</div>
       </Card>}
       {instance && group && <CoffeeSettings key={`${instance.id}/${group.id}/${config.revision}`} settings={group.coffee ?? coffeeDefaultConfig} disabled={disabled} onSave={settings => void update({ type: 'save_coffee', instance_id: instance.id, group_id: group.id, settings })}/>}
+      {instance && group && <DailySettings key={`daily/${instance.id}/${group.id}/${config.revision}`} settings={group.daily} disabled={disabled} onSave={settings => void update({ type: 'save_daily', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <GroupRuns instanceId={instance.id} groupId={group.id} revision={config.revision} snapshot={snapshot} connected={connected} blocked={blocked || importBusy || backupBusy || busy} onCommand={onCommand}/>}
     </>}
   </>;

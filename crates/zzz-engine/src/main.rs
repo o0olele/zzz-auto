@@ -90,6 +90,39 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    /// 使用当前账号保存的战斗设置，Ctrl+C 请求停止与输入收尾。
+    Combat {
+        #[arg(long)]
+        hwnd: String,
+        #[arg(long)]
+        instance_id: u32,
+        #[arg(long)]
+        allow_input: bool,
+        #[arg(long)]
+        cancel_after_ms: Option<u64>,
+    },
+    CombatBundleCheck {
+        #[arg(long,default_value="resources/generated/combat")]
+        bundle:PathBuf,
+    },
+    /// 固定截图的战斗状态检查，不发送游戏输入。
+    CombatInspect {
+        #[arg(long,default_value="resources/generated/combat")]
+        bundle:PathBuf,
+        #[arg(long)]
+        image:PathBuf,
+        #[arg(long)]
+        dodge_only:bool,
+    },
+    /// 只回放调度与脚本动作选择，不调用 SDK。
+    CombatReplay {
+        #[arg(long)]
+        scripts:PathBuf,
+        #[arg(long)]
+        script:String,
+        #[arg(long)]
+        events:PathBuf,
+    },
     /// 引擎无法读取账号配置时的离线备份恢复；必须显式指定 --data。
     ConfigRecovery {
         #[command(subcommand)]
@@ -163,6 +196,10 @@ enum Action {
         bundle: PathBuf,
         #[arg(long)]
         image: PathBuf,
+    },
+    BasicDailyBundleCheck {
+        #[arg(long)]
+        bundle: PathBuf,
     },
     CoffeeRunBundleCheck {
         #[arg(long)]
@@ -278,6 +315,8 @@ enum ModelResourceAction {
         models: Vec<String>,
         #[arg(long)]
         offline: bool,
+        #[arg(long, default_value = "system")]
+        proxy: String,
     },
 }
 
@@ -304,6 +343,28 @@ enum ConfigRecoveryAction {
 #[derive(Subcommand)]
 enum RuntimeResourceAction {
     Catalog,
+    /// 根据已完整校验的 ZIP 生成单版本发布清单，不覆盖现有文件。
+    ReleaseFeed {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// 检查显式 HTTPS 发布清单及发布方提供的清单 SHA-256。
+    Discover {
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long, default_value = "system")]
+        proxy: String,
+    },
+    #[command(hide = true)]
+    DiscoverManaged,
     /// 桌面内部流式入口：来源经标准输入提交，EOF 或后续输入请求取消。
     #[command(hide = true)]
     DownloadManaged {
@@ -321,6 +382,8 @@ enum RuntimeResourceAction {
         sha256: String,
         #[arg(long)]
         output: PathBuf,
+        #[arg(long, default_value = "system")]
+        proxy: String,
     },
     Pack {
         #[arg(long)]
@@ -433,10 +496,15 @@ async fn main() -> Result<()> {
                 | Action::Applications
                 | Action::Windows
                 | Action::RecognitionCompare { .. }
+                | Action::Combat { .. }
+                | Action::CombatReplay { .. }
+                | Action::CombatBundleCheck { .. }
+                | Action::CombatInspect { .. }
                 | Action::MapBundleCheck { .. }
                 | Action::CoffeeBundleCheck { .. }
                 | Action::EngagementRewardBundleCheck { .. }
                 | Action::EngagementRewardInspect { .. }
+                | Action::BasicDailyBundleCheck { .. }
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
         )
@@ -444,9 +512,89 @@ async fn main() -> Result<()> {
         paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
     }
     match args.command {
+        Action::CombatReplay {scripts,script,events} => {
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Frame {at:f64,#[serde(default)]updates:Vec<od_core::conditional::StateUpdate>,#[serde(default)]complete:bool,#[serde(default)]pause:bool,#[serde(default)]resume:bool}
+            ensure!(events.metadata()?.len()<=8*1024*1024,"回放事件超过 8 MiB");
+            let frames:Vec<Frame>=serde_json::from_slice(&std::fs::read(events)?)?;
+            ensure!(frames.len()<=10000,"回放帧数超过上限");
+            let script=od_core::conditional::Script::load(&scripts,&script)?;
+            let mut scheduler=od_core::conditional::Scheduler::new(script);
+            let mut output=Vec::new();let mut action_count=0;
+            for frame in frames {
+                if frame.pause {scheduler.pause();}if frame.resume {scheduler.resume();}
+                if frame.complete&&let Some(active)=scheduler.active() {scheduler.complete(active.generation)?;}
+                use od_core::conditional::Decision;
+                let decision=scheduler.tick(frame.at,&frame.updates)?;
+                let row=match decision {
+                    Decision::Idle=>serde_json::json!({"at":frame.at,"decision":"idle"}),
+                    Decision::Interrupt=>serde_json::json!({"at":frame.at,"decision":"interrupt"}),
+                    Decision::Start(ref execution)|Decision::Replace(ref execution)=>{
+                        action_count+=execution.actions.len();ensure!(action_count<=32768,"回放输出动作超过 32768 条，请分段回放");
+                        serde_json::json!({"at":frame.at,"decision":if matches!(decision,Decision::Replace(_)){"replace"}else{"start"},"generation":execution.generation,"scene":execution.scene,"handler":execution.label,"actions":execution.actions})
+                    },
+                };output.push(row);
+            }
+            return print(serde_json::json!({"accepted":false,"input_sent":false,"events":output}));
+        },
+        Action::CombatBundleCheck {ref bundle} => {
+            let bundle=maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;
+            return print(serde_json::json!({"valid":true,"accepted":false,"agents":bundle.spec.agents.len(),"templates":bundle.spec.templates.len(),"scripts":bundle.scripts,"protocol_version":od_protocol::PROTOCOL_VERSION}));
+        },
+        Action::CombatInspect {ref bundle,..} => {maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;},
+        Action::Combat {hwnd,instance_id,allow_input,cancel_after_ms} => {
+            ensure!(allow_input,"战斗必须显式提供 --allow-input");
+            let engine=Engine::new(paths)?;
+            let ready=std::time::Instant::now();
+            while !engine.snapshot().sdk.ready {ensure!(ready.elapsed()<Duration::from_secs(15),"{}",engine.snapshot().sdk.message);tokio::time::sleep(Duration::from_millis(10)).await;}
+            let od_protocol::Payload::AccountConfig(config)=engine.execute(od_protocol::Command::AccountConfig).await? else {anyhow::bail!("无法读取战斗账号");};
+            engine.execute(od_protocol::Command::Attach {hwnd,capture_method:config.general.capture_method}).await?;
+            let od_protocol::Payload::CombatScripts(scripts)=engine.execute(od_protocol::Command::CombatScripts).await? else {anyhow::bail!("引擎未返回战斗脚本目录");};
+            let od_protocol::Payload::Run(run)=engine.execute(od_protocol::Command::StartCombat {instance_id,revision:config.revision,script_revision:scripts.revision,allow_input:true,confirm_account:true}).await? else {anyhow::bail!("引擎未返回战斗运行");};
+            let signal=tokio::signal::ctrl_c();tokio::pin!(signal);
+            let started=std::time::Instant::now();let mut stopping=false;
+            loop {
+                if let Some(current)=engine.snapshot().run&&current.id==run.id&&current.state.is_terminal() {engine.shutdown().await?;return print(current);}
+                if !stopping&&cancel_after_ms.is_some_and(|ms|started.elapsed().as_millis()>=ms as u128) {engine.execute(od_protocol::Command::Stop {run_id:run.id}).await?;stopping=true;}
+                tokio::select! {_=&mut signal,if !stopping=>{engine.execute(od_protocol::Command::Stop {run_id:run.id}).await?;stopping=true;},_=tokio::time::sleep(Duration::from_millis(100))=>{}}
+            }
+        },
         Action::RuntimeResources { command } => {
             use zzz_engine::runtime_resources;
             return match command {
+                RuntimeResourceAction::ReleaseFeed {
+                    archive,
+                    sha256,
+                    url,
+                    output,
+                } => print(zzz_engine::runtime_feed::write_feed(
+                    &archive, &sha256, url, &output,
+                )?),
+                RuntimeResourceAction::DiscoverManaged => {
+                    tokio::task::spawn_blocking(zzz_engine::runtime_feed::managed).await?
+                }
+                RuntimeResourceAction::Discover { url, sha256, proxy } => {
+                    let proxy = od_core::download_proxy::DownloadProxy::from_cli(proxy)
+                        .map_err(anyhow::Error::msg)?;
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    let signal_cancel = cancel.clone();
+                    let signal = tokio::spawn(async move {
+                        if tokio::signal::ctrl_c().await.is_ok() {
+                            signal_cancel.store(true, std::sync::atomic::Ordering::Release);
+                        }
+                    });
+                    let result = tokio::task::spawn_blocking(move || {
+                        zzz_engine::runtime_feed::discover(
+                            &od_core::runtime_feed::RuntimeFeedSource { url, sha256 },
+                            proxy,
+                            &cancel,
+                        )
+                    })
+                    .await?;
+                    signal.abort();
+                    print(result?.0)
+                }
                 RuntimeResourceAction::DownloadManaged { output } => {
                     tokio::task::spawn_blocking(move || {
                         zzz_engine::runtime_download::managed(&output)
@@ -458,7 +606,10 @@ async fn main() -> Result<()> {
                     bytes,
                     sha256,
                     output,
+                    proxy,
                 } => {
+                    let proxy = od_core::download_proxy::DownloadProxy::from_cli(proxy)
+                        .map_err(anyhow::Error::msg)?;
                     let cancel = Arc::new(AtomicBool::new(false));
                     let interrupt = cancel.clone();
                     let signal = tokio::spawn(async move {
@@ -473,9 +624,10 @@ async fn main() -> Result<()> {
                             sha256,
                         };
                         let mut previous = ("", 0_u64);
-                        zzz_engine::runtime_download::download(
+                        zzz_engine::runtime_download::download_with_proxy(
                             &source,
                             &output,
+                            proxy,
                             &cancel,
                             |progress| {
                                 let megabytes = progress.completed_bytes / (1024 * 1024);
@@ -533,7 +685,7 @@ async fn main() -> Result<()> {
             };
         }
         Action::ModelResources { command } => {
-            use od_platform::model_cache::{self, CacheState, HttpsModelDownloader};
+            use od_platform::model_cache::{self, CacheState};
             match command {
                 ModelResourceAction::Status { cache, models } => {
                     let cache = cache.unwrap_or_else(|| root.join("sdk/models"));
@@ -547,7 +699,12 @@ async fn main() -> Result<()> {
                     cache,
                     models,
                     offline,
+                    proxy,
                 } => {
+                    let downloader = od_platform::download::ConfiguredHttpsDownloader::new(
+                        od_core::download_proxy::DownloadProxy::from_cli(proxy)
+                            .map_err(anyhow::Error::msg)?,
+                    )?;
                     let cache = cache.unwrap_or_else(|| root.join("sdk/models"));
                     let cancel = Arc::new(AtomicBool::new(false));
                     let interrupt = cancel.clone();
@@ -563,7 +720,7 @@ async fn main() -> Result<()> {
                             &cache,
                             &models,
                             offline,
-                            &HttpsModelDownloader,
+                            &downloader,
                             &cancel,
                             |progress| {
                                 let megabytes = progress.completed_bytes / (1024 * 1024);
@@ -645,6 +802,11 @@ async fn main() -> Result<()> {
         Action::EngagementRewardInspect { ref bundle, .. } => {
             maa_adapter::validate_engagement_reward_bundle(bundle)?;
         }
+        Action::BasicDailyBundleCheck { ref bundle } => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"bundle":maa_adapter::validate_basic_daily_bundle(bundle)?}),
+            );
+        }
         Action::CoffeeRunBundleCheck { ref bundle } => {
             return print(
                 serde_json::json!({"valid":true,"prototype_only":true,"bundle":maa_adapter::validate_coffee_run_bundle(bundle)?}),
@@ -688,6 +850,14 @@ async fn main() -> Result<()> {
     let sdk = maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"))?;
     match args.command {
         Action::Doctor => print(sdk),
+        Action::CombatInspect {bundle,image,dodge_only} => {
+            let bundle=maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;
+            let native=NativeSession::for_fixture(&image,&bundle.root,InferenceDevice::Cpu)?;
+            let mut recognizer=maa_adapter::combat_vision::CombatRecognizer::new(bundle);
+            let frame=native.combat_frame(&AtomicBool::new(false))?.context("离线战斗截图被取消")?;
+            let result=recognizer.observe(&native,&frame,0.0,&Default::default(),dodge_only,&AtomicBool::new(false))?;
+            print(serde_json::json!({"accepted":false,"input_sent":false,"frame_age_ms":frame.age_ms(),"observation":result}))
+        },
         Action::EngagementRewardInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_engagement_reward_fixture(&image)?)

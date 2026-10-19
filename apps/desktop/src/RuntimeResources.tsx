@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Field, Input, MessageBar, MessageBarBody, ProgressBar, Spinner } from '@fluentui/react-components';
-import type { DesktopRuntimeResources, RuntimeResourceRequest, RuntimeDownloadSource } from './generated/protocol';
-import { desktop, errorMessage, pickRuntimeResourceArchive, runtimeResourceState, startRuntimeResourceJob, startRuntimeResourceDownload, cancelRuntimeResourceDownload } from './bridge';
+import type { DesktopRuntimeResources, RuntimeResourceRequest, RuntimeDownloadSource, RuntimeFeedSource } from './generated/protocol';
+import { desktop, errorMessage, pickRuntimeResourceArchive, runtimeResourceState, startRuntimeResourceJob, startRuntimeResourceDownload, cancelRuntimeResourceDownload, discoverRuntimeResources, downloadRuntimeResourceRelease } from './bridge';
 
 const isActive = (state: string | undefined) => state === 'running' || state === 'cancelling';
 
@@ -48,8 +48,10 @@ export function useRuntimeResources(enabled: boolean) {
   }
   const start = (request: RuntimeResourceRequest) => submit(() => startRuntimeResourceJob(request));
   const download = (source: RuntimeDownloadSource) => submit(() => startRuntimeResourceDownload(source));
+  const discover = (source: RuntimeFeedSource) => submit(() => discoverRuntimeResources(source));
+  const downloadRelease = (catalogId: string, sha256: string) => submit(() => downloadRuntimeResourceRelease(catalogId, sha256));
   const cancel = (id: string) => submit(() => cancelRuntimeResourceDownload(id), true);
-  return { snapshot, error, readError, submitting, start, download, cancel };
+  return { snapshot, error, readError, submitting, start, download, cancel, discover, downloadRelease };
 }
 
 const phases: Record<string, string> = { checking: '正在完整检查资源与操作条件', connecting: '正在连接下载服务器', downloading: '正在下载资源包', validating: '正在完整校验下载内容', publishing: '正在保存已校验资源包', ready: '资源包已就绪', stopping_engine: '正在退出旧引擎并确认输入收尾', installing: '正在安装并核对资源文件', applying: '正在保存资源版本选择', starting_engine: '正在重新连接普通权限引擎' };
@@ -62,7 +64,7 @@ function validHttps(value: string) {
 }
 
 export function RuntimeResources({ manager, blocked, maintenance = false }: { manager: ReturnType<typeof useRuntimeResources>; blocked: boolean; maintenance?: boolean }) {
-  const { snapshot, error, readError, submitting, start, download, cancel } = manager;
+  const { snapshot, error, readError, submitting, start, download, cancel, discover, downloadRelease } = manager;
   const { catalog, job } = snapshot;
   const [archive, setArchive] = useState('');
   const [sha256, setSha256] = useState('');
@@ -71,6 +73,8 @@ export function RuntimeResources({ manager, blocked, maintenance = false }: { ma
   const [url, setUrl] = useState('');
   const [bytes, setBytes] = useState('');
   const [downloadHash, setDownloadHash] = useState('');
+  const [feedUrl, setFeedUrl] = useState('');
+  const [feedHash, setFeedHash] = useState('');
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const active = isActive(job?.state);
@@ -89,10 +93,22 @@ export function RuntimeResources({ manager, blocked, maintenance = false }: { ma
   }
   const name = (id: string | null) => id ? catalog?.versions.find(version => version.id === id)?.version ?? `${id.slice(0, 12)}…` : '随程序资源';
   return <>
-    <div className="page-heading"><div><div className="eyebrow">RUNTIME RESOURCES</div><h1>运行资源</h1><p>下载或安装资源包，切换邮件和地图试运行使用的资源。</p></div><Button disabled={disabled} onClick={() => void start({ type: 'refresh' })}>刷新版本</Button></div>
+    <div className="page-heading"><div><div className="eyebrow">RUNTIME RESOURCES</div><h1>运行资源</h1><p>下载或安装资源包，切换首批日常和地图使用的资源。</p></div><Button disabled={disabled} onClick={() => void start({ type: 'refresh' })}>刷新版本</Button></div>
     {!desktop && <MessageBar intent="info"><MessageBarBody>通过桌面应用可查看本机运行资源版本。</MessageBarBody></MessageBar>}
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     {readError && <MessageBar intent="error"><MessageBarBody>{readError}</MessageBarBody></MessageBar>}
+    <Card aria-label="读取资源发布清单"><h2>发现资源版本</h2>
+      <p>填写发布方提供的 HTTPS 清单地址和清单 SHA-256。读取并核对清单后，选择兼容的版本下载。</p>
+      <Field label="发布清单 HTTPS 地址" validationState={feedUrl && !validHttps(feedUrl) ? 'error' : 'none'}><Input value={feedUrl} maxLength={8192} autoComplete="off" disabled={downloadDisabled} onChange={(_, data) => setFeedUrl(data.value.trim())}/></Field>
+      <Field label="发布清单 SHA-256" validationState={feedHash && !/^[0-9a-f]{64}$/.test(feedHash) ? 'error' : 'none'}><Input value={feedHash} maxLength={64} disabled={downloadDisabled} onChange={(_, data) => setFeedHash(data.value.trim())}/></Field>
+      <Button disabled={downloadDisabled || !validHttps(feedUrl) || !/^[0-9a-f]{64}$/.test(feedHash)} onClick={() => { void discover({ url: feedUrl, sha256: feedHash }); setFeedUrl(''); }}>读取发布清单</Button>
+      {snapshot.feed && <section aria-label="发布资源版本">{snapshot.feed.releases.map(({ release, compatible, message }) => <div key={release.sha256} className="history-item">
+        <div className="card-title"><strong>{release.version}</strong><Badge appearance="outline">{compatible ? '可下载' : '不兼容'}</Badge></div>
+        <p>{message} · {release.bytes.toLocaleString()} 字节 · 引擎 {release.engine_version}</p>
+        <code className="resource-id">{release.sha256}</code>
+        <Button disabled={downloadDisabled || !compatible} onClick={() => void downloadRelease(snapshot.feed!.id, release.sha256)}>下载此版本</Button>
+      </div>)}</section>}
+    </Card>
     <Card aria-label="下载运行资源包"><h2>下载资源包</h2>
       <p>填写发布方提供的 HTTPS 地址、ZIP 字节数与 SHA-256。下载并完整校验后可安装，下载期间引擎继续运行。</p>
       <Field label="资源包 HTTPS 地址" validationState={url && !validHttps(url) ? 'error' : 'none'} validationMessage={url && !validHttps(url) ? '请填写不含用户名、密码或片段的 HTTPS 地址' : undefined}><Input value={url} maxLength={8192} disabled={downloadDisabled} onChange={(_, data) => setUrl(data.value.trim())} placeholder="发布方提供的 HTTPS 下载地址" autoComplete="off" /></Field>
@@ -119,15 +135,15 @@ export function RuntimeResources({ manager, blocked, maintenance = false }: { ma
       <code className="resource-id">{version.id}</code><p>{version.compatible ? '清单与当前引擎兼容，启用前会完整校验模型和流程。' : version.error}</p>
       <div className="button-row"><Button disabled={disabled || !version.compatible || version.id === catalog.selection.current} onClick={() => void start({ type: 'activate', id: version.id, revision: catalog.revision })}>启用并重启引擎</Button></div>
     </Card>)}{catalog.versions.length === 0 && <Card><p>尚未安装独立运行资源包，继续使用随程序资源。</p></Card>}</div>}
-    {job && <Card role="status" aria-label="运行资源任务"><div className="card-title"><h2>{job.request.type === 'refresh' ? '版本读取' : job.request.type === 'install' ? '资源包安装' : job.request.type === 'download' ? '资源包下载' : '版本切换'}</h2><Badge appearance="tint" color={job.state === 'failed' ? 'danger' : job.state === 'succeeded' ? 'success' : 'informative'}>{job.state === 'cancelling' ? '正在取消' : active ? '进行中' : job.state === 'failed' ? '失败' : job.state === 'cancelled' ? '已取消' : '已完成'}</Badge></div>
+    {job && <Card role="status" aria-label="运行资源任务"><div className="card-title"><h2>{job.request.type === 'discover' ? '发布清单读取' : job.request.type === 'refresh' ? '版本读取' : job.request.type === 'install' ? '资源包安装' : job.request.type === 'download' ? '资源包下载' : '版本切换'}</h2><Badge appearance="tint" color={job.state === 'failed' ? 'danger' : job.state === 'succeeded' ? 'success' : 'informative'}>{job.state === 'cancelling' ? '正在取消' : active ? '进行中' : job.state === 'failed' ? '失败' : job.state === 'cancelled' ? '已取消' : '已完成'}</Badge></div>
       {job.request.type === 'install' && <p className="resource-path">资源包：{job.request.archive}</p>}
       {active && <><Spinner size="tiny" label={job.state === 'cancelling' ? '正在等待下载与文件收尾' : phases[job.phase] ?? '正在处理资源'}/><ProgressBar value={job.state === 'running' && job.phase === 'downloading' && job.progress?.total_bytes ? job.progress.completed_bytes / job.progress.total_bytes : undefined}/></>}
-      {active && job.request.type === 'download' && <div className="button-row"><Button disabled={submitting || job.state === 'cancelling' || !!readError} onClick={() => void cancel(job.id)}>取消资源包下载</Button></div>}
+      {active && ['download', 'discover'].includes(job.request.type) && <div className="button-row"><Button disabled={submitting || job.state === 'cancelling' || !!readError} onClick={() => void cancel(job.id)}>{job.request.type === 'discover' ? '取消清单读取' : '取消资源包下载'}</Button></div>}
       {job.progress && job.request.type === 'download' && <p>已处理 {job.progress.completed_bytes.toLocaleString()} / {job.progress.total_bytes.toLocaleString()} 字节</p>}
       {job.state === 'succeeded' && job.downloaded && <><p>{job.downloaded.reused ? '已复用本机完整资源包。' : '资源包已下载并通过完整校验。'}安装后请另行启用。</p><p className="resource-path">资源包：{job.downloaded.archive}</p><div className="button-row"><Button disabled={disabled} onClick={() => void start({ type: 'install', archive: job.downloaded!.archive, sha256: job.downloaded!.sha256 })}>安装下载的资源包并重连引擎</Button></div></>}
       {job.error && <MessageBar intent="error"><MessageBarBody>{job.error}</MessageBarBody></MessageBar>}
-      {job.state === 'succeeded' && job.request.type !== 'download' && <p>{job.request.type === 'refresh' ? '本机版本已读取。' : job.request.type === 'install' ? `资源包已安装，当前选择保持不变。${job.reconnected ? '引擎已重新连接。' : ''}请在版本列表中另行启用。` : job.reconnected ? '资源选择已保存，引擎已重新连接。请手动连接游戏，需要时再提升引擎权限。' : '资源选择已保存。'}</p>}
-      {job.state === 'cancelled' && <p>下载已取消，本次临时文件已清理。</p>}
+      {job.state === 'succeeded' && job.request.type !== 'download' && <p>{job.request.type === 'discover' ? '发布清单已校验，请选择兼容版本下载。' : job.request.type === 'refresh' ? '本机版本已读取。' : job.request.type === 'install' ? `资源包已安装，当前选择保持不变。${job.reconnected ? '引擎已重新连接。' : ''}请在版本列表中另行启用。` : job.reconnected ? '资源选择已保存，引擎已重新连接。请手动连接游戏，需要时再提升引擎权限。' : '资源选择已保存。'}</p>}
+      {job.state === 'cancelled' && <p>{job.request.type === 'discover' ? '清单读取已取消。' : '下载已取消，本次临时文件已清理。'}</p>}
       {job.state === 'failed' && job.reconnected && <p>引擎已按磁盘上的版本选择重新连接，任务没有自动重试。</p>}
       <p>离开页面后任务继续；退出桌面会取消下载并等待当前步骤收尾。</p>
     </Card>}

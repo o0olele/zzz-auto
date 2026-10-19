@@ -69,6 +69,16 @@ export async function retryShortcuts(): Promise<import('./generated/protocol').S
   return invoke('retry_shortcuts');
 }
 
+export async function discoverRuntimeResources(source: import('./generated/protocol').RuntimeFeedSource): Promise<DesktopRuntimeResources> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('discover_runtime_resources', { source });
+}
+
+export async function downloadRuntimeResourceRelease(catalogId: string, sha256: string): Promise<DesktopRuntimeResources> {
+  if (!desktop) throw new Error('请通过 Tauri 启动桌面应用');
+  return invoke('download_runtime_resource_release', { catalogId, sha256 });
+}
+
 export async function request(command: Command): Promise<Payload> {
   if (!desktop) throw { code: 'preview_only', message: '浏览器仅供界面预览，请通过 Tauri 启动原生引擎。', details: null } satisfies ApiError;
   return invoke<Payload>('engine_request', { command });

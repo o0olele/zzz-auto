@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
-import type { AccountConfig, HistoryCursor, HistoryPage, HistoryQuery, HistoryItem } from './generated/protocol';
+import { trialAppOptions, type AccountConfig, type HistoryCursor, type HistoryPage, type HistoryQuery, type HistoryItem } from './generated/protocol';
 import { errorMessage, request } from './bridge';
 
 const emptyQuery = (): HistoryQuery => ({ group_id: null, app_id: null, game_day: null, outcome: null, before: null });
 const outcomes = { active: '运行中', succeeded: '完成', failed: '失败', timed_out: '超时', stopped: '已停止', interrupted: '异常中断' };
 const stepNames = { pending: '等待执行', running: '执行中', skipped: '按日跳过', succeeded: '执行完成', failed: '执行失败', stopped: '执行停止' };
-const appName = (id: string) => id === 'email' ? '邮件' : id === 'coffee' ? '咖啡' : id;
+const appName = (id: string) => trialAppOptions.find(app => app.id === id)?.label ?? id;
 
 function outcome(item: HistoryItem) {
   if (item.interrupted) return '异常中断';
-  if (item.record.mail?.state === 'timed_out' || item.record.coffee?.state === 'timed_out') return '超时';
+  if (item.record.mail?.state === 'timed_out' || item.record.coffee?.state === 'timed_out' || item.record.daily?.some(app => app.state === 'timed_out')) return '超时';
   const names: Record<string, string> = { ...outcomes, running: '运行中', pausing: '暂停中', paused: '已暂停', stopping: '停止中' };
   return names[item.record.state] ?? item.record.state;
 }
@@ -93,7 +93,7 @@ export function RunHistory({ connected }: { connected: boolean }) {
           <option value="">全部结果</option>{Object.entries(outcomes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </Select></Field>
         <Field label="记录应用"><Select aria-label="记录应用" value={filters.app_id ?? ''} disabled={!connected || !config} onChange={(_, data) => edit({ ...filters, app_id: data.value || null })}>
-          <option value="">全部应用</option><option value="email">邮件</option><option value="coffee">咖啡</option>
+          <option value="">全部应用</option>{trialAppOptions.map(app => <option key={app.id} value={app.id}>{app.label}</option>)}
         </Select></Field>
         <Field label="记录游戏日"><Input aria-label="记录游戏日" type="date" value={filters.game_day ?? ''} disabled={!connected || !config} onChange={(_, data) => edit({ ...filters, game_day: data.value || null })}/></Field>
         <Field label="记录组标识" hint="留空查全部组；可填写已删除组的原标识。"><Input aria-label="记录组标识" maxLength={256} value={filters.group_id ?? ''} disabled={!connected || !config} onChange={(_, data) => edit({ ...filters, group_id: data.value || null })}/></Field>
@@ -114,9 +114,12 @@ export function RunHistory({ connected }: { connected: boolean }) {
         <div className="card-title"><strong>{item.record.context?.instance_name} · {item.record.context?.group_name ?? item.record.context?.group_id}</strong><Badge appearance="outline">{outcome(item)}</Badge></div>
         <p>开始 {new Date(item.record.started_at).toLocaleString()} · {item.record.finished_at ? `结束 ${new Date(item.record.finished_at).toLocaleString()}` : '尚无已保存的结束时间'}</p>
         <p>组标识 {item.record.context?.group_id} · 修订 {item.record.context?.config_revision} · 游戏日 {item.record.context?.game_day?.date ?? '未记录'}</p>
+        {item.record.context?.standalone && <p>独立应用运行</p>}
+        {item.record.context?.rerun_completed && <p>本次重新运行已完成应用</p>}
         <p>{item.interrupted ? '上次引擎退出前未保存终态，实际结束时间未知，不会自动继续。' : item.record.message}</p>
         {item.record.group && <ol aria-label="历史分项结果">{item.record.group.steps.map(step => <li key={step.app_id}>{appName(step.app_id)} · {stepNames[step.state]} · {step.inputs_released ? '分项输入已释放' : '分项输入待释放'}</li>)}</ol>}
         {!item.record.group && item.record.mail && <p>邮件 · {item.record.mail.inputs_released ? '输入已释放' : '等待输入收尾'}</p>}
+        {item.record.combat && <p>{item.record.combat.config.dodge_only ? '闪避助手' : item.record.combat.config.script} · 动作 {item.record.combat.actions} 次 · 抢占 {item.record.combat.preemptions} 次 · {item.record.combat.inputs_released ? '输入已释放' : '等待输入收尾'}</p>}
         <code>{item.record.id}</code>
       </article>)}</div>
       <div className="log-pagination"><Button disabled={!navigation || navigation.cursors.length <= 1 || loading || exporting} onClick={() => {

@@ -16,6 +16,24 @@ pub struct Host {
     pub logs: std::sync::Mutex<od_core::run_logs::LogBook>,
 }
 
+async fn read_resource_proxy(
+    layout: &od_platform::DesktopLayout,
+) -> Result<od_core::download_proxy::DownloadProxy, ApiError> {
+    let data = layout.data.clone();
+    tokio::task::spawn_blocking(move || {
+        od_core::config::ConfigStore::new(&data)?
+            .read_for_startup()
+            .map(|config| config.general.download_proxy)
+    })
+    .await
+    .map_err(|_| ApiError::new("config_error", "读取下载代理设置的线程异常退出"))?
+    .map_err(|_| {
+        ApiError::new(
+            "config_error",
+            "无法读取下载代理设置，请先检查或恢复账号配置",
+        )
+    })
+}
 fn layout(app: &AppHandle) -> Result<od_platform::DesktopLayout, ApiError> {
     let development_root: Option<PathBuf> = if cfg!(debug_assertions) {
         Some(
@@ -123,6 +141,11 @@ impl Host {
             revision,
             instance_id,
             ..
+        }
+        | Command::StartStandaloneTrial {
+            revision,
+            instance_id,
+            ..
         } = &command
         {
             let Payload::AccountConfig(config) = session.request(Command::AccountConfig).await?
@@ -135,7 +158,11 @@ impl Host {
                     "配置已变化，请重新读取并预览",
                 ));
             }
-            let action = config.general.after_done;
+            let action = if matches!(&command, Command::StartStandaloneTrial { .. }) {
+                od_core::after_done::AfterDoneAction::None
+            } else {
+                config.general.after_done
+            };
             let notifications = config
                 .instances
                 .iter()
@@ -483,14 +510,48 @@ impl Host {
         self.resources.start(layout(app)?, request)
     }
 
-    pub fn download_resources(
+    pub async fn download_resources(
         &self,
         app: &AppHandle,
         source: od_core::runtime_resources::RuntimeDownloadSource,
     ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
         self.after_done.require_available()?;
+        let layout = layout(app)?;
+        let proxy = read_resource_proxy(&layout).await?;
+        self.after_done.require_available()?;
         self.after_done.invalidate("正在下载资源，结束后动作已取消");
-        self.resources.start_download(layout(app)?, source)
+        self.resources
+            .start_download_with_proxy(layout, source, proxy)
+    }
+
+    pub async fn discover_resources(
+        &self,
+        app: &AppHandle,
+        source: od_core::runtime_feed::RuntimeFeedSource,
+    ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+        self.after_done.require_available()?;
+        let layout = layout(app)?;
+        let proxy = read_resource_proxy(&layout).await?;
+        self.after_done.require_available()?;
+        self.after_done
+            .invalidate("正在读取资源发布清单，结束后动作已取消");
+        self.resources.discover_with_proxy(layout, source, proxy)
+    }
+
+    pub async fn download_resource_release(
+        &self,
+        app: &AppHandle,
+        catalog_id: String,
+        sha256: String,
+    ) -> Result<od_core::runtime_resources::DesktopRuntimeResources, ApiError> {
+        self.after_done.require_available()?;
+        let layout = layout(app)?;
+        let proxy = read_resource_proxy(&layout).await?;
+        self.after_done.require_available()?;
+        self.after_done
+            .invalidate("正在下载发布资源，结束后动作已取消");
+        self.resources
+            .download_release(layout, &catalog_id, &sha256, proxy)
     }
 
     pub fn start_config_recovery(

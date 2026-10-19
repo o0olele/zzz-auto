@@ -5,6 +5,7 @@ import path from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const release = process.argv.includes('--release');
+const targetDir = process.env.CARGO_TARGET_DIR ? path.resolve(root, process.env.CARGO_TARGET_DIR) : path.join(root, 'target');
 const cargo = (args) => {
   const result = spawnSync('cargo', args, { cwd: root, stdio: 'inherit', shell: false });
   if (result.error) throw result.error;
@@ -23,21 +24,29 @@ cargo(['run', '--locked', '-p', 'od-tools', '--', 'map-bundle', '--reference',
 // 咖啡试运行依赖新提供的模板与固定 Pipeline，开发启动也同步生成。
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'coffee-run-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+cargo(['run', '--locked', '-p', 'od-tools', '--', 'basic-daily-bundle', '--reference',
+  process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+cargo(['run', '--locked', '-p', 'od-tools', '--', 'combat-bundle', '--reference',
+  process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['build', '--locked', '-p', 'zzz-engine', ...(release ? ['--release'] : [])]);
 if (release) {
-  const check = spawnSync(path.join(root, 'target/release/zzz-engine.exe'),
+  const check = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),
     ['--root', root, 'mail-bundle-check'], { cwd: root, stdio: 'inherit', shell: false });
   if (check.error) throw check.error;
   if (check.status !== 0) process.exit(check.status ?? 1);
-  const mapCheck = spawnSync(path.join(root, 'target/release/zzz-engine.exe'),
+  const mapCheck = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),
     ['--root', root, 'map-bundle-check', '--bundle', path.join(root, 'resources/generated/map-preview')], { cwd: root, stdio: 'inherit', shell: false });
   if (mapCheck.error) throw mapCheck.error;
   if (mapCheck.status !== 0) process.exit(mapCheck.status ?? 1);
-  const coffeeCheck = spawnSync(path.join(root, 'target/release/zzz-engine.exe'),
+  const coffeeCheck = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),
     ['--root', root, 'coffee-run-bundle-check', '--bundle', path.join(root, 'resources/generated/coffee-run')], { cwd: root, stdio: 'inherit', shell: false });
   if (coffeeCheck.error) throw coffeeCheck.error;
   if (coffeeCheck.status !== 0) process.exit(coffeeCheck.status ?? 1);
+  const dailyCheck = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),
+    ['--root', root, 'basic-daily-bundle-check', '--bundle', path.join(root, 'resources/generated/basic-daily')], { cwd: root, stdio: 'inherit', shell: false });
+  if (dailyCheck.error) throw dailyCheck.error;
+  if (dailyCheck.status !== 0) process.exit(dailyCheck.status ?? 1);
 }
 const destination = path.join(root, 'apps/desktop/src-tauri/binaries');
 mkdirSync(destination, { recursive: true });
-copyFileSync(path.join(root, `target/${release ? 'release' : 'debug'}/zzz-engine.exe`), path.join(destination, 'zzz-auto-engine-x86_64-pc-windows-msvc.exe'));
+copyFileSync(path.join(targetDir, `${release ? 'release' : 'debug'}/zzz-engine.exe`), path.join(destination, 'zzz-auto-engine-x86_64-pc-windows-msvc.exe'));

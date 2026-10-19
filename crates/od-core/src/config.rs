@@ -26,6 +26,9 @@ const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 #[serde(deny_unknown_fields)]
 pub struct GeneralSettings {
     #[serde(default)]
+    #[ts(as = "Option<crate::download_proxy::DownloadProxy>", optional)]
+    pub download_proxy: crate::download_proxy::DownloadProxy,
+    #[serde(default)]
     pub after_done: crate::after_done::AfterDoneAction,
     pub capture_method: crate::CaptureMethod,
     pub mail: crate::mail::MailConfig,
@@ -35,6 +38,7 @@ pub struct GeneralSettings {
 
 impl GeneralSettings {
     pub fn validate(&self) -> Result<(), ConfigError> {
+        self.download_proxy.validate().map_err(invalid)?;
         self.mail.validate().map_err(invalid)?;
         self.shortcuts.validate().map_err(invalid)
     }
@@ -78,6 +82,9 @@ pub struct AppGroup {
     pub run_policy: crate::daily::RunPolicy,
     #[serde(default)]
     pub coffee: crate::coffee_run::CoffeeConfig,
+    #[serde(default)]
+    #[ts(as = "Option<crate::basic_daily::DailyConfig>", optional)]
+    pub daily: crate::basic_daily::DailyConfig,
     pub apps: Vec<GroupApp>,
 }
 
@@ -97,6 +104,9 @@ pub struct AccountInstance {
     pub id: u32,
     pub name: String,
     pub active_in_od: bool,
+    #[serde(default)]
+    #[ts(as = "Option<crate::combat::CombatConfig>", optional)]
+    pub combat: crate::combat::CombatConfig,
     #[serde(default)]
     pub game_region: crate::daily::GameRegion,
     #[serde(default)]
@@ -132,6 +142,15 @@ pub struct AccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConfigChange {
+    SaveCombat {
+        instance_id: u32,
+        settings: crate::combat::CombatConfig,
+    },
+    SaveDaily {
+        instance_id: u32,
+        group_id: String,
+        settings: crate::basic_daily::DailyConfig,
+    },
     SaveRunNotifications {
         instance_id: u32,
         settings: crate::run_notifications::RunNotificationSettings,
@@ -234,6 +253,7 @@ pub fn default_group() -> AppGroup {
         name: None,
         run_policy: crate::daily::RunPolicy::default(),
         coffee: crate::coffee_run::CoffeeConfig::default(),
+        daily: crate::basic_daily::DailyConfig::default(),
         apps: apps
             .into_iter()
             .filter(|app| app.default_group)
@@ -256,6 +276,7 @@ impl Default for AccountConfig {
                 id: 1,
                 name: "默认账号".into(),
                 active_in_od: true,
+                combat: crate::combat::CombatConfig::default(),
                 game_region: crate::daily::GameRegion::default(),
                 game_launch: crate::game_launch::GameLaunchSettings::default(),
                 run_notifications: crate::run_notifications::RunNotificationSettings::default(),
@@ -273,6 +294,7 @@ impl AccountConfig {
             return Err(invalid("账号配置版本不支持"));
         }
         self.general.validate()?;
+        for instance in &self.instances { instance.combat.validate().map_err(invalid)?; }
         let mut reserved = HashSet::new();
         if self.reserved_instance_ids.len() > 9999
             || self
@@ -303,6 +325,7 @@ impl AccountConfig {
             let mut groups = HashSet::new();
             for group in &instance.groups {
                 group.coffee.validate().map_err(invalid)?;
+                group.daily.validate().map_err(invalid)?;
                 if !valid_identifier(&group.id) || !groups.insert(&group.id) {
                     return Err(invalid("应用组标识无效或重复"));
                 }
@@ -328,6 +351,10 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::SaveCombat { instance_id, settings } => {
+                settings.validate().map_err(invalid)?;
+                self.instance_mut(instance_id)?.combat = settings;
+            },
             ConfigChange::SaveRunNotifications {
                 instance_id,
                 settings,
@@ -341,6 +368,18 @@ impl AccountConfig {
                 self.instance_mut(instance_id)?.game_launch = settings;
             }
             ConfigChange::SetAfterDone { action } => self.general.after_done = action,
+            ConfigChange::SaveDaily {
+                instance_id,
+                group_id,
+                settings,
+            } => {
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .daily = settings;
+            }
             ConfigChange::SaveCoffee {
                 instance_id,
                 group_id,
@@ -504,6 +543,7 @@ impl AccountConfig {
                     id,
                     name,
                     active_in_od: true,
+                    combat: crate::combat::CombatConfig::default(),
                     game_region: crate::daily::GameRegion::default(),
                     game_launch: crate::game_launch::GameLaunchSettings::default(),
                     run_notifications: crate::run_notifications::RunNotificationSettings::default(),

@@ -100,9 +100,14 @@ impl HistoryItem {
         }
         if self
             .record
-            .mail
-            .as_ref()
-            .is_some_and(|p| p.state == MailState::TimedOut)
+            .daily
+            .iter()
+            .any(|p| p.state == MailState::TimedOut)
+            || self
+                .record
+                .mail
+                .as_ref()
+                .is_some_and(|p| p.state == MailState::TimedOut)
             || self
                 .record
                 .coffee

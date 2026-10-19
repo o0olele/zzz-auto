@@ -75,6 +75,18 @@ impl ModelResourceService {
         self.start_with(kind, models, offline, HttpsModelDownloader)
     }
 
+    pub fn start_with_proxy(
+        &self,
+        kind: ResourceJobKind,
+        models: Vec<String>,
+        offline: bool,
+        proxy: od_core::download_proxy::DownloadProxy,
+    ) -> Result<ModelResources, ApiError> {
+        let downloader = od_platform::download::ConfiguredHttpsDownloader::new(proxy)
+            .map_err(|error| ApiError::new("invalid_proxy", error.to_string()))?;
+        self.start_with(kind, models, offline, downloader)
+    }
+
     /// 测试可替换传输；IPC 不暴露来源、路径或下载器。
     pub fn start_with(
         &self,

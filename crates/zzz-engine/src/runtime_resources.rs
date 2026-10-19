@@ -16,7 +16,7 @@ use uuid::Uuid;
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 const MANIFEST: &str = "resource-manifest.json";
-const MAX_MANIFEST: u64 = 128 * 1024;
+const MAX_MANIFEST: u64 = 1024 * 1024;
 const MAX_FILE: u64 = 128 * 1024 * 1024;
 pub(crate) const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;
 // 首批只收集当前具有执行器的完整资源，其他生成目录不进入运行包。
@@ -50,10 +50,25 @@ const COFFEE_FILES: &[&str] = &[
     "generated/coffee-run/model/ocr/ppocrv5/rec.onnx",
     "generated/coffee-run/model/ocr/ppocrv5/keys.txt",
 ];
+const DAILY_FILES: &[&str] = &[
+    "generated/basic-daily/basic-daily-manifest.json",
+    "generated/basic-daily/pipeline/basic-daily.json",
+    "generated/basic-daily/image/daily/back.png",
+    "generated/basic-daily/image/daily/close.png",
+    "generated/basic-daily/image/daily/compendium.png",
+    "generated/basic-daily/image/daily/completed.png",
+    "generated/basic-daily/image/daily/menu_wallpaper.png",
+    "generated/basic-daily/image/daily/world_function.png",
+    "generated/basic-daily/image/daily/world_preset.png",
+    "generated/basic-daily/model/ocr/ppocrv5/det.onnx",
+    "generated/basic-daily/model/ocr/ppocrv5/rec.onnx",
+    "generated/basic-daily/model/ocr/ppocrv5/keys.txt",
+];
 fn resource_files(schema: u32) -> Vec<&'static str> {
     FILES
         .iter()
-        .chain(if schema == 2 { COFFEE_FILES } else { &[] })
+        .chain(if schema >= 2 { COFFEE_FILES } else { &[] })
+        .chain(if schema >= 3 { DAILY_FILES } else { &[] })
         .copied()
         .collect()
 }
@@ -159,18 +174,29 @@ fn copy_hash_cancellable(
     Ok((count, hex::encode(digest.finalize())))
 }
 
+pub fn supports_protocol(schema: u32, protocol: u32) -> bool {
+    let minimum = match schema {
+        1 => 15,
+        2 => 16,
+        3 => 33,
+        4 => 34,
+        _ => return false,
+    };
+    (minimum..=od_protocol::PROTOCOL_VERSION).contains(&protocol)
+}
+
+fn safe_combat_path(name:&str)->bool {
+    name.starts_with("generated/combat/") && !name.contains([':', '\\'])
+        && Path::new(name).components().all(|part|matches!(part,std::path::Component::Normal(_)))
+}
+
 fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
     ensure!(
-        matches!(manifest.schema_version, 1 | 2)
+        matches!(manifest.schema_version, 1..=4)
             && manifest.engine_version == env!("CARGO_PKG_VERSION")
             && manifest.sdk_version == maa_adapter::SDK_VERSION
             && manifest.binding_version == maa_adapter::BINDING_VERSION
-            && (manifest.protocol_version == od_protocol::PROTOCOL_VERSION
-                || (od_protocol::PROTOCOL_VERSION == 29
-                    && matches!(
-                        (manifest.schema_version, manifest.protocol_version),
-                        (1, 15..=28) | (2, 16..=28)
-                    ))),
+            && supports_protocol(manifest.schema_version, manifest.protocol_version),
         "运行资源包与当前引擎、SDK、绑定或协议不兼容"
     );
     ensure!(
@@ -187,7 +213,7 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
     let mut total = 0_u64;
     for file in &manifest.files {
         ensure!(
-            files.contains(&file.path.as_str()) && paths.insert(file.path.as_str()),
+            (files.contains(&file.path.as_str()) || (manifest.schema_version==4 && safe_combat_path(&file.path))) && paths.insert(file.path.as_str()),
             "资源文件未登记或重复"
         );
         ensure!(
@@ -197,17 +223,23 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
         total += file.bytes;
     }
     ensure!(
-        paths == files.iter().copied().collect() && total <= MAX_ARCHIVE,
+        files.iter().all(|name|paths.contains(name))
+            && (manifest.schema_version!=4 || paths.contains("generated/combat/combat-manifest.json"))
+            && manifest.files.len()<=4096 && total <= MAX_ARCHIVE,
         "运行资源包不完整或过大"
     );
     Ok(())
 }
 
 fn validate_semantics(root: &Path) -> Result<()> {
+    if root.join("generated/combat").try_exists()? {maa_adapter::combat_vision::CombatBundle::load(&root.join("generated/combat"))?;}
     maa_adapter::validate_mail_bundle(&root.join("generated/mail"))?;
     maa_adapter::validate_map_bundle(&root.join("generated/map-preview"))?;
     if root.join("generated/coffee-run").try_exists()? {
         maa_adapter::validate_coffee_run_bundle(&root.join("generated/coffee-run"))?;
+    }
+    if root.join("generated/basic-daily").try_exists()? {
+        maa_adapter::validate_basic_daily_bundle(&root.join("generated/basic-daily"))?;
     }
     for (name, expected) in [
         (
@@ -252,7 +284,7 @@ fn validate_directory_cancellable(
 ) -> Result<ResourceManifest> {
     cancelled(cancel)?;
     let manifest = read_manifest(root, expected_id)?;
-    let files = resource_files(manifest.schema_version);
+    let files:Vec<_> = manifest.files.iter().map(|file|file.path.as_str()).collect();
     for entry in walkdir::WalkDir::new(root).min_depth(1) {
         cancelled(cancel)?;
         let entry = entry?;
@@ -332,7 +364,11 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
     ensure!(!output.starts_with(&source), "资源包输出必须位于来源目录外");
     ensure!(!output.try_exists()?, "输出文件已存在，不能覆盖");
     let mut manifest = ResourceManifest {
-        schema_version: if source.join("generated/coffee-run").try_exists()? {
+        schema_version: if source.join("generated/combat").try_exists()? {
+            4
+        } else if source.join("generated/basic-daily").try_exists()? {
+            3
+        } else if source.join("generated/coffee-run").try_exists()? {
             2
         } else {
             1
@@ -344,12 +380,19 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
         protocol_version: od_protocol::PROTOCOL_VERSION,
         files: Vec::new(),
     };
-    for name in resource_files(manifest.schema_version) {
-        let path = source.join(name);
+    let mut names:Vec<String>=resource_files(manifest.schema_version).into_iter().map(str::to_string).collect();
+    if manifest.schema_version==4 {
+        maa_adapter::combat_vision::CombatBundle::load(&source.join("generated/combat"))?;
+        let mut combat=Vec::new();
+        for entry in walkdir::WalkDir::new(source.join("generated/combat")).min_depth(1) {let entry=entry?;check_path(entry.path())?;if entry.file_type().is_file(){combat.push(entry.path().strip_prefix(&source)?.to_string_lossy().replace('\\',"/"));}}
+        combat.sort();names.extend(combat);
+    }
+    for name in names {
+        let path = source.join(&name);
         check_path(&path)?;
         let (bytes, sha256) = copy_hash(File::open(path)?, std::io::sink(), MAX_FILE)?;
         manifest.files.push(ResourceFile {
-            path: name.into(),
+            path: name,
             bytes,
             sha256,
         });
@@ -415,7 +458,8 @@ fn extract(
     file.rewind()?;
     let mut zip = ZipArchive::new(file)?;
     ensure!(
-        (FILES.len() + 1..=FILES.len() + COFFEE_FILES.len() + 1).contains(&zip.len()),
+        (FILES.len() + 1..=FILES.len() + COFFEE_FILES.len() + DAILY_FILES.len() + 1)
+            .contains(&zip.len()),
         "ZIP 文件数量不匹配"
     );
     let mut names = BTreeSet::new();
@@ -427,7 +471,8 @@ fn extract(
                 && !entry.is_symlink()
                 && (entry.name() == MANIFEST
                     || FILES.contains(&entry.name())
-                    || COFFEE_FILES.contains(&entry.name()))
+                    || COFFEE_FILES.contains(&entry.name())
+                    || DAILY_FILES.contains(&entry.name()))
                 && names.insert(entry.name().to_owned()),
             "ZIP 包含多余、重复或非法条目"
         );
@@ -440,7 +485,7 @@ fn extract(
     let manifest: ResourceManifest = serde_json::from_slice(&bytes)?;
     validate_manifest(&manifest)?;
     ensure!(
-        zip.len() == resource_files(manifest.schema_version).len() + 1,
+        zip.len() == manifest.files.len() + 1,
         "ZIP 文件数量与资源格式不匹配"
     );
     let id = hex::encode(Sha256::digest(&bytes));
@@ -622,7 +667,8 @@ pub fn preview_change(
     let expected = match request {
         RuntimeResourceRequest::Activate { revision, .. }
         | RuntimeResourceRequest::Rollback { revision } => revision,
-        RuntimeResourceRequest::Refresh
+        RuntimeResourceRequest::Discover { .. }
+        | RuntimeResourceRequest::Refresh
         | RuntimeResourceRequest::Download { .. }
         | RuntimeResourceRequest::Install { .. } => {
             anyhow::bail!("该操作不是版本切换")
@@ -646,7 +692,8 @@ pub fn preview_change(
             target(&root, bundled, selection.previous.as_deref())?;
             std::mem::swap(&mut selection.current, &mut selection.previous);
         }
-        RuntimeResourceRequest::Refresh
+        RuntimeResourceRequest::Discover { .. }
+        | RuntimeResourceRequest::Refresh
         | RuntimeResourceRequest::Download { .. }
         | RuntimeResourceRequest::Install { .. } => unreachable!(),
     }

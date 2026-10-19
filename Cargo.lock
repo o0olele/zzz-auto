@@ -2423,8 +2423,10 @@ name = "od-core"
 version = "0.1.4"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "hex",
+ "image",
  "serde",
  "serde_json",
  "serde_yaml_ng",

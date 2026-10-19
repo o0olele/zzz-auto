@@ -21,6 +21,7 @@ import { AfterDoneBanner } from './AfterDoneBanner';
 import { GeneralSettings } from './GeneralSettings';
 import { RunLogs } from './RunLogs';
 import { RunHistory } from './RunHistory';
+import { ScreenSamples, useScreenSamples } from './ScreenSamples';
 import { ModelResources } from './ModelResources';
 import { RuntimeResources, useRuntimeResources } from './RuntimeResources';
 import { CoffeeDiagnostics } from './CoffeeDiagnostics';
@@ -31,7 +32,7 @@ import { LaunchGameCard } from './GameLaunch';
 import { RunNotificationBanner, RunNotifications } from './RunNotifications';
 import type { RunNotifications as NoticeState } from './generated/protocol';
 
-type Page = 'home' | 'run' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'history' | 'logs' | 'notifications' | 'apps' | 'native' | 'progress';
+type Page = 'home' | 'run' | 'accounts' | 'settings' | 'resources' | 'runtime_resources' | 'history' | 'logs' | 'notifications' | 'samples' | 'apps' | 'native' | 'progress';
 const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'home', label: '总览', icon: <Home24Regular /> },
   { id: 'run', label: '一条龙运行', icon: <Play20Regular /> },
@@ -44,6 +45,7 @@ const pages: { id: Page; label: string; icon: React.ReactElement }[] = [
   { id: 'notifications', label: '运行提醒', icon: <CheckmarkCircle20Regular /> },
   { id: 'apps', label: '应用迁移', icon: <Apps24Regular /> },
   { id: 'native', label: '原生诊断', icon: <Desktop24Regular /> },
+  { id: 'samples', label: '画面素材', icon: <Image24Regular /> },
   { id: 'progress', label: '开发与验收', icon: <DocumentText24Regular /> },
 ];
 const modeNames: Record<string, string> = { pipeline: 'Maa Pipeline', rust: 'Rust', hybrid: 'Rust + Pipeline', rust_service: 'Rust 服务' };
@@ -82,9 +84,10 @@ export default function App() {
   const [resourcesVisited, setResourcesVisited] = useState(false);
   const runtimeResources = useRuntimeResources(resourcesVisited);
   const configRecovery = useConfigRecovery();
+  const screenSamples = useScreenSamples(page === 'samples');
   const resourceSwitching = runtimeResources.snapshot.job?.state === 'running' && ['install', 'activate', 'rollback'].includes(runtimeResources.snapshot.job.request.type);
   const configRecovering = configRecovery.submitting || configRecovery.snapshot.job?.state === 'running';
-  const busy = actionBusy || resourceSwitching || configRecovering || afterDoneBusy;
+  const busy = actionBusy || resourceSwitching || configRecovering || afterDoneBusy || screenSamples.capturing;
   const [connected, setConnected] = useState(false);
   const [privilege, setPrivilege] = useState<EnginePrivilege | null>(null);
   const [elevating, setElevating] = useState(false);
@@ -251,6 +254,7 @@ export default function App() {
             <Card className="log-card"><div className="card-title"><h2>引擎日志</h2><Text size={200}>最多保留 256 条 · 已丢弃 {snapshot?.dropped_events ?? 0} 条</Text></div><div className="logs" role="log" aria-label="引擎运行日志">{snapshot?.events.slice(-80).map(event => <div className={`log-line ${event.level}`} key={event.sequence}><time>{new Date(event.at).toLocaleTimeString('zh-CN', { hour12: false })}</time><span>{event.level.toUpperCase()}</span><p>{event.message}</p></div>)}{!snapshot?.events.length && <div className="empty-row">连接引擎后显示诊断日志</div>}</div></Card>
           </>}
 
+          {page === 'samples' && <ScreenSamples manager={screenSamples} connected={connected && !recoveryRequired} blocked={busy || recoveryRequired} snapshot={snapshot}/>}
           {page === 'resources' && <ModelResources connected={connected && !recoveryRequired} blocked={busy}/>}
           {page === 'runtime_resources' && <RuntimeResources manager={runtimeResources} blocked={actionBusy || active || recoveryRequired || configRecovering || afterDoneBusy} maintenance={configRecovering}/>}
 

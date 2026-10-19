@@ -1,4 +1,9 @@
 // 由 od-tools types 生成；请修改 Rust 协议。
+export type ScreenSampleKind = "engagement_daily" | "engagement_confirm" | "engagement_preview" | "coffee_options" | "coffee_energy" | "coffee_buff" | "other";
+export type ScreenSampleSource = { session_id: string, hwnd: string, pid: number, capture_method: CaptureMethod, };
+export type ScreenSamplePreview = { id: string, source: ScreenSampleSource, screenshot: Screenshot, sha256: string, bytes: number, };
+export type ScreenSampleExport = { id: string, kind: ScreenSampleKind, note: string, image_path: string, metadata_path: string, sha256: string, };
+export type ScreenSampleState = { preview: ScreenSamplePreview | null, saved: ScreenSampleExport | null, };
 export type AfterDoneAction = "none" | "close_game" | "shutdown" | "hibernate" | "sleep";
 export type AfterDoneState = "watching" | "counting_down" | "executing" | "succeeded" | "cancelled" | "failed";
 export type AfterDoneStatus = { id: string, run_id: string, action: AfterDoneAction, state: AfterDoneState, remaining_seconds: number, message: string, };
@@ -286,5 +291,35 @@ export const runNotificationOptions = [
   {
     "label": "全部结果",
     "value": "all"
+  }
+] as const;
+export const screenSampleKindOptions = [
+  {
+    "label": "活跃度 · 日常页",
+    "value": "engagement_daily"
+  },
+  {
+    "label": "活跃度 · 领取确认",
+    "value": "engagement_confirm"
+  },
+  {
+    "label": "活跃度 · 奖励预览",
+    "value": "engagement_preview"
+  },
+  {
+    "label": "咖啡 · 点单选项",
+    "value": "coffee_options"
+  },
+  {
+    "label": "咖啡 · 电量奖励",
+    "value": "coffee_energy"
+  },
+  {
+    "label": "咖啡 · 增益确认",
+    "value": "coffee_buff"
+  },
+  {
+    "label": "其他画面",
+    "value": "other"
   }
 ] as const;

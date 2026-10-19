@@ -175,3 +175,6 @@ p { color: var(--muted); font-size: 13px; line-height: 1.85; margin: 0; }
 .history-results { max-height: 640px; overflow: auto; }
 .history-results li { font-size: 12px; padding-block: 3px; }
 .path-value { overflow-wrap: anywhere; }
+.screen-samples-card { min-width: 0; }
+.screen-samples-card .button-row, .screen-samples-card .preview-meta { flex-wrap: wrap; gap: 8px; }
+.screen-samples-card .fui-Input, .screen-samples-card .fui-Select { min-width: 0; max-width: 100%; width: 100%; }

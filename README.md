@@ -27,6 +27,8 @@ npm run tauri dev
 
 “账号与应用组”还可保存[运行结果提醒](docs/develop/run-notifications.md)策略。应用组完成或异常后，可从全局提示、侧栏和托盘进入运行提醒，跨页面及断线后查看并标记已读；默认仅异常。
 
+需要补充奖励等真实画面时，可在总览连接游戏后进入[画面素材](docs/develop/screen-samples.md)，按需采集、核对预览和人工标注，再保存 PNG 与元信息到本机数据目录 `diagnostics/screens/`。
+
 只查看界面可以执行 `npm run dev`。浏览器显示“界面预览”，原生功能保持禁用。
 
 ## CLI

@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 pub struct Host {
+    pub screen_samples: std::sync::Arc<std::sync::Mutex<od_core::screen_samples::ScreenSampleBook>>,
     pub run_notifications: std::sync::Mutex<od_core::run_notifications::RunNotificationBook>,
     pub after_done: crate::after_done::DesktopAfterDone,
     session: crate::resources::SharedSession,
@@ -41,6 +42,9 @@ impl Host {
         let runtime = tauri::async_runtime::handle().inner().clone();
         let resources = crate::resources::ResourceManager::new(session.clone(), runtime.clone());
         Self {
+            screen_samples: std::sync::Arc::new(std::sync::Mutex::new(
+                od_core::screen_samples::ScreenSampleBook::default(),
+            )),
             run_notifications: std::sync::Mutex::new(
                 od_core::run_notifications::RunNotificationBook::default(),
             ),
@@ -375,6 +379,40 @@ impl Host {
             .map_err(|error| ApiError::new("log_export_failed", format!("{error:#}")))
     }
 
+    pub async fn capture_sample(
+        &self,
+        hwnd: &str,
+        method: od_core::CaptureMethod,
+    ) -> Result<od_core::screen_samples::ScreenSampleState, ApiError> {
+        self.after_done.require_available()?;
+        self.resources.require_available()?;
+        let mut state = self.session.lock().await;
+        self.after_done.require_available()?;
+        self.resources.require_available()?;
+        let session = state.as_mut().ok_or_else(|| offline("请先连接游戏窗口"))?;
+        crate::screen_samples::capture(session, &self.screen_samples, hwnd, method).await
+    }
+
+    pub async fn save_sample(
+        &self,
+        app: &AppHandle,
+        id: uuid::Uuid,
+        kind: od_core::screen_samples::ScreenSampleKind,
+        note: String,
+    ) -> Result<od_core::screen_samples::ScreenSampleState, ApiError> {
+        let data = layout(app)?.data;
+        let cache = self.screen_samples.clone();
+        tokio::task::spawn_blocking(move || {
+            cache
+                .lock()
+                .map_err(|_| crate::screen_samples::failed("素材缓存不可用"))?
+                .save(&data, id, kind, &note)
+                .map_err(crate::screen_samples::failed)
+        })
+        .await
+        .map_err(crate::screen_samples::failed)?
+    }
+
     pub async fn shutdown(&self) -> Result<(), ApiError> {
         self.after_done.invalidate("桌面正在退出，结束后动作已取消");
         self.after_done.require_available()?;
@@ -388,6 +426,8 @@ impl Host {
             return Err(error);
         }
         state.take();
+        // 等待正在写入的本机素材收尾，并使排队保存的旧标识失效。
+        crate::screen_samples::clear_and_wait(self.screen_samples.clone()).await?;
         self.run_notifications.lock().expect("运行提醒锁").closing();
         Ok(())
     }

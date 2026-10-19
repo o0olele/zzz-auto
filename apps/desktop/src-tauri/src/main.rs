@@ -4,6 +4,7 @@ mod archive_picker;
 mod config_recovery;
 mod host;
 mod resources;
+mod screen_samples;
 mod session;
 mod shortcuts;
 
@@ -250,6 +251,43 @@ async fn export_log_session(
     state.export_logs(&app, session_id).await
 }
 
+#[tauri::command]
+fn screen_sample_state(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+) -> Result<od_core::screen_samples::ScreenSampleState, ApiError> {
+    main_window(&window)?;
+    Ok(state
+        .screen_samples
+        .lock()
+        .map_err(|_| screen_samples::failed("素材缓存不可用"))?
+        .state())
+}
+
+#[tauri::command]
+async fn capture_screen_sample(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Host>,
+    hwnd: String,
+    capture_method: od_core::CaptureMethod,
+) -> Result<od_core::screen_samples::ScreenSampleState, ApiError> {
+    main_window(&window)?;
+    state.capture_sample(&hwnd, capture_method).await
+}
+
+#[tauri::command]
+async fn save_screen_sample(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Host>,
+    id: uuid::Uuid,
+    kind: od_core::screen_samples::ScreenSampleKind,
+    note: String,
+) -> Result<od_core::screen_samples::ScreenSampleState, ApiError> {
+    main_window(&window)?;
+    state.save_sample(&app, id, kind, note).await
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .manage(Host::new())
@@ -273,7 +311,10 @@ fn main() {
             subscribe_engine,
             retry_shortcuts,
             desktop_logs,
-            export_log_session
+            export_log_session,
+            screen_sample_state,
+            capture_screen_sample,
+            save_screen_sample
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {

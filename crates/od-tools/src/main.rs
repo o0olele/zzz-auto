@@ -199,6 +199,11 @@ fn main() -> Result<()> {
         }
         Tool::Types { output } => {
             let declarations = [
+                od_core::screen_samples::ScreenSampleKind::decl(),
+                od_core::screen_samples::ScreenSampleSource::decl(),
+                od_core::screen_samples::ScreenSamplePreview::decl(),
+                od_core::screen_samples::ScreenSampleExport::decl(),
+                od_core::screen_samples::ScreenSampleState::decl(),
                 od_core::after_done::AfterDoneAction::decl(),
                 od_core::after_done::AfterDoneState::decl(),
                 od_core::after_done::AfterDoneStatus::decl(),
@@ -326,7 +331,7 @@ fn main() -> Result<()> {
             std::fs::write(
                 output,
                 format!(
-                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\nexport const gameLaunchDefaultConfig = {} as const;\nexport const runNotificationOptions = {} as const;\n",
+                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\nexport const gameLaunchDefaultConfig = {} as const;\nexport const runNotificationOptions = {} as const;\nexport const screenSampleKindOptions = {} as const;\n",
                     declarations
                         .into_iter()
                         .map(|decl| format!("export {decl}"))
@@ -344,6 +349,9 @@ fn main() -> Result<()> {
                     )?,
                     serde_json::to_string_pretty(
                         &od_core::run_notifications::RunNotificationMode::options()
+                    )?,
+                    serde_json::to_string_pretty(
+                        &od_core::screen_samples::ScreenSampleKind::options()
                     )?
                 ),
             )?;

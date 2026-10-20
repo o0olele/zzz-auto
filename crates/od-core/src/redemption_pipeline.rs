@@ -130,6 +130,37 @@ pub fn pipeline() -> Value {
     }
     p
 }
+
+/// 聚焦后标题会被 OCR 输出为「兌換码」；旧包的固定定义保留，
+/// 仅在本次任务兼容「换／換」，输入正文仍按冻结码完整核对。
+pub fn ocr_overrides(pipeline: &Value) -> Value {
+    let mut overrides = json!({});
+    for (name, node) in pipeline.as_object().expect("固定 Pipeline 是对象") {
+        if !name.starts_with("Redeem.") || node["recognition"] != "OCR" {
+            continue;
+        }
+        let Some(expected) = node["expected"].as_array() else {
+            continue;
+        };
+        if expected
+            .iter()
+            .any(|pattern| pattern.as_str().is_some_and(|text| text.contains('换')))
+        {
+            let expected: Vec<_> = expected
+                .iter()
+                .map(|pattern| {
+                    pattern
+                        .as_str()
+                        .expect("固定 OCR 规则是文字")
+                        .replace('换', "[换換]")
+                })
+                .collect();
+            overrides[name] = json!({"expected":expected});
+        }
+    }
+    overrides
+}
+
 fn and(nodes: &[&str]) -> Value {
     json!({"recognition":"And","all_of":nodes})
 }

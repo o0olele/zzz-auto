@@ -305,7 +305,7 @@ impl MailRun {
                 MailStep::AfterClaim => &["Mail.Dialog", "Mail.Empty"],
                 MailStep::Confirm => &["Mail.ClickConfirm"],
                 MailStep::AfterConfirm => &["Mail.Empty"],
-                MailStep::ReturnList => &["Mail.Menu"],
+                MailStep::ReturnList => &["Mail.Dialog", "Mail.Menu"],
                 MailStep::ReturnWorld => &["Mail.World"],
             };
             if !last.as_deref().is_some_and(|name| expected.contains(&name)) {
@@ -360,6 +360,14 @@ impl MailRun {
                 },
                 MailStep::Confirm => self.phase = MailPhase::AfterConfirm,
                 MailStep::AfterConfirm => self.phase = MailPhase::ReturnList,
+                MailStep::ReturnList if last.as_deref() == Some("Mail.Dialog") => {
+                    if !self.claim_attempted {
+                        self.terminal(MailState::Failed, "邮件奖励弹窗不属于本次领取，已停止流程");
+                        return Ok(());
+                    }
+                    self.reward_observed = true;
+                    self.phase = MailPhase::Confirm;
+                }
                 MailStep::ReturnList => self.phase = MailPhase::ReturnWorld,
                 MailStep::ReturnWorld => self.phase = MailPhase::Done,
             }

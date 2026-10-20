@@ -105,3 +105,12 @@ impl MailProgress {
         }
     }
 }
+
+/// 领取按钮可能先变灰、稍后才出现奖励；返回列表期间也要优先检查弹窗。
+/// 通过任务覆盖保留既有邮件包的固定定义与哈希校验。
+pub fn pipeline_overrides() -> serde_json::Value {
+    serde_json::json!({
+        "Mail.ReturnList": {"next": ["Mail.Dialog", "Mail.CloseList"]},
+        "Mail.CloseList": {"next": ["Mail.Dialog", "Mail.Menu"]}
+    })
+}

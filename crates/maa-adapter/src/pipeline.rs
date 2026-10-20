@@ -164,7 +164,7 @@ impl NativeSession {
             },
             cancel,
             timeout,
-            "{}",
+            &od_core::mail::pipeline_overrides().to_string(),
             true,
         )
     }
@@ -184,7 +184,7 @@ impl NativeSession {
             },
             cancel,
             timeout,
-            "{}",
+            &od_core::mail::pipeline_overrides().to_string(),
             true,
         )
     }

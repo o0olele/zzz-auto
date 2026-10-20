@@ -259,6 +259,7 @@ impl crate::NativeSession {
         if progress.app_id == "redemption_code" {
             let state = progress.redemption.as_ref().context("缺少冻结的兑换码")?;
             state.validate().map_err(anyhow::Error::msg)?;
+            overrides = od_core::redemption::ocr_overrides(&pipeline);
             if let Some(code) = state.current() {
                 overrides["Redeem.Type"] = json!({"input_text":code.code});
                 overrides["Redeem.InputValue"] = json!({"expected":[format!("^{}$",code.code)]});

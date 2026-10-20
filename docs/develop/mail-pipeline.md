@@ -8,7 +8,7 @@
 
 ```powershell
 cargo run -p od-tools --locked -- mail-bundle --reference ../ZenlessZoneZero-OneDragon
-cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --locked --test mail_pipeline -- --test-threads=1
+cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --locked --test mail_rewards -- --test-threads=1
 ```
 
 默认输出为 `resources/generated/mail/`。来源为参考仓 `email.yml`、`menu.yml`、`normal_world_basic.yml` 中十个区域及其模板。OCR 使用 `models.lock.json` 固定的 ppocrv5 检测、识别模型与字典。构建器核对模型原始字节，将旧矩形转换为 Maa ROI，保持 1920×1080，不缩放模板。独立二值掩码的 0 像素转换为 RGB `(0,255,0)`，255 像素保持原值，显式启用 `green_mask`，模板方法为 5。
@@ -41,6 +41,8 @@ cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-di
 依据为旧仓 `docs/game/screens/邮件.md`、`大世界.md`、三个 screen_info 和 `EmailApp`。测试复用大世界、菜单、可领取列表、已领取列表和奖励弹窗五张真实截图；自定义控制器在点击后延迟两次截图再换帧，交给真实 Maa Tasker 完成识别、轮询与动作。
 
 完整路径：大世界持有 Alt 点击菜单 → 释放 Alt → 邮件 → 核对标题和全部领取 → 判断按钮状态 → 领取 → 核对奖励弹窗 → 确认 → 核对已领取列表 → 返回菜单 → 返回并核对大世界。也可从菜单或列表进入；未知画面超时，非本次领取产生的通用弹窗不自动接管。
+
+领取后按钮可能先变灰，奖励弹窗稍后才出现。返回列表时继续优先识别奖励弹窗，关闭列表后的等待也检查弹窗；仅本次已有领取尝试时进入确认，再核对已领取列表并返回。运行时以固定任务覆盖补充这两处分支，既有邮件包定义与哈希校验保留。2026 年 10 月 21 日运行 `64546efa-2b33-410a-85e4-1918ce50df87` 暴露了这次时序问题：`AfterClaim` 先识别到 `Mail.Empty`，进入 `ReturnList` 后奖励出现，旧流程只等待 `Mail.CloseList` 并失败。
 
 大世界入口按旧控制器时序，Alt 按下后至少等待 200ms 再按下鼠标，让游戏先解锁光标。`Mail.WaitAlt` 用九次无输入动作与八段 25ms 间隔实现，避免一个不可及时中断的长等待；暂停 / 停止后仍等待原生队列结束并显式释放 Alt，继续时重新识别。测试控制器在菜单鼠标按下时检查等待长度，而不是等鼠标抬起后才检查；也覆盖此等待期间暂停、停止与继续。
 
@@ -75,6 +77,8 @@ cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-di
 ## 验证与后续
 
 测试在独立测试仓，覆盖资源重建、哈希、坐标、掩码与字典、来源保护、五种画面、完整多帧推进、满事件队列、重复执行、领取 / 确认中暂停、领取效果不确定、停止、超时及动作 / 释放失败。设置 `ZZZ_M2_MAIL_REPORT` 为新的 JSON 文件路径可以保存固定图原生观察；未设置时不会改写验收档案。
+
+`mail_rewards` 用本次用户提供的奖励截图和已有真实列表、菜单、大世界留档，经真实 Maa Tasker 验证按钮先变灰再弹奖励、关闭列表时才弹奖励、正常奖励、无奖励、非本次弹窗拒绝确认和确认前暂停继续。断言领取和确认各执行一次，最终返回大世界并释放输入；受控截图时序不代替本次实机复测。
 
 新增集成回归使用真实 Engine 工作线程及 Maa Tasker，验证领取后暂停、同 ID 继续、运行槽互斥、结果落盘、事件序号、继续 / 停止竞争及暂停后退出；资源伪造测试修改哈希后仍拒绝额外动作。桌面恢复测试验证落盘先于请求、暂停保留、继续前丢失记录、缺失释放证明和恢复计划限制。另用屏幕外且不激活的 Win32 测试窗口确认真实游戏入口在前台检查失败时没有投递按下，不向全局输入流发送按下。
 

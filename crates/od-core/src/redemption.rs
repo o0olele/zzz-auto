@@ -334,4 +334,4 @@ pub fn recovery_inputs() -> Vec<crate::InputProbeConfig> {
 
 #[path = "redemption_pipeline.rs"]
 mod definition;
-pub use definition::pipeline;
+pub use definition::{ocr_overrides, pipeline};

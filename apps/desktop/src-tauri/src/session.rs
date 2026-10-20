@@ -193,12 +193,36 @@ impl EngineSession {
             }
         );
         let input = match &command {
-            Command::StartCombat {instance_id,revision,allow_input:true,confirm_account:true,..} => {
-                let Payload::AccountConfig(saved)=self.request_raw(Command::AccountConfig).await? else {return Err(offline("无法读取战斗账号配置"));};
-                if saved.revision!=*revision||saved.active_instance!=*instance_id {return Err(ApiError::new("account_changed","战斗账号或配置修订已变化，请重新读取"));}
-                let settings=&saved.instances.iter().find(|a|a.id==*instance_id).ok_or_else(||offline("当前战斗账号缺失"))?.combat;
-                Some(settings.recovery_inputs().map_err(|e|ApiError::new("invalid_input",e))?)
-            },
+            Command::StartCombat {
+                instance_id,
+                revision,
+                allow_input: true,
+                confirm_account: true,
+                ..
+            } => {
+                let Payload::AccountConfig(saved) =
+                    self.request_raw(Command::AccountConfig).await?
+                else {
+                    return Err(offline("无法读取战斗账号配置"));
+                };
+                if saved.revision != *revision || saved.active_instance != *instance_id {
+                    return Err(ApiError::new(
+                        "account_changed",
+                        "战斗账号或配置修订已变化，请重新读取",
+                    ));
+                }
+                let settings = &saved
+                    .instances
+                    .iter()
+                    .find(|a| a.id == *instance_id)
+                    .ok_or_else(|| offline("当前战斗账号缺失"))?
+                    .combat;
+                Some(
+                    settings
+                        .recovery_inputs()
+                        .map_err(|e| ApiError::new("invalid_input", e))?,
+                )
+            }
             Command::StartCoffeeFromWorld {
                 config,
                 allow_input: true,
@@ -275,7 +299,9 @@ impl EngineSession {
                 .window
                 .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
             let plan = od_platform::InputRecoveryPlan {
-                version: if matches!(command,Command::StartCombat {..}) {8} else if matches!(
+                version: if matches!(command, Command::StartCombat { .. }) {
+                    8
+                } else if matches!(
                     command,
                     Command::StartGroupTrial { .. } | Command::StartStandaloneTrial { .. }
                 ) {
@@ -322,7 +348,13 @@ impl EngineSession {
                     "流程尚未确认暂停或运行 ID 已过期",
                 ));
             }
-            let version = if snapshot.run.as_ref().is_some_and(|run|run.combat.is_some()) {8} else if snapshot.run.as_ref().is_some_and(|run| run.group.is_some()) {
+            let version = if snapshot
+                .run
+                .as_ref()
+                .is_some_and(|run| run.combat.is_some())
+            {
+                8
+            } else if snapshot.run.as_ref().is_some_and(|run| run.group.is_some()) {
                 7
             } else if snapshot
                 .run

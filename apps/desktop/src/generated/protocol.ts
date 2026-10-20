@@ -1,13 +1,9 @@
 // 由 od-tools types 生成；请修改 Rust 协议。
-export type CombatConfig = { script: string, dodge_script: string, use_merged: boolean, auto_ultimate: boolean, frame_interval_ms: number, mode: InputMode, start_delay_ms: number, timeout_ms: number, max_frame_age_ms: number, tap_ms: number, audio: boolean, audio_threshold_milli: number, dodge_only: boolean, 
-/**
- * 每 1000 单位旧版 turn_by_distance 对应的相对位移；首版默认 1:1。
- */
-turn_sensitivity_milli: number, gamepad_turn_speed: number, bindings: { [key in string]?: Array<InputProbeAction> }, };
+export type CombatConfig = { script: string, dodge_script: string, use_merged: boolean, auto_ultimate: boolean, frame_interval_ms: number, directml_device: number | null, mode: InputMode, start_delay_ms: number, timeout_ms: number, max_frame_age_ms: number, tap_ms: number, audio: boolean, audio_threshold_milli: number, dodge_only: boolean, turn_sensitivity_milli: number, gamepad_turn_speed: number, bindings: { [key in string]?: Array<InputProbeAction> }, };
 export type CombatScriptCatalog = { revision: string, imported: string | null, battle: Array<string>, dodge: Array<string>, };
 export type CombatScriptImportPreview = { source: string, preview_id: string, snapshot_id: string, previous: string | null, battle: Array<string>, dodge: Array<string>, files: number, bytes: number, };
-export type CombatProgress = { config: CombatConfig, state: RunState, inputs_released: boolean, in_battle: boolean, handler: string, action: string, frames: number, stale_frames: number, actions: number, preemptions: number, frame_age_ms: number, audio_correlation: number | null, team: Array<string>, states: { [key in string]?: number }, };
-export const combatDefaultConfig = {"script":"全配队通用","dodge_script":"闪避","use_merged":true,"auto_ultimate":false,"frame_interval_ms":20,"mode":"foreground","start_delay_ms":3000,"timeout_ms":3600000,"max_frame_age_ms":250,"tap_ms":20,"audio":false,"audio_threshold_milli":100,"dodge_only":true,"turn_sensitivity_milli":1000,"gamepad_turn_speed":16000,"bindings":{}} as const;
+export type CombatProgress = { config: CombatConfig, script_revision: string, state: RunState, inputs_released: boolean, in_battle: boolean, handler: string, action: string, frames: number, stale_frames: number, actions: number, preemptions: number, frame_age_ms: number, audio_correlation: number | null, team: Array<string>, states: { [key in string]?: number }, };
+export const combatDefaultConfig = {"script":"全配队通用","dodge_script":"闪避","use_merged":true,"auto_ultimate":false,"frame_interval_ms":20,"directml_device":null,"mode":"foreground","start_delay_ms":3000,"timeout_ms":3600000,"max_frame_age_ms":250,"tap_ms":20,"audio":false,"audio_threshold_milli":100,"dodge_only":true,"turn_sensitivity_milli":1000,"gamepad_turn_speed":16000,"bindings":{}} as const;
 export const combatButtonNames = ["闪避","切换角色-下一个","切换角色-上一个","切换后援","普通攻击","特殊攻击","终结技","连携技-左","连携技-右","连携技-取消","移动-前","移动-后","移动-左","移动-右","锁定敌人","快速支援"] as const;
 export type ScreenSampleKind = "engagement_daily" | "engagement_confirm" | "engagement_preview" | "coffee_options" | "coffee_energy" | "coffee_buff" | "other";
 export type ScreenSampleSource = { session_id: string, hwnd: string, pid: number, capture_method: CaptureMethod, };

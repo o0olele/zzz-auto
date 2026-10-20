@@ -21,6 +21,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '咖啡资源校验失败，请先完成当前源码的 release 构建及 coffee-run-bundle 生成。' }
     & ./target/release/zzz-engine.exe --root $projectRoot basic-daily-bundle-check --bundle resources/generated/basic-daily
     if ($LASTEXITCODE -ne 0) { throw '首批日常资源校验失败，请先完成 basic-daily-bundle 生成。' }
+    & ./target/release/zzz-engine.exe --root $projectRoot combat-bundle-check --bundle resources/generated/combat
+    if ($LASTEXITCODE -ne 0) { throw '战斗资源校验失败，请先完成 combat-bundle 生成。' }
     $packageName = "zzz-auto-$($config.version)-windows-x64-prototype"
     $stagingParent = Join-Path $projectRoot ("target/portable-" + [guid]::NewGuid().ToString('N'))
     $staging = Join-Path $stagingParent $packageName
@@ -56,6 +58,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '复制后的咖啡资源包校验失败，已停止打包。' }
     & (Join-Path $staging 'zzz-auto-engine.exe') --root $staging basic-daily-bundle-check --bundle (Join-Path $staging 'resources/generated/basic-daily')
     if ($LASTEXITCODE -ne 0) { throw '复制后的首批日常资源包校验失败，已停止打包。' }
+    & (Join-Path $staging 'zzz-auto-engine.exe') --root $staging combat-bundle-check --bundle (Join-Path $staging 'resources/generated/combat')
+    if ($LASTEXITCODE -ne 0) { throw '复制后的战斗资源包校验失败，已停止打包。' }
     foreach ($binary in $sdkManifest.binaries) {
         $path = Join-Path (Join-Path $projectRoot 'sdk/maa/bin') $binary.path
         if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $binary.sha256) { throw "SDK 文件校验失败：$($binary.path)" }
@@ -96,12 +100,13 @@ try {
         sdk_version = $sdkLock.sdk_version; binding_version = $sdkLock.binding_version
         created_at_utc = [DateTime]::UtcNow.ToString('o'); vc_runtime = $runtimeVersions
         webview2 = 'Evergreen bootstrapper included; internet needed only if runtime is missing'
-        includes_user_data = $false; includes_models = $true; included_models = @('ppocrv5')
+        includes_user_data = $false; includes_models = $true; included_models = @('ppocrv5', 'flash_classifier')
         protocol_version = $mailCheck.protocol_version
         mail_resources = [ordered]@{ path = 'resources/generated/mail'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/mail/mail-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         map_resources = [ordered]@{ path = 'resources/generated/map-preview'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/map-preview/map-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         coffee_resources = [ordered]@{ path = 'resources/generated/coffee-run'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/coffee-run/coffee-run-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         daily_resources = [ordered]@{ path = 'resources/generated/basic-daily'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/basic-daily/basic-daily-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
+        combat_resources = [ordered]@{ path = 'resources/generated/combat'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/combat/combat-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         files = $manifestFiles
     }
     [IO.File]::WriteAllText((Join-Path $staging 'release-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))

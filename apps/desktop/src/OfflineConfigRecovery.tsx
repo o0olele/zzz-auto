@@ -5,6 +5,7 @@ import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
 import { configRecoveryState, desktop, errorMessage, startConfigRecovery } from './bridge';
 import { captureNames } from './captureSettings';
 import { coffeeSummary } from './CoffeeSettings';
+import { combatSummary } from './combatSettings';
 import { dailySummary } from './DailySettings';
 import { gameLaunchSummary } from './GameLaunch';
 import { runNotificationName } from './RunNotifications';
@@ -73,6 +74,7 @@ function RecoveryContents({ config, apps }: { config: AccountConfig; apps: AppDe
     <p className="path-value">游戏启动：{gameLaunchSummary(account.game_launch)}。</p>
     <p>运行结果提醒：{runNotificationName(account.run_notifications)}。</p>
     <p>应用组顺序：{account.groups.map(groupLabel).join(' → ')}。</p>
+    <p>战斗设置：{combatSummary(account.combat)}。</p>
     <Field label="核对恢复应用组"><Select value={group.id} onChange={(_, data) => setGroupId(data.value)}>{account.groups.map(item => <option key={item.id} value={item.id}>{groupLabel(item)}</option>)}</Select></Field>
     <p>运行策略：{runPolicyOptions.find(item => item.value === group.run_policy)?.label}。</p>
     <p>咖啡设置：{coffeeSummary(group.coffee)}。</p>

@@ -90,8 +90,17 @@ impl InputRecoveryPlan {
     pub fn validate(&self) -> Result<()> {
         ensure!(matches!(self.version, 1..=8), "输入恢复记录版本不支持");
         if self.version == 8 {
-            ensure!(self.additional_inputs.len()<=128 && self.additional_inputs.iter().all(|input|input.mode==self.config.mode), "v8 战斗恢复输入过多或输入模式不一致");
-            for input in &self.additional_inputs {input.validate().map_err(anyhow::Error::msg)?;}
+            ensure!(
+                self.additional_inputs.len() <= 128
+                    && self
+                        .additional_inputs
+                        .iter()
+                        .all(|input| input.mode == self.config.mode),
+                "v8 战斗恢复输入过多或输入模式不一致"
+            );
+            for input in &self.additional_inputs {
+                input.validate().map_err(anyhow::Error::msg)?;
+            }
         } else if self.version == 1 {
             ensure!(self.additional_inputs.is_empty(), "v1 恢复记录不能增加输入");
         } else if self.version == 2 {

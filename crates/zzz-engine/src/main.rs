@@ -102,26 +102,26 @@ enum Action {
         cancel_after_ms: Option<u64>,
     },
     CombatBundleCheck {
-        #[arg(long,default_value="resources/generated/combat")]
-        bundle:PathBuf,
+        #[arg(long, default_value = "resources/generated/combat")]
+        bundle: PathBuf,
     },
     /// 固定截图的战斗状态检查，不发送游戏输入。
     CombatInspect {
-        #[arg(long,default_value="resources/generated/combat")]
-        bundle:PathBuf,
+        #[arg(long, default_value = "resources/generated/combat")]
+        bundle: PathBuf,
         #[arg(long)]
-        image:PathBuf,
+        image: PathBuf,
         #[arg(long)]
-        dodge_only:bool,
+        dodge_only: bool,
     },
     /// 只回放调度与脚本动作选择，不调用 SDK。
     CombatReplay {
         #[arg(long)]
-        scripts:PathBuf,
+        scripts: PathBuf,
         #[arg(long)]
-        script:String,
+        script: String,
         #[arg(long)]
-        events:PathBuf,
+        events: PathBuf,
     },
     /// 引擎无法读取账号配置时的离线备份恢复；必须显式指定 --data。
     ConfigRecovery {
@@ -512,54 +512,144 @@ async fn main() -> Result<()> {
         paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
     }
     match args.command {
-        Action::CombatReplay {scripts,script,events} => {
+        Action::CombatReplay {
+            scripts,
+            script,
+            events,
+        } => {
             #[derive(serde::Deserialize)]
             #[serde(deny_unknown_fields)]
-            struct Frame {at:f64,#[serde(default)]updates:Vec<od_core::conditional::StateUpdate>,#[serde(default)]complete:bool,#[serde(default)]pause:bool,#[serde(default)]resume:bool}
-            ensure!(events.metadata()?.len()<=8*1024*1024,"回放事件超过 8 MiB");
-            let frames:Vec<Frame>=serde_json::from_slice(&std::fs::read(events)?)?;
-            ensure!(frames.len()<=10000,"回放帧数超过上限");
-            let script=od_core::conditional::Script::load(&scripts,&script)?;
-            let mut scheduler=od_core::conditional::Scheduler::new(script);
-            let mut output=Vec::new();let mut action_count=0;
+            struct Frame {
+                at: f64,
+                #[serde(default)]
+                updates: Vec<od_core::conditional::StateUpdate>,
+                #[serde(default)]
+                complete: bool,
+                #[serde(default)]
+                pause: bool,
+                #[serde(default)]
+                resume: bool,
+            }
+            ensure!(
+                events.metadata()?.len() <= 8 * 1024 * 1024,
+                "回放事件超过 8 MiB"
+            );
+            let frames: Vec<Frame> = serde_json::from_slice(&std::fs::read(events)?)?;
+            ensure!(frames.len() <= 10000, "回放帧数超过上限");
+            let script = od_core::conditional::Script::load(&scripts, &script)?;
+            let mut scheduler = od_core::conditional::Scheduler::new(script);
+            let mut output = Vec::new();
+            let mut action_count = 0;
             for frame in frames {
-                if frame.pause {scheduler.pause();}if frame.resume {scheduler.resume();}
-                if frame.complete&&let Some(active)=scheduler.active() {scheduler.complete(active.generation)?;}
+                if frame.pause {
+                    scheduler.pause();
+                }
+                if frame.resume {
+                    scheduler.resume();
+                }
+                if frame.complete
+                    && let Some(active) = scheduler.active()
+                {
+                    scheduler.complete(active.generation)?;
+                }
                 use od_core::conditional::Decision;
-                let decision=scheduler.tick(frame.at,&frame.updates)?;
-                let row=match decision {
-                    Decision::Idle=>serde_json::json!({"at":frame.at,"decision":"idle"}),
-                    Decision::Interrupt=>serde_json::json!({"at":frame.at,"decision":"interrupt"}),
-                    Decision::Start(ref execution)|Decision::Replace(ref execution)=>{
-                        action_count+=execution.actions.len();ensure!(action_count<=32768,"回放输出动作超过 32768 条，请分段回放");
+                let decision = scheduler.tick(frame.at, &frame.updates)?;
+                let row = match decision {
+                    Decision::Idle => serde_json::json!({"at":frame.at,"decision":"idle"}),
+                    Decision::Interrupt => {
+                        serde_json::json!({"at":frame.at,"decision":"interrupt"})
+                    }
+                    Decision::Start(ref execution) | Decision::Replace(ref execution) => {
+                        action_count += execution.actions.len();
+                        ensure!(
+                            action_count <= 32768,
+                            "回放输出动作超过 32768 条，请分段回放"
+                        );
                         serde_json::json!({"at":frame.at,"decision":if matches!(decision,Decision::Replace(_)){"replace"}else{"start"},"generation":execution.generation,"scene":execution.scene,"handler":execution.label,"actions":execution.actions})
-                    },
-                };output.push(row);
+                    }
+                };
+                output.push(row);
             }
             return print(serde_json::json!({"accepted":false,"input_sent":false,"events":output}));
-        },
-        Action::CombatBundleCheck {ref bundle} => {
-            let bundle=maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;
-            return print(serde_json::json!({"valid":true,"accepted":false,"agents":bundle.spec.agents.len(),"templates":bundle.spec.templates.len(),"scripts":bundle.scripts,"protocol_version":od_protocol::PROTOCOL_VERSION}));
-        },
-        Action::CombatInspect {ref bundle,..} => {maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;},
-        Action::Combat {hwnd,instance_id,allow_input,cancel_after_ms} => {
-            ensure!(allow_input,"战斗必须显式提供 --allow-input");
-            let engine=Engine::new(paths)?;
-            let ready=std::time::Instant::now();
-            while !engine.snapshot().sdk.ready {ensure!(ready.elapsed()<Duration::from_secs(15),"{}",engine.snapshot().sdk.message);tokio::time::sleep(Duration::from_millis(10)).await;}
-            let od_protocol::Payload::AccountConfig(config)=engine.execute(od_protocol::Command::AccountConfig).await? else {anyhow::bail!("无法读取战斗账号");};
-            engine.execute(od_protocol::Command::Attach {hwnd,capture_method:config.general.capture_method}).await?;
-            let od_protocol::Payload::CombatScripts(scripts)=engine.execute(od_protocol::Command::CombatScripts).await? else {anyhow::bail!("引擎未返回战斗脚本目录");};
-            let od_protocol::Payload::Run(run)=engine.execute(od_protocol::Command::StartCombat {instance_id,revision:config.revision,script_revision:scripts.revision,allow_input:true,confirm_account:true}).await? else {anyhow::bail!("引擎未返回战斗运行");};
-            let signal=tokio::signal::ctrl_c();tokio::pin!(signal);
-            let started=std::time::Instant::now();let mut stopping=false;
+        }
+        Action::CombatBundleCheck { ref bundle } => {
+            let bundle =
+                maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"agents":bundle.spec.agents.len(),"templates":bundle.spec.templates.len(),"scripts":bundle.scripts,"dodge_scripts":bundle.dodge_scripts,"protocol_version":od_protocol::PROTOCOL_VERSION}),
+            );
+        }
+        Action::CombatInspect { ref bundle, .. } => {
+            maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;
+        }
+        Action::Combat {
+            hwnd,
+            instance_id,
+            allow_input,
+            cancel_after_ms,
+        } => {
+            ensure!(allow_input, "战斗必须显式提供 --allow-input");
+            let engine = Engine::new(paths)?;
+            let ready = std::time::Instant::now();
+            while !engine.snapshot().sdk.ready {
+                ensure!(
+                    ready.elapsed() < Duration::from_secs(15),
+                    "{}",
+                    engine.snapshot().sdk.message
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            let od_protocol::Payload::AccountConfig(config) =
+                engine.execute(od_protocol::Command::AccountConfig).await?
+            else {
+                anyhow::bail!("无法读取战斗账号");
+            };
+            engine
+                .execute(od_protocol::Command::Attach {
+                    hwnd,
+                    capture_method: config.general.capture_method,
+                })
+                .await?;
+            let od_protocol::Payload::CombatScripts(scripts) =
+                engine.execute(od_protocol::Command::CombatScripts).await?
+            else {
+                anyhow::bail!("引擎未返回战斗脚本目录");
+            };
+            let od_protocol::Payload::Run(run) = engine
+                .execute(od_protocol::Command::StartCombat {
+                    instance_id,
+                    revision: config.revision,
+                    script_revision: scripts.revision,
+                    allow_input: true,
+                    confirm_account: true,
+                })
+                .await?
+            else {
+                anyhow::bail!("引擎未返回战斗运行");
+            };
+            let signal = tokio::signal::ctrl_c();
+            tokio::pin!(signal);
+            let started = std::time::Instant::now();
+            let mut stopping = false;
             loop {
-                if let Some(current)=engine.snapshot().run&&current.id==run.id&&current.state.is_terminal() {engine.shutdown().await?;return print(current);}
-                if !stopping&&cancel_after_ms.is_some_and(|ms|started.elapsed().as_millis()>=ms as u128) {engine.execute(od_protocol::Command::Stop {run_id:run.id}).await?;stopping=true;}
+                if let Some(current) = engine.snapshot().run
+                    && current.id == run.id
+                    && current.state.is_terminal()
+                {
+                    engine.shutdown().await?;
+                    return print(current);
+                }
+                if !stopping
+                    && cancel_after_ms.is_some_and(|ms| started.elapsed().as_millis() >= ms as u128)
+                {
+                    engine
+                        .execute(od_protocol::Command::Stop { run_id: run.id })
+                        .await?;
+                    stopping = true;
+                }
                 tokio::select! {_=&mut signal,if !stopping=>{engine.execute(od_protocol::Command::Stop {run_id:run.id}).await?;stopping=true;},_=tokio::time::sleep(Duration::from_millis(100))=>{}}
             }
-        },
+        }
         Action::RuntimeResources { command } => {
             use zzz_engine::runtime_resources;
             return match command {
@@ -850,14 +940,30 @@ async fn main() -> Result<()> {
     let sdk = maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"))?;
     match args.command {
         Action::Doctor => print(sdk),
-        Action::CombatInspect {bundle,image,dodge_only} => {
-            let bundle=maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;
-            let native=NativeSession::for_fixture(&image,&bundle.root,InferenceDevice::Cpu)?;
-            let mut recognizer=maa_adapter::combat_vision::CombatRecognizer::new(bundle);
-            let frame=native.combat_frame(&AtomicBool::new(false))?.context("离线战斗截图被取消")?;
-            let result=recognizer.observe(&native,&frame,0.0,&Default::default(),dodge_only,&AtomicBool::new(false))?;
-            print(serde_json::json!({"accepted":false,"input_sent":false,"frame_age_ms":frame.age_ms(),"observation":result}))
-        },
+        Action::CombatInspect {
+            bundle,
+            image,
+            dodge_only,
+        } => {
+            let bundle =
+                maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;
+            let native = NativeSession::for_fixture(&image, &bundle.root, InferenceDevice::Cpu)?;
+            let mut recognizer = maa_adapter::combat_vision::CombatRecognizer::new(bundle);
+            let frame = native
+                .combat_frame(&AtomicBool::new(false))?
+                .context("离线战斗截图被取消")?;
+            let result = recognizer.observe(
+                &native,
+                &frame,
+                0.0,
+                &Default::default(),
+                dodge_only,
+                &AtomicBool::new(false),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"frame_age_ms":frame.age_ms(),"observation":result}),
+            )
+        }
         Action::EngagementRewardInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_engagement_reward_fixture(&image)?)

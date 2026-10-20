@@ -108,8 +108,24 @@ export function CombatPage({ connected, blocked, snapshot, onCommand }: {
     { key: 'gamepad_turn_speed', label: '手柄转向摇杆偏移', min: 1, max: 32767 },
     { key: 'audio_threshold_milli', label: '声音阈值（100 对应 0.1）', min: 0, max: 10000 },
   ];
-  const valid = numbers.every(({ key, min, max }) => Number.isInteger(draft[key]) && Number(draft[key]) >= min && Number(draft[key]) <= max);
+  const valid = numbers.every(({ key, min, max }) => Number.isInteger(draft[key]) && Number(draft[key]) >= min && Number(draft[key]) <= max) && (draft.directml_device === null || (Number.isInteger(draft.directml_device) && draft.directml_device >= 0 && draft.directml_device <= 15));
   return <>
+    {run && combat && <Card>
+      <div className="card-title"><h2>战斗状态</h2><Badge>{runStateNames[run.state]}</Badge></div>
+      <p>{run.message}</p><p>运行账号：{run.context?.instance_name} · 输入方式：{modes[combat.config.mode]} · {combat.config.dodge_only ? combat.config.dodge_script : combat.config.script}</p>
+      <p>{combat.inputs_released ? '输入已释放' : '运行中，等待输入收尾'} · {combat.in_battle ? '当前为战斗画面' : '等待有效战斗画面'}</p>
+      <div className="button-row">
+        <Button disabled={disabled || run.state !== 'running'} onClick={() => onCommand({ type: 'pause', params: { run_id: run.id } })}>暂停战斗</Button>
+        <Button disabled={disabled || !!snapshot?.record_error || run.state !== 'paused'} onClick={() => onCommand({ type: 'resume', params: { run_id: run.id } })}>继续战斗</Button>
+        <Button disabled={disabled || !active || run.state === 'stopping'} onClick={() => onCommand({ type: 'stop', params: { run_id: run.id } })}>停止战斗</Button>
+      </div>
+      <p>角色：{combat.team.filter(Boolean).join(' / ') || '等待识别'}</p>
+      <p>画面 {combat.frames} 帧 · 丢弃过期画面 {combat.stale_frames} 帧 · 最近画面延迟 {combat.frame_age_ms} ms · 动作 {combat.actions} 次 · 抢占 {combat.preemptions} 次</p>
+      {combat.audio_correlation !== null && <p>声音相关性：{combat.audio_correlation.toFixed(4)}</p>}
+      <p>当前条件：{combat.handler || '等待命中'}<br/>最近动作：{combat.action || '尚未执行'}</p>
+      <details><summary>状态时间</summary><ul>{Object.entries(combat.states).map(([name, time]) => <li key={name}>{name} · {time?.toFixed(3)} s</li>)}</ul></details><p className="muted">运行 ID：{run.id}{combat.script_revision ? ` · 脚本修订：${combat.script_revision.slice(0, 12)}` : ''}</p>
+    </Card>}
+    <RunSaveRecovery error={snapshot?.record_error} disabled={disabled} onCommand={onCommand}/>
     <Card>
       <div className="card-title"><h2>自动战斗与闪避助手</h2><Badge appearance="outline">试运行 · 待验收</Badge></div>
       <p>在战斗画面启动。脚本、声音识别和按键共用当前游戏控制权，账号配置在启动时冻结。</p>
@@ -144,21 +160,5 @@ export function CombatPage({ connected, blocked, snapshot, onCommand }: {
       <Button disabled={editing||!source.trim()} onClick={()=>void importScripts(false)}>预览脚本导入</Button>
       {preview&&<><p>{preview.battle.length} 个战斗脚本、{preview.dodge.length} 个闪避脚本，{preview.files} 个文件，共 {preview.bytes} 字节。</p><details><summary>核对脚本名称</summary><p>战斗：{preview.battle.join('、')}</p><p>闪避：{preview.dodge.join('、')}</p></details><Checkbox label="确认采用此脚本快照" checked={importConfirmed} disabled={editing} onChange={(_,data)=>setImportConfirmed(data.checked===true)}/><Button disabled={editing||!importConfirmed} onClick={()=>void importScripts(true)}>确认导入脚本</Button></>}
     </Card>
-    {run && combat && <Card>
-      <div className="card-title"><h2>战斗状态</h2><Badge>{runStateNames[run.state]}</Badge></div>
-      <p>{run.message}</p><p>运行账号：{run.context?.instance_name} · 输入方式：{modes[combat.config.mode]} · {combat.config.dodge_only ? combat.config.dodge_script : combat.config.script}</p>
-      <p>{combat.inputs_released ? '输入已释放' : '运行中，等待输入收尾'} · {combat.in_battle ? '当前为战斗画面' : '等待有效战斗画面'}</p>
-      <p>角色：{combat.team.filter(Boolean).join(' / ') || '等待识别'}</p>
-      <p>画面 {combat.frames} 帧 · 丢弃过期画面 {combat.stale_frames} 帧 · 最近画面延迟 {combat.frame_age_ms} ms · 动作 {combat.actions} 次 · 抢占 {combat.preemptions} 次</p>
-      {combat.audio_correlation !== null && <p>声音相关性：{combat.audio_correlation.toFixed(4)}</p>}
-      <p>当前条件：{combat.handler || '等待命中'}<br/>最近动作：{combat.action || '尚未执行'}</p>
-      <div className="button-row">
-        <Button disabled={disabled || run.state !== 'running'} onClick={() => onCommand({ type: 'pause', params: { run_id: run.id } })}>暂停战斗</Button>
-        <Button disabled={disabled || !!snapshot?.record_error || run.state !== 'paused'} onClick={() => onCommand({ type: 'resume', params: { run_id: run.id } })}>继续战斗</Button>
-        <Button disabled={disabled || !active || run.state === 'stopping'} onClick={() => onCommand({ type: 'stop', params: { run_id: run.id } })}>停止战斗</Button>
-      </div>
-      <details><summary>状态时间</summary><ul>{Object.entries(combat.states).map(([name, time]) => <li key={name}>{name} · {time?.toFixed(3)} s</li>)}</ul></details><p className="muted">运行 ID：{run.id}</p>
-    </Card>}
-    <RunSaveRecovery error={snapshot?.record_error} disabled={disabled} onCommand={onCommand}/>
   </>;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { combatSummary } from './combatSettings';
 import { Badge, Button, Card, Checkbox, Field, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
 import type { AccountConfig, AppDefinition, AppGroup, ConfigBackups as BackupList, ConfigBackupPreview } from './generated/protocol';
 import { gameRegionOptions, runPolicyOptions } from './generated/protocol';
@@ -47,6 +48,7 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     <p>账号名称：{before?.name ?? '无此账号'} → {after?.name ?? '无此账号'}；区服：{region(before)} → {region(after)}；参与一条龙：{before ? before.active_in_od ? '是' : '否' : '无此账号'} → {after ? after.active_in_od ? '是' : '否' : '无此账号'}。</p>
     <p className="path-value">游戏启动：{before ? gameLaunchSummary(before.game_launch) : '无此账号'} → {after ? gameLaunchSummary(after.game_launch) : '无此账号'}。</p>
     <p>运行结果提醒：{before ? runNotificationName(before.run_notifications) : '无此账号'} → {after ? runNotificationName(after.run_notifications) : '无此账号'}。</p>
+    <p>战斗设置：{before ? combatSummary(before.combat) : '无此账号'} → {after ? combatSummary(after.combat) : '无此账号'}。</p>
     <p>当前应用组顺序：{before?.groups.map(label).join(' → ') ?? '无此账号'}；恢复后：{after?.groups.map(label).join(' → ') ?? '无此账号'}。</p>
     <Field label="核对应用组"><Select value={groupId} onChange={(_, data) => setGroupId(data.value)}>{groups.map(id => {
       const old = before?.groups.find(item => item.id === id); const next = after?.groups.find(item => item.id === id);

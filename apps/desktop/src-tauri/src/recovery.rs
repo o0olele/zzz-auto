@@ -140,9 +140,12 @@ impl RecoveryJournal {
         if let (Some(plan), Some(run)) = (&self.plan, run)
             && plan.run_id.as_deref() == Some(run.id.to_string().as_str())
             && run.state.is_terminal()
-            && (if plan.version==8 {
-                run.combat.as_ref().is_some_and(|p|p.inputs_released && p.state==run.state)
-                    && run.matches_account_context() && run.inputs_released()
+            && (if plan.version == 8 {
+                run.combat
+                    .as_ref()
+                    .is_some_and(|p| p.inputs_released && p.state == run.state)
+                    && run.matches_account_context()
+                    && run.inputs_released()
             } else if matches!(plan.version, 6 | 7) {
                 run.group
                     .as_ref()

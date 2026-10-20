@@ -47,14 +47,19 @@ pub enum Command {
     StartCombat {
         instance_id: u32,
         revision: u32,
-        script_revision:String,
+        script_revision: String,
         #[serde(default)]
         allow_input: bool,
         #[serde(default)]
         confirm_account: bool,
     },
-    PreviewCombatScriptImport {source:String},
-    ApplyCombatScriptImport {source:String,preview_id:String},
+    PreviewCombatScriptImport {
+        source: String,
+    },
+    ApplyCombatScriptImport {
+        source: String,
+        preview_id: String,
+    },
     LaunchGame {
         instance_id: u32,
         revision: u32,
@@ -211,6 +216,10 @@ pub enum Command {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "协议在有界队列内传递完整运行快照，保留统一的拥有值接口"
+)]
 pub enum Payload {
     CombatScripts(od_core::combat::CombatScriptCatalog),
     CombatScriptImport(od_core::combat_scripts::CombatScriptImportPreview),

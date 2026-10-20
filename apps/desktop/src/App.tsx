@@ -57,8 +57,8 @@ const milestones = [
   ['M0', '清单与基线', '清单与基线已完成，参考模型已按用户决定接受。'],
   ['M1', 'Maa 集成原型', '原生 SDK、独立引擎、桌面通信与截图入口正在验证。'],
   ['M2', '首个日常 Pipeline', '主流程通过，边界待验收；暂停、异常恢复等继续验证。'],
-  ['M3', '应用与桌面基础', '进行中：账号导入、应用组邮件试运行、账号历史、通用设置、每日计划与模型资源管理；后续推进咖啡和多应用执行。'],
-  ['M4', 'Rust 自动战斗', '状态时间窗、动作抢占、声音闪避和输入释放。'],
+  ['M3', '应用与桌面基础', '开发完成，待验收：五项首批日常、账号与应用组、历史、日志、设置及资源版本管理。'],
+  ['M4', 'Rust 自动战斗', '开发完成，待验收：条件脚本、Maa 识别与控制、声音闪避、转向、手柄及战斗界面。'],
   ['M5', '剩余游戏应用', '探索、路径、经营及剩余应用逐项迁移。'],
   ['M6', '工具与外部能力', '图像与路线编辑器、HTTP、MCP 和 Rust Agent。'],
   ['M7', '发布与替代', '安装、更新、数据恢复和干净 Windows 环境验收。'],
@@ -263,8 +263,8 @@ export default function App() {
           {page === 'runtime_resources' && <RuntimeResources manager={runtimeResources} blocked={actionBusy || active || recoveryRequired || configRecovering || afterDoneBusy} maintenance={configRecovering}/>}
 
           {page === 'progress' && <>
-            <div className="page-heading"><div><div className="eyebrow">MIGRATION ROADMAP</div><h1>开发与验收</h1><p>阶段完成以验收证据为准，编译与界面预览仅是其中一部分。</p></div><Badge appearance="tint" color="brand">M2 主流程通过，边界待验收 · M3 进行中</Badge></div>
-            <Card className="roadmap-card">{milestones.map(([id, title, description], index) => <div className={`milestone ${index === 3 ? 'current' : ''}`} key={id}><div className="milestone-number">{id}</div><div><h3>{title}</h3><p>{description}</p></div><Badge appearance="tint" color={index === 0 ? 'success' : index < 4 ? 'brand' : 'informative'}>{index === 0 ? '已完成' : index === 1 ? '待验证' : index === 2 ? '主流程通过，边界待验收' : index === 3 ? '进行中' : '待开始'}</Badge></div>)}</Card>
+            <div className="page-heading"><div><div className="eyebrow">MIGRATION ROADMAP</div><h1>开发与验收</h1><p>阶段完成以验收证据为准，编译与界面预览仅是其中一部分。</p></div><Badge appearance="tint" color="brand">M3 / M4 开发完成，待验收</Badge></div>
+            <Card className="roadmap-card">{milestones.map(([id, title, description], index) => <div className={`milestone ${index === 4 ? 'current' : ''}`} key={id}><div className="milestone-number">{id}</div><div><h3>{title}</h3><p>{description}</p></div><Badge appearance="tint" color={index === 0 ? 'success' : index <= 4 ? 'brand' : 'informative'}>{index === 0 ? '已完成' : index === 1 ? '待验证' : index === 2 ? '主流程通过，边界待验收' : index === 3 || index === 4 ? '开发完成，待验收' : '待开始'}</Badge></div>)}</Card>
             <Card><div className="card-title"><h2>本轮验证边界</h2><Badge appearance="outline">首版 Windows x64</Badge></div><p>CPU / DirectML 模型、前后台键鼠、Xbox / DS4、权限提升、崩溃后的独立输入恢复与长时间稳定性，需要固定语料和实机记录。日常、战斗、账号导入与第三方插件按后续阶段逐项开放。</p><p className="muted">开发入口与命令见工程 README；迁移决策与验收要求见 docs/ROADMAP.md。</p></Card>
           </>}
         </div>

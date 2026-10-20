@@ -185,9 +185,12 @@ pub fn supports_protocol(schema: u32, protocol: u32) -> bool {
     (minimum..=od_protocol::PROTOCOL_VERSION).contains(&protocol)
 }
 
-fn safe_combat_path(name:&str)->bool {
-    name.starts_with("generated/combat/") && !name.contains([':', '\\'])
-        && Path::new(name).components().all(|part|matches!(part,std::path::Component::Normal(_)))
+fn safe_combat_path(name: &str) -> bool {
+    name.starts_with("generated/combat/")
+        && !name.contains([':', '\\'])
+        && Path::new(name)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
 }
 
 fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
@@ -213,7 +216,9 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
     let mut total = 0_u64;
     for file in &manifest.files {
         ensure!(
-            (files.contains(&file.path.as_str()) || (manifest.schema_version==4 && safe_combat_path(&file.path))) && paths.insert(file.path.as_str()),
+            (files.contains(&file.path.as_str())
+                || (manifest.schema_version == 4 && safe_combat_path(&file.path)))
+                && paths.insert(file.path.as_str()),
             "资源文件未登记或重复"
         );
         ensure!(
@@ -223,16 +228,20 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
         total += file.bytes;
     }
     ensure!(
-        files.iter().all(|name|paths.contains(name))
-            && (manifest.schema_version!=4 || paths.contains("generated/combat/combat-manifest.json"))
-            && manifest.files.len()<=4096 && total <= MAX_ARCHIVE,
+        files.iter().all(|name| paths.contains(name))
+            && (manifest.schema_version != 4
+                || paths.contains("generated/combat/combat-manifest.json"))
+            && manifest.files.len() <= 4096
+            && total <= MAX_ARCHIVE,
         "运行资源包不完整或过大"
     );
     Ok(())
 }
 
 fn validate_semantics(root: &Path) -> Result<()> {
-    if root.join("generated/combat").try_exists()? {maa_adapter::combat_vision::CombatBundle::load(&root.join("generated/combat"))?;}
+    if root.join("generated/combat").try_exists()? {
+        maa_adapter::combat_vision::CombatBundle::load(&root.join("generated/combat"))?;
+    }
     maa_adapter::validate_mail_bundle(&root.join("generated/mail"))?;
     maa_adapter::validate_map_bundle(&root.join("generated/map-preview"))?;
     if root.join("generated/coffee-run").try_exists()? {
@@ -284,7 +293,11 @@ fn validate_directory_cancellable(
 ) -> Result<ResourceManifest> {
     cancelled(cancel)?;
     let manifest = read_manifest(root, expected_id)?;
-    let files:Vec<_> = manifest.files.iter().map(|file|file.path.as_str()).collect();
+    let files: Vec<_> = manifest
+        .files
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect();
     for entry in walkdir::WalkDir::new(root).min_depth(1) {
         cancelled(cancel)?;
         let entry = entry?;
@@ -380,12 +393,28 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
         protocol_version: od_protocol::PROTOCOL_VERSION,
         files: Vec::new(),
     };
-    let mut names:Vec<String>=resource_files(manifest.schema_version).into_iter().map(str::to_string).collect();
-    if manifest.schema_version==4 {
+    let mut names: Vec<String> = resource_files(manifest.schema_version)
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    if manifest.schema_version == 4 {
         maa_adapter::combat_vision::CombatBundle::load(&source.join("generated/combat"))?;
-        let mut combat=Vec::new();
-        for entry in walkdir::WalkDir::new(source.join("generated/combat")).min_depth(1) {let entry=entry?;check_path(entry.path())?;if entry.file_type().is_file(){combat.push(entry.path().strip_prefix(&source)?.to_string_lossy().replace('\\',"/"));}}
-        combat.sort();names.extend(combat);
+        let mut combat = Vec::new();
+        for entry in walkdir::WalkDir::new(source.join("generated/combat")).min_depth(1) {
+            let entry = entry?;
+            check_path(entry.path())?;
+            if entry.file_type().is_file() {
+                combat.push(
+                    entry
+                        .path()
+                        .strip_prefix(&source)?
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+        combat.sort();
+        names.extend(combat);
     }
     for name in names {
         let path = source.join(&name);
@@ -458,8 +487,7 @@ fn extract(
     file.rewind()?;
     let mut zip = ZipArchive::new(file)?;
     ensure!(
-        (FILES.len() + 1..=FILES.len() + COFFEE_FILES.len() + DAILY_FILES.len() + 1)
-            .contains(&zip.len()),
+        (FILES.len() + 1..=4097).contains(&zip.len()),
         "ZIP 文件数量不匹配"
     );
     let mut names = BTreeSet::new();
@@ -472,7 +500,8 @@ fn extract(
                 && (entry.name() == MANIFEST
                     || FILES.contains(&entry.name())
                     || COFFEE_FILES.contains(&entry.name())
-                    || DAILY_FILES.contains(&entry.name()))
+                    || DAILY_FILES.contains(&entry.name())
+                    || safe_combat_path(entry.name()))
                 && names.insert(entry.name().to_owned()),
             "ZIP 包含多余、重复或非法条目"
         );
@@ -485,7 +514,8 @@ fn extract(
     let manifest: ResourceManifest = serde_json::from_slice(&bytes)?;
     validate_manifest(&manifest)?;
     ensure!(
-        zip.len() == manifest.files.len() + 1,
+        zip.len() == manifest.files.len() + 1
+            && manifest.files.iter().all(|file| names.contains(&file.path)),
         "ZIP 文件数量与资源格式不匹配"
     );
     let id = hex::encode(Sha256::digest(&bytes));

@@ -46,6 +46,10 @@ if (release) {
     ['--root', root, 'basic-daily-bundle-check', '--bundle', path.join(root, 'resources/generated/basic-daily')], { cwd: root, stdio: 'inherit', shell: false });
   if (dailyCheck.error) throw dailyCheck.error;
   if (dailyCheck.status !== 0) process.exit(dailyCheck.status ?? 1);
+  const combatCheck = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),
+    ['--root', root, 'combat-bundle-check', '--bundle', path.join(root, 'resources/generated/combat')], { cwd: root, stdio: 'inherit', shell: false });
+  if (combatCheck.error) throw combatCheck.error;
+  if (combatCheck.status !== 0) process.exit(combatCheck.status ?? 1);
 }
 const destination = path.join(root, 'apps/desktop/src-tauri/binaries');
 mkdirSync(destination, { recursive: true });

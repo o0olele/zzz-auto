@@ -7,6 +7,7 @@ pub struct DesktopLayout {
     pub engine: PathBuf,
     pub data: PathBuf,
     pub portable: bool,
+    pub development: bool,
 }
 
 pub fn desktop_layout(
@@ -23,6 +24,7 @@ pub fn desktop_layout(
             engine: directory.join("zzz-auto-engine.exe"),
             data: directory.join("data"),
             portable: true,
+            development: false,
         });
     }
     if let Some(root) = development_root {
@@ -31,6 +33,7 @@ pub fn desktop_layout(
             engine: root.join("target/debug/zzz-engine.exe"),
             data: user_data_directory.to_path_buf(),
             portable: false,
+            development: true,
         });
     }
     Ok(DesktopLayout {
@@ -38,5 +41,6 @@ pub fn desktop_layout(
         engine: directory.join("zzz-auto-engine.exe"),
         data: user_data_directory.to_path_buf(),
         portable: false,
+        development: false,
     })
 }

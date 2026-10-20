@@ -29,7 +29,9 @@ cargo run -p zzz-engine --locked -- --data <绝对数据目录> runtime-resource
 cargo run -p zzz-engine --locked -- --data <绝对数据目录> runtime-resources rollback
 ```
 
-发行引擎可直接执行相同子命令，无需 Python、Node 或 Rust。桌面下次启动使用同一数据目录中的选择；开发与安装桌面默认 `%APPDATA%/io.onedragon.zzz-auto`，便携版默认程序目录下 `data`。CLI 默认工程或程序根目录下 `data`，操作桌面数据时须显式指定。开发 CLI 的显式 `--resources` 用于检查指定资源，覆盖自动选择；桌面入口始终按数据目录选择。
+发行引擎可直接执行相同子命令，无需 Python、Node 或 Rust。发行桌面下次启动使用同一数据目录中的选择；开发与安装桌面默认 `%APPDATA%/io.onedragon.zzz-auto`，便携版默认程序目录下 `data`。CLI 默认工程或程序根目录下 `data`，操作桌面数据时须显式指定。显式 `--resources` 覆盖自动选择，托管引擎入口也遵循此规则。
+
+`npm run tauri dev` 会先生成资源，开发桌面随后为引擎显式传入当前工程的 `resources` 目录，无需打包或安装资源 ZIP。普通启动、重新连接和引擎提权均使用同一路径；已有账号配置与发行资源选择保留，历史 schema 1 / 2 资源包不会覆盖新生成的日常资源。运行资源页管理的版本选择用于发行版启动。便携版与安装版继续按保存的选择加载，缺少日常资源时需安装并启用含日常的 schema 3 / 4 完整资源包。
 
 ## 验证范围
 

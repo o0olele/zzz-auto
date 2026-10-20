@@ -7,6 +7,9 @@
   {
     "path": "assets/game_data/screen_info/compendium_errands.yml",
     "sha256": "924b94cf08dcc5212493207a88449e848cc5d85d22e79689c8f029aa54da8390",
+    "compatible_sha256": [
+      "3889f050d636c3810b549c192525bfb6e6483bab0d28a825a817da14695e2f82"
+    ],
     "normalization": "crlf_to_lf"
   },
   {

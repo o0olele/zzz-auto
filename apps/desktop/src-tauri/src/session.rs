@@ -97,17 +97,26 @@ impl EngineSession {
         // 必须先占有名称，才能启动可能具有更高权限的客户端。
         let mut pipe = od_platform::create_private_pipe(&name).map_err(offline)?;
         let token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
-        let args: Vec<OsString> = vec![
+        let mut args: Vec<OsString> = vec![
             "--root".into(),
             layout.root.as_os_str().into(),
             "--data".into(),
             layout.data.as_os_str().into(),
+        ];
+        // 开发启动固定使用本次生成的工程资源，不受历史发行资源选择影响。
+        if layout.development {
+            args.extend([
+                "--resources".into(),
+                layout.root.join("resources").into_os_string(),
+            ]);
+        }
+        args.extend([
             role.into(),
             "--pipe".into(),
             name.into(),
             "--parent-pid".into(),
             std::process::id().to_string().into(),
-        ];
+        ]);
         let executable = layout.engine.clone();
         let mut process =
             tokio::task::spawn_blocking(move || EngineProcess::spawn(&executable, &args, elevated))

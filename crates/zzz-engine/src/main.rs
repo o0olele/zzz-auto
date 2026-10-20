@@ -589,7 +589,7 @@ async fn main() -> Result<()> {
             cancel_after_ms,
         } => {
             ensure!(allow_input, "战斗必须显式提供 --allow-input");
-            let engine = Engine::new(paths)?;
+            let engine = Engine::with_resources(paths, explicit_resources)?;
             let ready = std::time::Instant::now();
             while !engine.snapshot().sdk.ready {
                 ensure!(
@@ -926,11 +926,17 @@ async fn main() -> Result<()> {
                 token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit()),
                 "配对密钥格式无效"
             );
-            let engine = Engine::new(paths)?;
+            let engine = Engine::with_resources(paths, explicit_resources)?;
             return zzz_engine::transport::serve_managed(engine, &pipe, token, parent_pid).await;
         }
         Action::ServeClient { pipe, parent_pid } => {
-            return zzz_engine::transport::serve_connected(paths, &pipe, parent_pid).await;
+            return zzz_engine::transport::serve_connected(
+                paths,
+                &pipe,
+                parent_pid,
+                explicit_resources,
+            )
+            .await;
         }
         Action::RecoverInput { pipe, parent_pid } => {
             return zzz_engine::transport::recover_connected(&pipe, parent_pid).await;

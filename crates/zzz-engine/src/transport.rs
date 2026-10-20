@@ -42,7 +42,12 @@ pub async fn serve_managed(engine: Engine, name: &str, token: &str, parent_pid: 
 }
 
 // Tokio ClientOptions 默认 SECURITY_IDENTIFICATION，禁止服务端模拟提升后的客户端。
-pub async fn serve_connected(paths: EnginePaths, name: &str, parent_pid: u32) -> Result<()> {
+pub async fn serve_connected(
+    paths: EnginePaths,
+    name: &str,
+    parent_pid: u32,
+    explicit_resources: bool,
+) -> Result<()> {
     let (mut pipe, greeting) = pair_client(name, parent_pid).await?;
     // 候选引擎先完成配对，桌面退出旧引擎后才发送首个请求并接管数据目录。
     // 取消 UAC 时旧引擎保持可用；未收到请求的进程不会初始化 SDK 或数据。
@@ -52,7 +57,7 @@ pub async fn serve_connected(paths: EnginePaths, name: &str, parent_pid: u32) ->
         read_frame(&mut pipe, MAX_REQUEST_BYTES),
     )
     .await??;
-    let engine = match Engine::new(paths) {
+    let engine = match Engine::with_resources(paths, explicit_resources) {
         Ok(engine) => engine,
         Err(error) => {
             let response = Response::from_result(

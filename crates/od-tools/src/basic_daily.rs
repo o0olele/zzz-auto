@@ -16,17 +16,25 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
             "日常资源来源与输出不能重叠"
         );
     }
-    let sources: Value =
+    let mut sources: Value =
         serde_json::from_str(include_str!("../../../resources/daily/source-lock.json"))?;
-    for source in sources.as_array().context("日常来源清单无效")? {
+    for source in sources.as_array_mut().context("日常来源清单无效")? {
         let relative = source["path"].as_str().context("来源路径无效")?;
         od_core::config::reject_links(&reference.join(relative))?;
         let bytes = crate::mail::read_within(&reference, relative)?;
         let normalized = std::str::from_utf8(&bytes)?.replace("\r\n", "\n");
+        let hash = hex::encode(Sha256::digest(normalized.as_bytes()));
         ensure!(
-            source["sha256"] == hex::encode(Sha256::digest(normalized.as_bytes())),
-            "日常来源已变化，请重新核对画面：{relative}"
+            source["sha256"] == hash
+                || source["compatible_sha256"]
+                    .as_array()
+                    .is_some_and(|hashes| hashes.iter().any(|expected| expected == &hash)),
+            "日常来源已变化，请重新核对画面：{relative}（SHA-256：{hash}）"
         );
+        // 兼容已核对的参考仓版本，清单仍记录本次实际读取的来源哈希。
+        let entry = source.as_object_mut().context("日常来源条目无效")?;
+        entry.remove("compatible_sha256");
+        entry.insert("sha256".into(), json!(hash));
     }
     let extra_sources: Value = serde_json::from_str(include_str!(
         "../../../resources/daily/remaining-source-lock.json"

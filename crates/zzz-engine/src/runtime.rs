@@ -275,7 +275,12 @@ impl Engine {
         Ok(engine)
     }
     pub fn new(paths: EnginePaths) -> anyhow::Result<Self> {
-        Self::with_factory(paths, None)
+        Self::with_resources(paths, false)
+    }
+
+    /// 显式资源目录优先于保存的选择，不修改用户已有的资源选择。
+    pub fn with_resources(paths: EnginePaths, explicit_resources: bool) -> anyhow::Result<Self> {
+        Self::with_factory(paths, None, explicit_resources)
     }
 
     // 独立测试仓的会反应控制器入口，不通过 CLI / IPC 暴露，也不创建游戏控制器。
@@ -289,6 +294,7 @@ impl Engine {
             Some(Box::new(move || {
                 NativeSession::for_custom_controller(callback, &resources, InputMode::Foreground)
             })),
+            true,
         )
     }
 
@@ -310,6 +316,7 @@ impl Engine {
             Some(Box::new(move || {
                 NativeSession::for_custom_controller(callback, &resources, mode)
             })),
+            true,
         )
     }
 
@@ -332,12 +339,14 @@ impl Engine {
                 session.load_coffee_run_bundle(&resources.join("generated/coffee-run"))?;
                 Ok(session)
             })),
+            true,
         )
     }
 
     fn with_factory(
         mut paths: EnginePaths,
         factory: Option<Box<dyn FnOnce() -> anyhow::Result<NativeSession> + Send>>,
+        explicit_resources: bool,
     ) -> anyhow::Result<Self> {
         let fixture = factory.is_some();
         let resources = Arc::new(crate::model_resources::ModelResourceService::new(
@@ -345,7 +354,7 @@ impl Engine {
         )?);
         let config = ConfigStore::new(&paths.data)?;
         let config_owner = Arc::new(config.acquire_owner()?);
-        let resource_id = if !fixture {
+        let resource_id = if !fixture && !explicit_resources {
             let (directory, id) =
                 crate::runtime_resources::select_for_engine(&paths.data, &paths.resources)?;
             paths.resources = directory;
@@ -379,6 +388,13 @@ impl Engine {
             dropped: 0,
             callback_dropped: Arc::new(AtomicU64::new(0)),
         }));
+        if explicit_resources && !fixture {
+            state.lock().expect("运行状态锁失效").event(
+                None,
+                "info",
+                format!("使用显式运行资源目录：{}", paths.resources.display()),
+            );
+        }
         let (sender, receiver) = mpsc::sync_channel(8);
         let combat_root = Arc::new(paths.resources.join("generated/combat"));
         let combat_data = Arc::new(paths.data.clone());

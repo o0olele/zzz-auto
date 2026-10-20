@@ -95,6 +95,7 @@ export function RuntimeResources({ manager, blocked, maintenance = false }: { ma
   return <>
     <div className="page-heading"><div><div className="eyebrow">RUNTIME RESOURCES</div><h1>运行资源</h1><p>下载或安装资源包，切换首批日常和地图使用的资源。</p></div><Button disabled={disabled} onClick={() => void start({ type: 'refresh' })}>刷新版本</Button></div>
     {!desktop && <MessageBar intent="info"><MessageBarBody>通过桌面应用可查看本机运行资源版本。</MessageBarBody></MessageBar>}
+    {desktop && import.meta.env.DEV && <MessageBar intent="info"><MessageBarBody>开发启动使用当前工程生成的资源，无需安装资源 ZIP。此页保存的版本选择用于发行版启动。</MessageBarBody></MessageBar>}
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     {readError && <MessageBar intent="error"><MessageBarBody>{readError}</MessageBarBody></MessageBar>}
     <Card aria-label="读取资源发布清单"><h2>发现资源版本</h2>

@@ -1,3 +1,7 @@
+import { RedemptionResults, RedemptionStatus } from './RedemptionSettings';
+import { dismantleSummary } from './DismantleSettings';
+import { RandomPlayStatus, randomPlaySummary } from './RandomPlaySettings';
+import { TeamSummary, TeamCheckStatus } from './TeamSettings';
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Checkbox, MessageBar, MessageBarBody, Spinner } from '@fluentui/react-components';
 import type { Command, GroupPlan, RunHistory, Snapshot } from './generated/protocol';
@@ -86,7 +90,7 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
 
   const disabled = !connected || blocked || planning || appIds?.length === 0;
   return <>
-    <Card className="group-run-card"><div className="card-title"><h2>{standalone ? '独立应用试运行' : '应用组试运行'}</h2><Badge appearance="outline">首批五项日常</Badge></div>
+    <Card className="group-run-card"><div className="card-title"><h2>{standalone ? '独立应用试运行' : '应用组试运行'}</h2><Badge appearance="outline">日常试运行</Badge></div>
       {standalone ? <p>只执行本次选择的一个应用，运行参数、输入收尾与每日证明由引擎统一处理。咖啡完整流程待实机验收，请确认当天仍可喝咖啡。</p> : <p>按保存顺序执行{appIds === undefined ? '启用项' : '本次所选应用，不改写应用组配置'}。邮件参数在通用设置中保存，咖啡参数按账号和组保存；咖啡从大世界自动传送并点单，完整流程待实机验收。请确认当天仍可喝咖啡。</p>}
       {appIds?.length === 0 && <p>请至少选择一个本次应用。</p>}
       <Button disabled={disabled} onClick={() => void preview()}>预览运行计划</Button>
@@ -99,12 +103,23 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
         {plan.context.rerun_completed && <p>仅本次：重新运行已完成应用，长期运行策略保留。</p>}
         <p>启动 / 继续延时 {plan.mail_config.start_delay_ms} ms · 邮件超时 {plan.mail_config.timeout_ms} ms</p>
         {plan.items.some(item => item.app_id === 'coffee' && item.enabled) && <p>咖啡：{coffeeSummary(plan.coffee_config)} · 澄辉坪 → 汀曼咖啡</p>}
-        {plan.items.some(item => ['engagement_reward', 'city_fund', 'scratch_card'].includes(item.app_id) && item.enabled) && <p>日常：{dailySummary(plan.daily_config)} · 刮刮卡路线为六分街 → 报刊亭</p>}
-        <ol className="group-plan">{plan.items.filter(item => !standalone || item.enabled).map(item => <li key={item.app_id}><span>{item.name}</span><Badge appearance="outline">{item.decision === 'already_done' ? '本游戏日已完成，跳过' : item.decision === 'run' && item.completed_run_id ? '本游戏日已完成，本次重跑' : item.enabled ? availability[item.availability] : appIds === undefined ? '未启用' : '本次未选择'}</Badge></li>)}</ol>
+        {plan.items.some(item => item.availability === 'daily_trial' && item.enabled) && <p>日常：{dailySummary(plan.daily_config)} · 刮刮卡：六分街 → 报刊亭；卦象：澄辉坪 → 阿朔；饼铺：布亚斯特城区 → 吼吼饼铺。三项共享每日领取次数。</p>}
+        {plan.items.some(item => item.app_id === 'drive_disc_dismantle' && item.enabled) && <p>驱动盘拆解：{dismantleSummary(plan.dismantle_config)} · 所选驱动盘将被消耗。</p>}
+        {plan.items.some(item => item.app_id === 'random_play' && item.enabled) && <p>录像店经营：{randomPlaySummary(plan.random_play_config)} · 按本次游戏日期轮换宣传员，已有营业则返回。</p>}
+        {plan.items.some(item => item.app_id === 'predefined_team_checker' && item.enabled) && <div>
+          <p>预备编队检查：总超时 {plan.predefined_teams?.check_timeout_ms ?? 300000} ms，扫描五页并在返回大世界后保存可靠成员。未识别或冲突的编队保留原值。</p>
+          <TeamSummary settings={plan.predefined_teams}/>
+        </div>}
+        {plan.items.some(item => item.app_id === 'redemption_code' && item.enabled) && <section aria-label="兑换码计划">
+          <p>待兑换有效码：{plan.redemption_codes?.length ?? 0} 个。按账号跳过已处理码；逐码结果跨游戏日保存。</p>
+          <ul>{plan.redemption_codes?.map(code => <li key={code.code}>{code.code} · 有效至 {code.expires_on}</li>)}</ul>
+          {!!plan.redemption_history?.results.length && <details><summary>已有明确结果</summary><RedemptionResults results={plan.redemption_history.results}/></details>}
+        </section>}
+        <ol className="group-plan">{plan.items.filter(item => !standalone || item.enabled).map(item => <li key={item.app_id}><span>{item.name}</span><Badge appearance="outline">{item.decision === 'no_work' ? '没有待兑换的有效码' : item.decision === 'already_done' ? '本游戏日已完成，跳过' : item.app_id === 'redemption_code' && item.decision === 'run' ? '有待兑换的有效码' : item.decision === 'run' && item.completed_run_id ? '本游戏日已完成，本次重跑' : item.enabled ? availability[item.availability] : appIds === undefined ? '未启用' : '本次未选择'}</Badge></li>)}</ol>
         {plan.warnings.map((message, index) => <MessageBar key={index} intent="warning"><MessageBarBody>{message}</MessageBarBody></MessageBar>)}
-        {plan.all_done && <MessageBar intent="info"><MessageBarBody>{appIds === undefined ? '本游戏日的启用应用均已完成，无需运行。' : '本游戏日的本次所选应用均已完成，无需运行。'}</MessageBarBody></MessageBar>}
+        {plan.all_done && <MessageBar intent="info"><MessageBarBody>{plan.items.some(item => item.decision === 'no_work') ? '本次没有待执行应用；兑换码已按有效期和逐码记录筛选。' : appIds === undefined ? '本游戏日的启用应用均已完成，无需运行。' : '本游戏日的本次所选应用均已完成，无需运行。'}</MessageBarBody></MessageBar>}
         {plan.blockers.map((message, index) => <p className="group-blocker" key={index}>{message}</p>)}
-        <Checkbox label={`我确认游戏登录账号为“${plan.context.instance_name}”，并允许本次前台输入${standalone ? '；本游戏日已完成的应用也会执行' : ''}${plan.context.rerun_completed ? '；包括本游戏日已完成的应用' : ''}${plan.after_done && plan.after_done !== 'none' ? `；正常完成后${afterDoneName(plan.after_done)}，60 秒内可取消` : ''}`} checked={confirmed} disabled={disabled || active || !plan.executable || !snapshot?.window || !!snapshot.record_error} onChange={(_, data) => setConfirmed(data.checked === true)}/>
+        <Checkbox label={`我确认游戏登录账号为“${plan.context.instance_name}”，并允许本次前台输入${plan.items.some(item => item.app_id === 'drive_disc_dismantle' && item.decision === 'run') ? '；按预览规则拆解驱动盘' : ''}${standalone ? '；本游戏日已完成的应用也会执行' : ''}${plan.context.rerun_completed ? '；包括本游戏日已完成的应用' : ''}${plan.after_done && plan.after_done !== 'none' ? `；正常完成后${afterDoneName(plan.after_done)}，60 秒内可取消` : ''}`} checked={confirmed} disabled={disabled || active || !plan.executable || !snapshot?.window || !!snapshot.record_error} onChange={(_, data) => setConfirmed(data.checked === true)}/>
         <Button appearance="primary" disabled={disabled || active || !plan.executable || !confirmed || !snapshot?.window || !!snapshot.record_error} onClick={async () => {
           setConfirmed(false); setPlan(null);
           await onCommand(standalone ? { type: 'start_standalone_trial', params: { instance_id: instanceId, group_id: groupId, app_id: standaloneAppId, revision: plan.context.config_revision, game_day: plan.game_day.date, allow_input: true, confirm_account: true } } : { type: 'start_group_trial', params: { instance_id: instanceId, group_id: groupId, revision: plan.context.config_revision, game_day: plan.game_day.date, allow_input: true, confirm_account: true, ...(appIds === undefined ? {} : { app_ids: plan.context.app_ids }), ...(plan.context.rerun_completed ? { rerun_completed: true } : {}) } });
@@ -126,6 +141,9 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
         {record.context?.game_day && <p>游戏日 {record.context.game_day.date}</p>}
         {record.context?.rerun_completed && <p>本次重新运行已完成应用</p>}
         <p>{interrupted ? '上次引擎退出前未保存终态，实际结束时间未知，不会自动继续。' : record.message}</p>
+        {record.daily?.filter(app => app.redemption).map(app => <RedemptionStatus key={app.app_id} progress={app.redemption!}/>)}
+        {record.daily?.filter(app => app.random_play).map(app => <RandomPlayStatus key={app.app_id} progress={app.random_play!}/>)}
+        {record.daily?.filter(app => app.team_check).map(app => <TeamCheckStatus key={app.app_id} progress={app.team_check!}/>)}
         <RunSteps group={record.group}/>
         <code>{record.id}</code>
       </div>)}</div>

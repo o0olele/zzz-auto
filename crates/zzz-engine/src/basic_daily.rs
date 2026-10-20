@@ -44,6 +44,14 @@ impl DailyRun {
         self.progress.inputs_released = true;
         self.interrupt();
     }
+    pub fn finish_team_save(&mut self, revision: u32) -> Result<()> {
+        ensure!(self.progress.stage == "Save" && self.progress.navigation_completed(), "编队检查尚未完成安全返回");
+        self.progress.team_check.as_mut().ok_or_else(|| anyhow::anyhow!("缺少编队进度"))?.saved_revision = Some(revision);
+        self.progress.stage = "Done".into();
+        ensure!(self.progress.completed(), "编队保存证明无效");
+        self.terminal(MailState::Succeeded, "预备编队检查完成，可靠成员已保存，已返回大世界并释放输入");
+        Ok(())
+    }
     fn interrupt(&mut self) -> bool {
         match self.control.requested() {
             Some(Interrupt::Stop) => {
@@ -98,6 +106,12 @@ impl DailyRun {
                 if self.interrupt() {
                     return Ok(());
                 }
+                if self.progress.stage == "Save" && self.progress.team_check.is_some() {
+                    if !self.progress.navigation_completed() {
+                        self.terminal(MailState::Failed, "没有可靠编队结果，未修改账号配置");
+                    }
+                    return Ok(());
+                }
                 if self.progress.stage == "Done" {
                     if self.progress.completed() {
                         self.terminal(MailState::Succeeded, "日常完成，已返回大世界并释放输入");
@@ -110,11 +124,12 @@ impl DailyRun {
                     .progress
                     .active_ms
                     .saturating_add(started.elapsed().as_millis() as u64);
-                if used >= u64::from(self.progress.config.timeout_ms) {
+                if used >= u64::from(self.progress.timeout_ms()) {
                     self.terminal(MailState::TimedOut, "日常流程超时，输入已释放");
                     return Ok(());
                 }
-                ensure!(self.steps < 128, "日常步骤超过上限");
+                let max_steps = if self.progress.app_id == "redemption_code" { 2048 } else if self.progress.app_id == "random_play" { 256 } else { 128 };
+                ensure!(self.steps < max_steps, "日常步骤超过上限");
                 let before = self.progress.clone();
                 self.progress.before_step();
                 let mut current = self.progress.clone();
@@ -124,10 +139,67 @@ impl DailyRun {
                     self.progress = before;
                     return Err(error);
                 }
+                if self.progress.app_id == "predefined_team_checker" && self.progress.stage == "ReadTeams" {
+                    let scan = self.progress.team_check.as_ref().ok_or_else(|| anyhow::anyhow!("缺少冻结编队"))?;
+                    let read = session.read_team_page(&scan.config, game, &self.control.cancellation(),
+                        Duration::from_millis(u64::from(self.progress.timeout_ms()) - used));
+                    self.progress.inputs_released = session.release_inputs().is_ok();
+                    ensure!(self.progress.inputs_released, "编队识别后未确认释放输入");
+                    self.steps += 1;
+                    if self.interrupt() { return Ok(()); }
+                    if let Some(page) = read? {
+                        match page.mode {
+                            maa_adapter::predefined_teams::TeamPageMode::Unknown => {},
+                            maa_adapter::predefined_teams::TeamPageMode::Selection => anyhow::bail!("编队检查不能在出战选择页执行"),
+                            maa_adapter::predefined_teams::TeamPageMode::Editing => {
+                                let scan = self.progress.team_check.as_mut().unwrap();
+                                scan.record_page(scan.pages_read, page.members, &page.unreadable).map_err(anyhow::Error::msg)?;
+                                self.progress.observe("Teams.Read").map_err(anyhow::Error::msg)?;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if self.progress.app_id == "random_play"
+                    && matches!(self.progress.stage.as_str(), "TurnEast" | "ReadThemes") {
+                    session.prepare_random_play_step(game)?;
+                    let cancel = self.control.cancellation();
+                    let special = (|| -> Result<Option<&str>> {
+                        if self.progress.stage == "TurnEast" {
+                            let dx = self.progress.random_play.as_ref().ok_or_else(|| anyhow::anyhow!("缺少录像店设置"))?.config.turn_dx;
+                            let report = session.random_play_turn(dx,
+                                Duration::from_millis(u64::from(self.progress.config.timeout_ms) - used), &cancel)?;
+                            match report.outcome {
+                                maa_adapter::navigation::TurnOutcome::Aligned => Ok(Some("Shop.Aligned")),
+                                maa_adapter::navigation::TurnOutcome::Cancelled => Ok(None),
+                                maa_adapter::navigation::TurnOutcome::TimedOut => Err(anyhow::anyhow!("录像店朝向校正超时")),
+                            }
+                        } else {
+                            match session.random_play_themes(&cancel)? {
+                                maa_adapter::RandomPlayRead::Themes(themes) => {
+                                    self.progress.random_play.as_mut().ok_or_else(|| anyhow::anyhow!("缺少录像店设置"))?
+                                        .set_themes(themes).map_err(anyhow::Error::msg)?;
+                                    Ok(Some("Shop.ThemesRead"))
+                                }
+                                maa_adapter::RandomPlayRead::Retry => Ok(None),
+                                maa_adapter::RandomPlayRead::Cancelled => Ok(None),
+                            }
+                        }
+                    })();
+                    self.progress.inputs_released = session.release_inputs().is_ok();
+                    ensure!(self.progress.inputs_released, "录像店原生步骤未能确认释放输入");
+                    let node = special?;
+                    self.steps += 1;
+                    if self.interrupt() { return Ok(()); }
+                    if let Some(node) = node {
+                        self.progress.observe(node).map_err(anyhow::Error::msg)?;
+                    }
+                    continue;
+                }
                 let execution = session.basic_daily_step(
                     &self.progress,
                     self.control.cancellation(),
-                    Duration::from_millis(u64::from(self.progress.config.timeout_ms) - used),
+                    Duration::from_millis(u64::from(self.progress.timeout_ms()) - used),
                     game,
                 )?;
                 self.progress.inputs_released = execution.report.released;
@@ -160,10 +232,12 @@ impl DailyRun {
                         return Ok(());
                     }
                     PipelineEnd::TimedOut => {
+                        if od_core::random_play::retry_entry(&mut self.progress) { continue; }
                         self.terminal(MailState::TimedOut, "日常步骤超时，输入已释放");
                         return Ok(());
                     }
                     PipelineEnd::Failed => {
+                        if od_core::random_play::retry_entry(&mut self.progress) { continue; }
                         self.terminal(MailState::Failed, "日常 Pipeline 失败，输入已释放");
                         return Ok(());
                     }

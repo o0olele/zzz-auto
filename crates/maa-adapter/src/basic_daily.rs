@@ -18,7 +18,6 @@ pub fn validate_basic_daily_bundle(root: &Path) -> Result<PathBuf> {
         .into_iter()
         .map(|(name, bytes)| (format!("image/daily/{name}.png"), bytes.to_vec()))
         .collect();
-    let pipeline = od_core::basic_daily::pipeline();
     let lock: Value = serde_json::from_str(include_str!("../../../models.lock.json"))?;
     let ocr = lock["models"]
         .as_array()
@@ -40,12 +39,73 @@ pub fn validate_basic_daily_bundle(root: &Path) -> Result<PathBuf> {
         "日常清单过大"
     );
     let manifest: Value = serde_json::from_slice(&std::fs::read(manifest_path)?)?;
+    let (pipeline, apps) = match manifest["schema_version"].as_u64() {
+        Some(1) => (
+            od_core::basic_daily::legacy_pipeline(),
+            json!(od_core::basic_daily::LEGACY_APP_IDS),
+        ),
+        Some(2) => (
+            od_core::remaining_daily::pipeline(),
+            json!(od_core::basic_daily::SCHEMA_TWO_APP_IDS),
+        ),
+        Some(3) => (
+            od_core::dismantle::pipeline(),
+            json!(od_core::basic_daily::SCHEMA_THREE_APP_IDS),
+        ),
+        Some(4) => (
+            od_core::redemption::pipeline(),
+            json!(od_core::basic_daily::SCHEMA_FOUR_APP_IDS),
+        ),
+        Some(5) => (
+            od_core::random_play::pipeline(),
+            json!(od_core::basic_daily::SCHEMA_FIVE_APP_IDS),
+        ),
+        Some(6) => (
+            od_core::team_check::pipeline(),
+            json!(od_core::basic_daily::SCHEMA_SIX_APP_IDS),
+        ),
+        Some(7) => (
+            od_core::basic_daily::current_pipeline(),
+            json!(od_core::basic_daily::RESOURCE_APP_IDS),
+        ),
+        _ => anyhow::bail!("日常执行资源版本不兼容"),
+    };
+    if matches!(manifest["schema_version"].as_u64(), Some(5..=7)) {
+        pinned.extend(od_core::random_play::templates().clone());
+        allowed.extend(od_core::random_play::templates().keys().cloned());
+    }
+    let mut model_files = ocr["files"].as_array().context("OCR 清单无效")?.clone();
+    if manifest["schema_version"] == 7 {
+        pinned.extend(od_core::intel_board::templates().clone());
+        allowed.extend(od_core::intel_board::templates().keys().cloned());
+        let detector = lock["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["id"] == od_core::intel_board::DETECTOR_ID)
+            .context("缺少固定距离检测模型")?;
+        for file in detector["files"].as_array().context("距离检测清单无效")? {
+            let path = file["bundle_path"].as_str().context("距离检测路径无效")?;
+            ensure!(
+                od_core::intel_board::DETECTOR_FILES.contains(&path),
+                "距离检测文件未登记"
+            );
+            allowed.insert(path.into());
+            model_files.push(file.clone());
+        }
+        ensure!(
+            manifest["intel_board_sources"]
+                == serde_json::from_str::<Value>(include_str!(
+                    "../../../resources/daily/intel-board-source-lock.json"
+                ))?,
+            "情报板来源版本不符"
+        );
+    }
     ensure!(
-        manifest["schema_version"] == 1
-            && manifest["sdk_version"] == crate::SDK_VERSION
+        manifest["sdk_version"] == crate::SDK_VERSION
             && manifest["base_size"] == json!([1920, 1080])
             && manifest["accepted"] == false
-            && manifest["apps"] == json!(od_core::basic_daily::APP_IDS),
+            && manifest["apps"] == apps,
         "日常执行资源版本不兼容"
     );
     let mut seen = BTreeSet::new();
@@ -74,13 +134,11 @@ pub fn validate_basic_daily_bundle(root: &Path) -> Result<PathBuf> {
         if let Some(expected) = pinned.remove(name) {
             ensure!(bytes == expected, "日常模板与固定资源不匹配");
         } else if name.starts_with("model/") {
-            let model = ocr["files"]
-                .as_array()
-                .unwrap()
+            let model = model_files
                 .iter()
                 .find(|m| m["bundle_path"] == name)
-                .context("OCR 未锁定")?;
-            ensure!(model["sha256"] == hash, "日常 OCR 或字典不匹配");
+                .context("日常模型文件未锁定")?;
+            ensure!(model["sha256"] == hash, "日常模型或字典不匹配");
         } else {
             ensure!(
                 serde_json::from_slice::<Value>(&bytes)? == pipeline,
@@ -110,6 +168,23 @@ pub fn validate_basic_daily_bundle(root: &Path) -> Result<PathBuf> {
     }
     Ok(root)
 }
+/// 整组预检时按实际应用检查版本，不能在前项领取之后才发现缺少后项资源。
+pub fn validate_basic_daily_app_bundle(root: &Path, app: &str) -> Result<PathBuf> {
+    ensure!(
+        od_core::basic_daily::RESOURCE_APP_IDS.contains(&app),
+        "日常应用未登记"
+    );
+    let root = validate_basic_daily_bundle(root)?;
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(root.join("basic-daily-manifest.json"))?)?;
+    ensure!(
+        manifest["apps"]
+            .as_array()
+            .is_some_and(|apps| apps.iter().any(|id| id == app)),
+        "当前日常包不包含 {app}，请准备 schema 7 日常资源"
+    );
+    Ok(root)
+}
 impl crate::NativeSession {
     pub fn load_basic_daily_bundle(&mut self, root: &Path) -> Result<()> {
         ensure!(!self.tasker.running(), "任务执行中不能替换日常资源");
@@ -136,8 +211,11 @@ impl crate::NativeSession {
                 && self.input_mode == Some(crate::InputMode::Foreground),
             "日常控制器模式不匹配"
         );
-        validate_basic_daily_bundle(self.daily_bundle.as_deref().unwrap_or(&self.resource_root))?;
-        let pipeline = od_core::basic_daily::pipeline();
+        validate_basic_daily_app_bundle(
+            self.daily_bundle.as_deref().unwrap_or(&self.resource_root),
+            &progress.app_id,
+        )?;
+        let pipeline = od_core::basic_daily::current_pipeline();
         let entry = progress.entry();
         ensure!(pipeline.get(&entry).is_some(), "日常步骤未登记");
         if game {
@@ -148,6 +226,17 @@ impl crate::NativeSession {
             )?;
         }
         let mut overrides = json!({});
+        if progress.app_id == "random_play" {
+            let shop = progress
+                .random_play
+                .as_ref()
+                .context("缺少录像店冻结设置")?;
+            shop.validate().map_err(anyhow::Error::msg)?;
+            overrides = od_core::random_play::overrides(shop);
+            if matches!(progress.stage.as_str(), "StartBusiness" | "ConfirmBusiness") {
+                ensure!(shop.setup_ready(), "录像店尚未确认宣传员与录像带");
+            }
+        }
         if progress.stage == "ScratchRow" {
             let rows = [
                 ([780, 522], [1134, 556]),
@@ -159,10 +248,30 @@ impl crate::NativeSession {
                 .context("刮层编号无效")?;
             overrides["Scratch.ScratchRow"] = json!({"begin":begin,"end":end});
         }
+        if progress.app_id == "drive_disc_dismantle" {
+            let dismantle = progress.dismantle.as_ref().context("缺少驱动盘拆解参数")?;
+            if matches!(progress.stage.as_str(), "Dismantle" | "ConfirmDismantle") {
+                ensure!(dismantle.selection_ready(), "驱动盘筛选尚未完成");
+            }
+            overrides["Disc.SelectGrade"] = json!({"next":[dismantle.config.grade.node()]});
+        }
+        let mut keys = vec![18, 27, 70, 78, 87];
+        if progress.app_id == "redemption_code" {
+            let state = progress.redemption.as_ref().context("缺少冻结的兑换码")?;
+            state.validate().map_err(anyhow::Error::msg)?;
+            if let Some(code) = state.current() {
+                overrides["Redeem.Type"] = json!({"input_text":code.code});
+                overrides["Redeem.InputValue"] = json!({"expected":[format!("^{}$",code.code)]});
+            }
+            if progress.stage == "SubmitCode" {
+                ensure!(state.input_verified, "兑换码输入尚未确认");
+            }
+            keys.extend([17, 65, 8]);
+        }
         self.run_pipeline_detailed(
             &entry,
             &crate::PipelineInputPlan {
-                keys: [18, 27, 70, 78, 87].into(),
+                keys: keys.into_iter().collect(),
                 contacts: [0].into(),
             },
             cancel,

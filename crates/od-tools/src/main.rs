@@ -21,7 +21,7 @@ enum Tool {
         #[arg(long, default_value = "resources/generated/combat")]
         output: PathBuf,
     },
-    /// 生成活跃度、丽都城募与刮刮卡执行包，实机验收单独记录。
+    /// 生成当前日常及情报板共用资源，实机验收单独记录。
     BasicDailyBundle {
         #[arg(long)]
         reference: PathBuf,
@@ -122,11 +122,15 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
-        Tool::CombatBundle { reference, models, output } => {
+        Tool::CombatBundle {
+            reference,
+            models,
+            output,
+        } => {
             let manifest = od_tools::combat::build_bundle(&reference, &models, &output)?;
             println!("{}", serde_json::to_string_pretty(&manifest)?);
             Ok(())
-        },
+        }
         Tool::EngagementRewardBundle {
             reference,
             models,
@@ -142,7 +146,7 @@ fn main() -> Result<()> {
             output,
         } => {
             od_tools::basic_daily::build_bundle(&reference, &models, &output)?;
-            println!("已生成首批日常执行资源：{}", output.display());
+            println!("已生成日常与情报板共用资源：{}", output.display());
             Ok(())
         }
         Tool::CoffeeRunBundle {
@@ -235,8 +239,14 @@ fn main() -> Result<()> {
                 od_core::combat::CombatScriptCatalog::decl(),
                 od_core::combat_scripts::CombatScriptImportPreview::decl(),
                 od_core::combat::CombatProgress::decl(),
-                format!("const combatDefaultConfig = {} as const;",serde_json::to_string(&od_core::combat::CombatConfig::default())?),
-                format!("const combatButtonNames = {} as const;",serde_json::to_string(&od_core::combat::BUTTONS)?),
+                format!(
+                    "const combatDefaultConfig = {} as const;",
+                    serde_json::to_string(&od_core::combat::CombatConfig::default())?
+                ),
+                format!(
+                    "const combatButtonNames = {} as const;",
+                    serde_json::to_string(&od_core::combat::BUTTONS)?
+                ),
                 od_core::screen_samples::ScreenSampleKind::decl(),
                 od_core::screen_samples::ScreenSampleSource::decl(),
                 od_core::screen_samples::ScreenSamplePreview::decl(),
@@ -256,6 +266,15 @@ fn main() -> Result<()> {
                 od_core::run_plan::PlanDecision::decl(),
                 od_core::run_plan::AppAvailability::decl(),
                 od_core::run_plan::PlannedApp::decl(),
+                od_core::intel_board::IntelBoardConfig::decl(),
+                od_core::intel_board::IntelHistory::decl(),
+                od_core::intel_board::IntelWeek::decl(),
+                od_core::intel_board::WeeklyTotals::decl(),
+                od_core::intel_board::CommissionKind::decl(),
+                od_core::intel_board::SettledCommission::decl(),
+                od_core::intel_board::PendingCommission::decl(),
+                od_core::intel_board::IntelLedger::decl(),
+                od_core::battle_result::NormalBattleResult::decl(),
                 od_core::run_plan::GroupPlan::decl(),
                 od_core::run_history::HistoryItem::decl(),
                 od_core::run_history::RunHistory::decl(),
@@ -313,6 +332,27 @@ fn main() -> Result<()> {
                 od_core::coffee_run::CoffeeState::decl(),
                 od_core::coffee_run::CoffeePhase::decl(),
                 od_core::coffee_run::CoffeeProgress::decl(),
+                od_core::redemption::RedemptionConfig::decl(),
+                od_core::redemption::RedemptionCode::decl(),
+                od_core::redemption::RedemptionOutcome::decl(),
+                od_core::redemption::RedemptionResult::decl(),
+                od_core::redemption::RedemptionHistory::decl(),
+                od_core::redemption::RedemptionProgress::decl(),
+                od_core::dismantle::DismantleGrade::decl(),
+                od_core::dismantle::DismantleConfig::decl(),
+                od_core::dismantle::DismantleProgress::decl(),
+                od_core::random_play::ShopLocation::decl(),
+                od_core::random_play::RandomPlayConfig::decl(),
+                od_core::random_play::ShopOutcome::decl(),
+                od_core::random_play::RandomPlayProgress::decl(),
+                od_core::predefined_teams::PredefinedTeam::decl(),
+                od_core::predefined_teams::TeamConfig::decl(),
+                od_core::predefined_teams::TeamMembers::decl(),
+                od_core::team_check::TeamCheckProgress::decl(),
+                format!(
+                    "const teamDefaultConfig = {} as TeamConfig;",
+                    serde_json::to_string(&od_core::predefined_teams::TeamConfig::default())?
+                ),
                 od_core::basic_daily::DailyConfig::decl(),
                 od_core::basic_daily::DailyProgress::decl(),
                 format!(
@@ -392,10 +432,14 @@ fn main() -> Result<()> {
             std::fs::write(
                 output,
                 format!(
-                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const dailySettingsFields = {} as const;\nexport const dailyDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\nexport const gameLaunchDefaultConfig = {} as const;\nexport const runNotificationOptions = {} as const;\nexport const screenSampleKindOptions = {} as const;\n",
+                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const dailySettingsFields = {} as const;\nexport const dailyDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\nexport const gameLaunchDefaultConfig = {} as const;\nexport const runNotificationOptions = {} as const;\nexport const screenSampleKindOptions = {} as const;\nexport const redemptionSampleCodes = {} as const;\n",
                     declarations
                         .into_iter()
                         .map(|decl| format!("export {decl}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                        .lines()
+                        .map(str::trim_end)
                         .collect::<Vec<_>>()
                         .join("\n"),
                     serde_json::to_string_pretty(&od_core::config::GeneralSettings::fields())?,
@@ -415,7 +459,8 @@ fn main() -> Result<()> {
                     )?,
                     serde_json::to_string_pretty(
                         &od_core::screen_samples::ScreenSampleKind::options()
-                    )?
+                    )?,
+                    serde_json::to_string_pretty(&od_core::redemption::samples())?
                 ),
             )?;
             Ok(())

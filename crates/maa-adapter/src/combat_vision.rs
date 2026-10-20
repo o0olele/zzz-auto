@@ -192,7 +192,7 @@ impl CombatBundle {
 }
 
 pub struct CombatFrame {
-    image: RecognitionImage,
+    pub(crate) image: RecognitionImage,
     pub captured: Instant,
 }
 impl CombatFrame {
@@ -201,6 +201,41 @@ impl CombatFrame {
     }
 }
 impl NativeSession {
+    /// 应用开始前载入战斗资源，保留同一 Tasker、控制器与运行控制权。
+    pub fn load_combat_bundle(&mut self, root: &Path) -> Result<CombatRecognizer> {
+        ensure!(
+            !self.tasker.running()
+                && !self.input_cleanup_pending
+                && !self.pipeline_controller_pending
+                && self.held_keys.is_empty()
+                && self.held_contacts.is_empty(),
+            "载入战斗资源前须结束任务并释放全部输入"
+        );
+        let bundle = CombatBundle::load(root)?;
+        ensure!(
+            self._resource
+                .post_bundle(bundle.root.to_str().context("战斗路径不是 UTF-8")?)?
+                .wait()
+                .is_success(),
+            "战斗资源载入失败"
+        );
+        // 闪光原始推理不经过 Maa 的资源查找，必须使用同一份已校验战斗包。
+        *self
+            .raw_flash
+            .lock()
+            .map_err(|_| anyhow::anyhow!("闪光识别锁失效"))? = None;
+        self.combat_bundle = Some(bundle.root.clone());
+        Ok(CombatRecognizer::new(bundle))
+    }
+
+    pub fn check_combat_input_mode(&self, mode: od_core::InputMode) -> Result<()> {
+        ensure!(
+            self.input_mode == Some(mode),
+            "战斗输入方式与当前控制器不匹配"
+        );
+        Ok(())
+    }
+
     pub fn combat_frame(&self, cancel: &AtomicBool) -> Result<Option<CombatFrame>> {
         if cancel.load(Ordering::Acquire) {
             return Ok(None);
@@ -251,6 +286,65 @@ pub struct CombatRecognizer {
     chain: Option<(Vec<Option<String>>, f64)>,
 }
 impl CombatRecognizer {
+    /// 只读取同一截图中的固定普通结算区域；调用方须确认已进入战斗，
+    /// 且不再出现战斗按钮。结果不能单独用于记录应用成功。
+    pub fn normal_battle_result(
+        &self,
+        session: &NativeSession,
+        frame: &CombatFrame,
+        cancel: &AtomicBool,
+    ) -> Result<Option<od_core::battle_result::NormalBattleResult>> {
+        use od_core::battle_result::NormalBattleResult;
+        if cancel.load(Ordering::Acquire) {
+            return Ok(None);
+        }
+        ensure!(
+            !session.tasker.running(),
+            "结算识别不能与 Pipeline 同时执行"
+        );
+        let completed = self.area("战斗结果-完成")?.map(i64::from);
+        let retreat = self.area("战斗结果-撤退")?.map(i64::from);
+        let left = completed[0].min(retreat[0]);
+        let top = completed[1].min(retreat[1]);
+        let roi = [
+            left,
+            top,
+            completed[2].max(retreat[2]) - left,
+            completed[3].max(retreat[3]) - top,
+        ];
+        let result = session.recognize_prepared(
+            &frame.image,
+            "OCR",
+            &json!({
+                "model":"ppocrv5", "roi":roi, "threshold":0.6,
+                "expected":["^完成$","^撤退$"]
+            }),
+        )?;
+        if cancel.load(Ordering::Acquire) {
+            return Ok(None);
+        }
+        let matches = result.detail["detail"]["filtered"]
+            .as_array()
+            .context("普通战斗结算 OCR 缺少结果")?;
+        let at = |text: &str, [left, top, right, bottom]: [i64; 4]| {
+            matches.iter().any(|item| {
+                let Some(rect) = item["box"].as_array().filter(|rect| rect.len() == 4) else {
+                    return false;
+                };
+                let values: Option<Vec<i64>> = rect.iter().map(Value::as_i64).collect();
+                let Some(values) = values else { return false };
+                let x = values[0] + values[2] / 2;
+                let y = values[1] + values[3] / 2;
+                item["text"] == text && (left..right).contains(&x) && (top..bottom).contains(&y)
+            })
+        };
+        Ok(match (at("完成", completed), at("撤退", retreat)) {
+            (true, false) => Some(NormalBattleResult::Completed),
+            (false, true) => Some(NormalBattleResult::Retreat),
+            _ => None,
+        })
+    }
+
     pub fn new(bundle: CombatBundle) -> Self {
         Self {
             bundle,
@@ -288,7 +382,7 @@ impl CombatRecognizer {
         self.last.insert(name.into(), now);
         true
     }
-    fn matched(
+    pub(crate) fn matched(
         &self,
         session: &NativeSession,
         frame: &CombatFrame,
@@ -342,7 +436,7 @@ impl CombatRecognizer {
         }
         Ok(best.map(|(index, _)| index))
     }
-    fn area(&self, name: &str) -> Result<[i32; 4]> {
+    pub(crate) fn area(&self, name: &str) -> Result<[i32; 4]> {
         self.bundle
             .spec
             .areas

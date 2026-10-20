@@ -1,0 +1,14 @@
+[
+  {
+    "sha256": "eeb098ea7629639f4f8c9afd10440f7ac24106ec982ff6cfcc4f614ac3d1c4f3",
+    "path": "assets/game_data/screen_info/ridu_weekly.yml"
+  },
+  {
+    "sha256": "b97ce4b1b15340afef16a65878c021dcb07505155d880b7a5137e6e86d90e1f3",
+    "path": "assets/game_data/screen_info/trigrams_collection.yml"
+  },
+  {
+    "sha256": "bd72b5f705716a0365d1cb96371d839e9d7d42d6dd078b3f7b91f1f8718babf9",
+    "path": "assets/game_data/screen_info/hou_hou_bakery.yml"
+  }
+]

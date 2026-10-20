@@ -966,7 +966,12 @@ impl Engine {
         let plan = selection
             .plan(&config, instance_id, &group_id, now, None)
             .map_err(|error| ApiError::new("invalid_group", error))?;
-        if plan.run_policy == RunPolicy::Always && !selection.needs_daily_proof() {
+        if plan.run_policy == RunPolicy::Always
+            && !selection.needs_daily_proof()
+            && !plan.items.iter().any(|item| {
+                item.enabled && matches!(item.app_id.as_str(), "redemption_code" | "intel_board")
+            })
+        {
             return Ok(plan);
         }
         let history = self.history.clone();
@@ -974,9 +979,31 @@ impl Engine {
             let completed = history
                 .daily_completions(instance_id, plan.game_day, now)
                 .map_err(|error| ApiError::new("history_error", error.to_string()))?;
-            selection
+            let mut plan = selection
                 .plan(&config, instance_id, &group_id, now, Some(&completed))
-                .map_err(|error| ApiError::new("invalid_group", error))
+                .map_err(|error| ApiError::new("invalid_group", error))?;
+            if plan
+                .items
+                .iter()
+                .any(|item| item.enabled && item.app_id == "redemption_code")
+            {
+                let results = history
+                    .redemption_history(instance_id)
+                    .map_err(|error| ApiError::new("history_error", error.to_string()))?;
+                od_core::redemption::apply_history(&mut plan, results);
+            }
+            if plan
+                .items
+                .iter()
+                .any(|item| item.enabled && item.app_id == "intel_board")
+            {
+                let results = history
+                    .intel_history(instance_id, &plan.game_day, now)
+                    .map_err(|error| ApiError::new("history_error", error.to_string()))?;
+                od_core::intel_board::apply_history(&mut plan, results)
+                    .map_err(|error| ApiError::new("history_error", error))?;
+            }
+            Ok(plan)
         })
         .await
         .map_err(|_| ApiError::new("history_error", "每日记录查询线程异常退出"))?
@@ -1021,7 +1048,7 @@ impl Engine {
                 if plan.all_done {
                     return Err(ApiError::new(
                         "group_already_done",
-                        "本游戏日已完成，无需重复执行；请重新预览",
+                        "本次没有待执行应用；请重新预览每日状态及待兑换码",
                     ));
                 }
                 if !plan.executable {

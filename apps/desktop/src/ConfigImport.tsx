@@ -1,3 +1,8 @@
+import { RedemptionConfigSummary } from './RedemptionSettings';
+import { dismantleSummary } from './DismantleSettings';
+import { randomPlaySummary } from './RandomPlaySettings';
+import { intelBoardSummary } from './IntelBoardSettings';
+import { TeamSummary } from './TeamSettings';
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, MessageBar, MessageBarBody, Spinner } from '@fluentui/react-components';
 import type { AccountConfig, AppDefinition, ImportPreview } from './generated/protocol';
@@ -84,14 +89,20 @@ export function ConfigImport({ connected, active, blocked, current, apps, onImpo
       <p>任务快捷键：暂停 / 继续 {preview.config.general.shortcuts.pause_resume?.toUpperCase() ?? '关闭'}，停止 {preview.config.general.shortcuts.stop?.toUpperCase() ?? '关闭'}；不启动新任务。</p>
       <p>结束后动作：{afterDoneName(preview.config.general.after_done)}；正常完成后等待 60 秒，可取消。</p>
       <p>下载代理：{downloadProxySummary(preview.config.general.download_proxy)}。</p>
+      <RedemptionConfigSummary settings={preview.config.redemption}/>
       {preview.config.instances.map(instance => <div key={instance.id}>
         <h3>{instance.name}{instance.id === preview.config.active_instance ? '（当前账号）' : ''}</h3>
         <p>编号 {instance.id} · {gameRegionOptions.find(option => option.value === instance.game_region)?.label} · {instance.active_in_od ? '参与一条龙' : '不参与一条龙'}</p>
         <p className="path-value">游戏启动：{gameLaunchSummary(instance.game_launch)}</p>
         <p>运行结果提醒：{runNotificationName(instance.run_notifications)}</p>
+        <TeamSummary settings={instance.predefined_teams}/>
+        <p>旧版已处理码：{instance.redemption_used?.join('、') || '无'}（旧版未区分实际结果）。</p>
         {instance.groups.map(group => <details key={group.id}>
           <summary>{group.id === 'one_dragon' ? '一条龙' : group.id} · {group.apps.filter(app => app.enabled).length} 项启用 / {group.apps.length} 项</summary>
           <p>咖啡默认值：{coffeeSummary(group.coffee)}。旧动态选单未转换，请导入后核对。</p>
+          <p>拆解设置：{dismantleSummary(group.dismantle)}。</p>
+          <p>录像店设置：{randomPlaySummary(group.random_play)}。</p>
+          <p>情报板设置：{intelBoardSummary(group.intel_board)}。</p>
           <ol>{group.apps.map(app => <li key={app.app_id}>{apps.find(item => item.id === app.app_id)?.name ?? app.app_id} · {app.enabled ? '启用' : '禁用'}</li>)}</ol>
         </details>)}
       </div>)}

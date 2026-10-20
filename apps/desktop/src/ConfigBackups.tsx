@@ -1,3 +1,8 @@
+import { RedemptionConfigSummary } from './RedemptionSettings';
+import { dismantleSummary } from './DismantleSettings';
+import { randomPlaySummary } from './RandomPlaySettings';
+import { intelBoardSummary } from './IntelBoardSettings';
+import { TeamSummary } from './TeamSettings';
 import { useEffect, useRef, useState } from 'react';
 import { combatSummary } from './combatSettings';
 import { Badge, Button, Card, Checkbox, Field, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
@@ -41,6 +46,8 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     <p>快捷键：{keys(current)} → {keys(backup)}。</p>
     <p>结束后动作：{afterDoneName(current.general.after_done)} → {afterDoneName(backup.general.after_done)}。</p>
     <p>下载代理：{downloadProxySummary(current.general.download_proxy)} → {downloadProxySummary(backup.general.download_proxy)}。</p>
+    <div aria-label="兑换码恢复差异"><p>当前配置</p><RedemptionConfigSummary settings={current.redemption}/><p>备份配置</p><RedemptionConfigSummary settings={backup.redemption}/></div>
+    <p>旧版已处理码：{before?.redemption_used?.join('、') || '无'} → {after?.redemption_used?.join('、') || '无'}。</p>
     <Field label="核对账号"><Select value={accountId} onChange={(_, data) => setAccountId(Number(data.value))}>{ids.map(id => {
       const old = current.instances.find(item => item.id === id); const next = backup.instances.find(item => item.id === id);
       return <option key={id} value={id}>{next?.name ?? old?.name}（编号 {id} · {changeName(old, next)}）</option>;
@@ -49,6 +56,7 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     <p className="path-value">游戏启动：{before ? gameLaunchSummary(before.game_launch) : '无此账号'} → {after ? gameLaunchSummary(after.game_launch) : '无此账号'}。</p>
     <p>运行结果提醒：{before ? runNotificationName(before.run_notifications) : '无此账号'} → {after ? runNotificationName(after.run_notifications) : '无此账号'}。</p>
     <p>战斗设置：{before ? combatSummary(before.combat) : '无此账号'} → {after ? combatSummary(after.combat) : '无此账号'}。</p>
+    <div aria-label="预备编队恢复差异">{before && <><p>当前编队</p><TeamSummary settings={before.predefined_teams}/></>}{after && <><p>恢复后编队</p><TeamSummary settings={after.predefined_teams}/></>}</div>
     <p>当前应用组顺序：{before?.groups.map(label).join(' → ') ?? '无此账号'}；恢复后：{after?.groups.map(label).join(' → ') ?? '无此账号'}。</p>
     <Field label="核对应用组"><Select value={groupId} onChange={(_, data) => setGroupId(data.value)}>{groups.map(id => {
       const old = before?.groups.find(item => item.id === id); const next = after?.groups.find(item => item.id === id);
@@ -57,6 +65,9 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     <p>组名：{oldGroup ? label(oldGroup) : '无此组'} → {newGroup ? label(newGroup) : '无此组'}；运行策略：{policy(oldGroup)} → {policy(newGroup)}。</p>
     <p>咖啡设置：{oldGroup ? coffeeSummary(oldGroup.coffee) : '无此组'} → {newGroup ? coffeeSummary(newGroup.coffee) : '无此组'}。</p>
     <p>日常设置：{oldGroup ? dailySummary(oldGroup.daily) : '无此组'} → {newGroup ? dailySummary(newGroup.daily) : '无此组'}。</p>
+    <p>拆解设置：{oldGroup ? dismantleSummary(oldGroup.dismantle) : '无此组'} → {newGroup ? dismantleSummary(newGroup.dismantle) : '无此组'}。</p>
+    <p>录像店设置：{oldGroup ? randomPlaySummary(oldGroup.random_play) : '无此组'} → {newGroup ? randomPlaySummary(newGroup.random_play) : '无此组'}。</p>
+    <p>情报板设置：{oldGroup ? intelBoardSummary(oldGroup.intel_board) : '无此组'} → {newGroup ? intelBoardSummary(newGroup.intel_board) : '无此组'}。</p>
     <div className="input-fields">{[{ group: oldGroup, title: '当前应用顺序' }, { group: newGroup, title: '恢复后应用顺序' }].map(({ group, title }) => {
       return <div role="group" aria-label={title} key={title}><h3>{title}</h3>{group ? <ol className="group-plan">{group.apps.map(item => <li key={item.app_id}>{apps.find(app => app.id === item.app_id)?.name ?? item.app_id} · {item.enabled ? '启用' : '禁用'}</li>)}</ol> : <p>无此组</p>}</div>;
     })}</div>

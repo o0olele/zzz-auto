@@ -264,7 +264,7 @@ impl EngineSession {
             }
             | Command::StartStandaloneTrial {
                 allow_input: true, ..
-            } => Some(od_core::basic_daily::recovery_inputs()),
+            } => Some(od_core::redemption::recovery_inputs()),
             Command::StartInputProbe {
                 config,
                 allow_input: true,
@@ -305,7 +305,7 @@ impl EngineSession {
                     command,
                     Command::StartGroupTrial { .. } | Command::StartStandaloneTrial { .. }
                 ) {
-                    7
+                    9
                 } else if matches!(command, Command::StartCoffeeFromWorld { .. }) {
                     5
                 } else if matches!(command, Command::StartCoffee { .. }) {
@@ -323,6 +323,7 @@ impl EngineSession {
                 window,
                 config: configs[0],
                 additional_inputs: configs.iter().skip(1).copied().collect(),
+                combat_config: None,
                 engine_integrity: self.privilege.engine_integrity,
                 run_id: None,
             };
@@ -355,7 +356,7 @@ impl EngineSession {
             {
                 8
             } else if snapshot.run.as_ref().is_some_and(|run| run.group.is_some()) {
-                7
+                9
             } else if snapshot
                 .run
                 .as_ref()

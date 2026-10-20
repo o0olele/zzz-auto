@@ -1,0 +1,18 @@
+[
+  {
+    "path": "assets/game_data/screen_info/drive_disc_dismantle.yml",
+    "sha256": "ffdef9adb382a087c7c5c2dfd25a33818efce43a9e535b313fc1bc2bde92be78"
+  },
+  {
+    "path": "assets/game_data/screen_info/storage_drive_disc.yml",
+    "sha256": "7e61a940fba1f7eebf2fd701e89d33848210497c47b9efad0ec26d86a4f77396"
+  },
+  {
+    "path": "assets/game_data/screen_info/storage_wengine.yml",
+    "sha256": "d4ec4cbd82b1da4a43ed2dae9edb10de6d9c4fd093b33d32ae15be2b578027bb"
+  },
+  {
+    "path": "assets/game_data/screen_info/item_processing_obtained.yml",
+    "sha256": "2747ceb1785b288cecc8cfab04dfb05beae071745eaec61931a78a41c0f09108"
+  }
+]

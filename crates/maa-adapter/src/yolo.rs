@@ -7,7 +7,11 @@ use ort::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, path::Path, time::Instant};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use crate::{
     InferenceDevice, NativeSession, RawRecognitionControl, RawRecognitionPhase, RecognitionImage,
@@ -20,6 +24,53 @@ use crate::{
 
 pub const HOLLOW_MODEL: &str = "yolov8s-736-hollow-zero-event-0126.onnx";
 pub const LOST_VOID_MODEL: &str = "yolov26n-736-lost-void-det-20260630.onnx";
+
+fn locked_challenge_files() -> Result<Vec<(String, u64, String)>> {
+    let lock: Value = serde_json::from_str(include_str!("../../../models.lock.json"))?;
+    let model = lock["models"]
+        .as_array()
+        .context("缺少模型清单")?
+        .iter()
+        .find(|m| m["id"] == LOST_VOID_MODEL.trim_end_matches(".onnx"))
+        .context("缺少固定距离模型")?;
+    model["files"]
+        .as_array()
+        .context("缺少距离模型文件")?
+        .iter()
+        .map(|file| {
+            Ok((
+                file["bundle_path"]
+                    .as_str()
+                    .context("距离模型路径无效")?
+                    .into(),
+                file["bytes"].as_u64().context("距离模型长度无效")?,
+                file["sha256"].as_str().context("距离模型哈希无效")?.into(),
+            ))
+        })
+        .collect()
+}
+pub fn validate_challenge_detector(root: &Path) -> Result<PathBuf> {
+    od_core::config::reject_links(root)?;
+    let root = root.canonicalize().context("缺少战前距离模型资源")?;
+    for (name, size, hash) in locked_challenge_files()? {
+        let path = root.join(name);
+        od_core::config::reject_links(&path)?;
+        ensure!(
+            path.canonicalize()?.starts_with(&root),
+            "距离模型文件指向包外"
+        );
+        let meta = path.metadata()?;
+        ensure!(
+            meta.is_file() && meta.len() == size && size <= 64 * 1024 * 1024,
+            "距离模型长度不匹配"
+        );
+        ensure!(
+            hex::encode(Sha256::digest(std::fs::read(path)?)) == hash,
+            "距离模型哈希不匹配"
+        );
+    }
+    Ok(root)
+}
 pub const YOLO_SIZE: i32 = 736;
 pub const AVATAR_RECT: [i32; 4] = [104, 40, 844, 110];
 
@@ -382,6 +433,39 @@ impl RawDetector {
 }
 
 impl NativeSession {
+    /// 游戏流程只接受锁定的迷失之地距离模型；诊断入口继续使用原资源目录。
+    pub fn load_challenge_detector(&mut self, root: &Path) -> Result<()> {
+        ensure!(
+            !self.tasker.running()
+                && !self.input_cleanup_pending
+                && self.held_keys.is_empty()
+                && self.held_contacts.is_empty(),
+            "载入战前距离模型前须释放输入"
+        );
+        let root = validate_challenge_detector(root)?;
+        let config =
+            YoloConfig::parse(&json!({"model":LOST_VOID_MODEL,"label_list":["0001-距离"]}))?;
+        let detector =
+            RawDetector::new(&root, &config, self.inference_device, self.raw_cpu_threads)?;
+        let files = locked_challenge_files()?;
+        ensure!(
+            files
+                .iter()
+                .any(|(path, _, hash)| path.ends_with(".onnx") && hash == &detector.sha256)
+                && files.iter().any(
+                    |(path, _, hash)| path.ends_with(".csv") && hash == &detector.labels_sha256
+                ),
+            "载入的距离模型与锁定字节不符"
+        );
+        let mut cached = self
+            .raw_detectors
+            .lock()
+            .map_err(|_| anyhow::anyhow!("原始检测器锁失效"))?;
+        cached.clear();
+        cached.insert(LOST_VOID_MODEL.into(), detector);
+        self.detector_bundle = Some(root);
+        Ok(())
+    }
     pub(crate) fn recognize_yolo(
         &self,
         image: &RecognitionImage,
@@ -399,7 +483,9 @@ impl NativeSession {
             cached.insert(
                 config.model.clone(),
                 RawDetector::new(
-                    &self.resource_root,
+                    self.detector_bundle
+                        .as_deref()
+                        .unwrap_or(&self.resource_root),
                     &config,
                     self.inference_device,
                     self.raw_cpu_threads,

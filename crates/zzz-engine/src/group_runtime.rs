@@ -74,11 +74,17 @@ impl GroupWork {
                 )
             }
             app if od_core::basic_daily::APP_IDS.contains(&app) => {
-                let run = Box::new(crate::basic_daily::DailyRun::new(
+                let mut run = Box::new(crate::basic_daily::DailyRun::new(
                     record.id,
                     app,
                     self.plan.daily_config,
                 )?);
+                run.progress = record
+                    .daily
+                    .iter()
+                    .find(|p| p.app_id == app)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("缺少日常分项检查点"))?;
                 let control = run.control();
                 (
                     GroupAppWork::Daily(DailyWork {
@@ -253,8 +259,9 @@ pub(super) fn run_group_work(
                         )?;
                     }
                     app if od_core::basic_daily::APP_IDS.contains(&app) => {
-                        maa_adapter::validate_basic_daily_bundle(
+                        maa_adapter::validate_basic_daily_app_bundle(
                             &paths.resources.join("generated/basic-daily"),
+                            app,
                         )?;
                     }
                     _ => anyhow::bail!("分项没有执行器"),
@@ -364,8 +371,9 @@ fn run_daily_work(
             return Ok(());
         }
         if !work.prepared {
-            let bundle = maa_adapter::validate_basic_daily_bundle(
+            let bundle = maa_adapter::validate_basic_daily_app_bundle(
                 &paths.resources.join("generated/basic-daily"),
+                &work.run.progress.app_id,
             )?;
             if work.fixture {
                 native
@@ -432,7 +440,28 @@ fn run_daily_work(
                 .ok_or_else(|| anyhow::anyhow!("日常控制器未连接"))?,
             !work.fixture,
             publish,
-        )
+        )?;
+        if work.run.progress.stage == "Save" && work.run.progress.state == MailState::Running {
+            let mut state = shared.lock().expect("运行状态锁失效");
+            if work.run.interrupt_requested().is_some() {
+                work.run.acknowledge_idle();
+                return Ok(());
+            }
+            let active = state.slot.current().ok_or_else(|| anyhow::anyhow!("编队运行已不存在"))?;
+            anyhow::ensure!(active.id == id && active.state == RunState::Running,
+                "编队运行身份或状态已变化，未回写配置");
+            let context = active.context.clone().ok_or_else(|| anyhow::anyhow!("编队运行缺少账号"))?;
+            // 先保存完成扫描、返回及释放输入的检查点，失败时不能改写账号。
+            let record = state.slot.update_daily(id, work.run.progress.clone(), "编队扫描已完成，准备保存可靠结果".into())
+                .map_err(anyhow::Error::msg)?;
+            save_run(paths, &mut state, &record);
+            anyhow::ensure!(state.record_error.is_none(), "编队结果检查点未保存，未回写配置");
+            let scan = work.run.progress.team_check.as_ref().ok_or_else(|| anyhow::anyhow!("缺少编队扫描结果"))?;
+            let revision = od_core::team_check::save_members(
+                &ConfigStore::new(&paths.data)?, context.instance_id, context.config_revision, scan)?;
+            work.run.finish_team_save(revision)?;
+        }
+        Ok(())
     })();
     if let Err(error) = result {
         work.run.progress.state = MailState::Failed;

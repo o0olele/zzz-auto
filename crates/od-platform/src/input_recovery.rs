@@ -82,14 +82,37 @@ pub struct InputRecoveryPlan {
     pub config: InputProbeConfig,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub additional_inputs: Vec<InputProbeConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combat_config: Option<od_core::combat::CombatConfig>,
     pub engine_integrity: u32,
     pub run_id: Option<String>,
 }
 
 impl InputRecoveryPlan {
     pub fn validate(&self) -> Result<()> {
-        ensure!(matches!(self.version, 1..=8), "输入恢复记录版本不支持");
-        if self.version == 8 {
+        ensure!(matches!(self.version, 1..=10), "输入恢复记录版本不支持");
+        ensure!(
+            self.version == 10 || self.combat_config.is_none(),
+            "旧版恢复记录不能增加混合战斗配置"
+        );
+        if self.version == 10 {
+            let combat = self
+                .combat_config
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("v10 缺少冻结战斗配置"))?;
+            let expected =
+                od_core::app_combat::recovery_inputs(combat).map_err(anyhow::Error::msg)?;
+            ensure!(
+                self.config == expected[0] && self.additional_inputs == expected[1..],
+                "v10 应用内战斗恢复输入与固定界面清单或冻结战斗绑定不符"
+            );
+        } else if self.version == 9 {
+            let expected = od_core::redemption::recovery_inputs();
+            ensure!(
+                self.config == expected[0] && self.additional_inputs == expected[1..],
+                "v9 兑换码恢复输入不属于固定清单"
+            );
+        } else if self.version == 8 {
             ensure!(
                 self.additional_inputs.len() <= 128
                     && self
@@ -246,27 +269,29 @@ fn recovery_windows(pid: u32) -> Result<Vec<usize>> {
 
 pub fn recover_input(plan: &InputRecoveryPlan) -> Result<String> {
     plan.validate()?;
-    if matches!(plan.version, 2 | 5) {
-        let mut errors = Vec::new();
-        for config in std::iter::once(plan.config).chain(plan.additional_inputs.iter().copied()) {
-            let mut single = plan.clone();
-            single.version = 1;
-            single.config = config;
-            single.additional_inputs.clear();
-            if let Err(error) = recover_input(&single) {
-                errors.push(format!("{error:#}"));
-            }
-        }
-        ensure!(errors.is_empty(), "{}", errors.join("；"));
-        return Ok(if plan.version == 5 {
-            "已释放咖啡路线记录中的鼠标左键、N 和 F；请确认游戏状态再重连，不会重放传送或点单"
-                .into()
-        } else {
-            "已释放邮件记录中的 Alt 和鼠标左键；请确认游戏状态再重连，不会续跑或重复领取".into()
-        });
-    }
     ensure!(plan.engine.exited()?, "旧引擎仍在运行，不能发送恢复输入");
-    let release = input_release(plan.config)?;
+    let mut errors = Vec::new();
+    let mut messages = Vec::new();
+    for config in std::iter::once(plan.config).chain(plan.additional_inputs.iter().copied()) {
+        match recover_single_input(plan, config) {
+            Ok(message) => {
+                if !messages.contains(&message) {
+                    messages.push(message);
+                }
+            }
+            Err(error) => errors.push(format!("{:?} {:?}：{error:#}", config.mode, config.action)),
+        }
+    }
+    ensure!(
+        errors.is_empty(),
+        "部分遗留输入未确认释放：{}",
+        errors.join("；")
+    );
+    Ok(messages.join("；"))
+}
+
+fn recover_single_input(plan: &InputRecoveryPlan, config: InputProbeConfig) -> Result<String> {
+    let release = input_release(config)?;
     if release == InputRelease::GamepadOwnerExit {
         // ViGEmClient 的契约：拥有进程终止时，驱动移除其虚拟设备。
         // 不创建新手柄冒充对旧设备的复位；真实驱动与游戏响应另列实机验收。
@@ -276,7 +301,7 @@ pub fn recover_input(plan: &InputRecoveryPlan) -> Result<String> {
         );
     }
     let background = matches!(
-        plan.config.mode,
+        config.mode,
         InputMode::Background | InputMode::BackgroundPost
     );
     let mut _lease = None;
@@ -313,7 +338,7 @@ pub fn recover_input(plan: &InputRecoveryPlan) -> Result<String> {
                 )
             }
             InputRelease::MouseUp(button) => {
-                let InputProbeAction::MouseButton { x, y, .. } = plan.config.action else {
+                let InputProbeAction::MouseButton { x, y, .. } = config.action else {
                     unreachable!()
                 };
                 let (msg, button) = match button {
@@ -332,7 +357,7 @@ pub fn recover_input(plan: &InputRecoveryPlan) -> Result<String> {
             let target = target as *mut std::ffi::c_void;
             let mut target_lparam = lparam;
             if matches!(release, InputRelease::MouseUp(_)) && target != hwnd {
-                let InputProbeAction::MouseButton { x, y, .. } = plan.config.action else {
+                let InputProbeAction::MouseButton { x, y, .. } = config.action else {
                     unreachable!()
                 };
                 let mut point = POINT { x, y };
@@ -348,7 +373,7 @@ pub fn recover_input(plan: &InputRecoveryPlan) -> Result<String> {
                 target_lparam =
                     ((u32::from(point.y as u16) << 16) | u32::from(point.x as u16)) as isize;
             }
-            let post = plan.config.mode == InputMode::BackgroundPost;
+            let post = config.mode == InputMode::BackgroundPost;
             // 同步消息不能作为 PostMessage 队列栅栏，否则 KeyUp 可能抢在旧 KeyDown 前执行。
             ensure!(
                 unsafe {
@@ -371,7 +396,7 @@ pub fn recover_input(plan: &InputRecoveryPlan) -> Result<String> {
                 );
             }
         }
-        if plan.config.mode == InputMode::BackgroundPost {
+        if config.mode == InputMode::BackgroundPost {
             return Ok(
                 "已按原队列顺序排入释放消息，尚未确认游戏消费；请确认游戏恢复后再手动重连".into(),
             );

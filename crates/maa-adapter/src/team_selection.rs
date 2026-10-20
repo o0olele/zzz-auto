@@ -1,0 +1,373 @@
+use crate::{NativeSession, PipelineEnd, RecognitionImage, predefined_teams::TeamPageMode};
+use anyhow::{Context, Result, ensure};
+use od_core::{
+    predefined_teams::{self, TeamConfig},
+    team_selection::{self, SelectionAction, SelectionCard, SelectionPhase, TeamSelection},
+};
+use serde_json::{Value, json};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+#[derive(Debug)]
+pub struct SelectionPage {
+    pub mode: TeamPageMode,
+    pub cards: Vec<SelectionCard>,
+    pub unreadable: Vec<u8>,
+    pub confirm_enabled: bool,
+    pub deployment: bool,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionEnd {
+    Completed,
+    Cancelled,
+    TimedOut,
+}
+
+fn rect(reading: &Value) -> Option<[i32; 4]> {
+    let value = serde_json::from_value(reading["box"].clone()).ok()?;
+    od_core::intel_board::valid_rect(value).then_some(value)
+}
+fn in_area(reading: &Value, [left, top, right, bottom]: [i32; 4]) -> bool {
+    rect(reading).is_some_and(|[x, y, w, h]| {
+        (left..right).contains(&(x + w / 2)) && (top..bottom).contains(&(y + h / 2))
+    })
+}
+
+impl NativeSession {
+    pub fn inspect_team_selection(
+        &self,
+        frame: &RecognitionImage,
+        config: &TeamConfig,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<SelectionPage>> {
+        let started = Instant::now();
+        let ready = || -> Result<bool> {
+            if cancel.load(Ordering::Acquire) {
+                return Ok(false);
+            }
+            ensure!(started.elapsed() < timeout, "预备编队选择识别超时");
+            Ok(true)
+        };
+        config.validate().map_err(anyhow::Error::msg)?;
+        ensure!(!self.tasker.running(), "选队识别前须等待 Pipeline 收尾");
+        if !ready()? {
+            return Ok(None);
+        }
+        let mut page = SelectionPage {
+            mode: TeamPageMode::Unknown,
+            cards: vec![],
+            unreadable: vec![],
+            confirm_enabled: false,
+            deployment: false,
+        };
+        let ocr =
+            self.recognize_prepared(frame, "OCR", &json!({"model":"ppocrv5","threshold":0.6}))?;
+        if !ready()? {
+            return Ok(None);
+        }
+        let texts = ocr.detail["detail"]["filtered"]
+            .as_array()
+            .context("选队 OCR 缺少结果")?;
+        let has = |word: &str, area| texts.iter().any(|t| t["text"] == word && in_area(t, area));
+        let back = self.recognize_prepared(frame, "TemplateMatch", &json!({"template":"daily/back.png","roi":[54,12,115,80],"green_mask":true,"threshold":0.7}))?;
+        if !ready()? {
+            return Ok(None);
+        }
+        if back.detail["hit"] != true {
+            return Ok(Some(page));
+        }
+        if has("预备编队", [368, 1002, 563, 1057]) && has("出战", [1638, 1002, 1832, 1052]) {
+            page.deployment = true;
+            return Ok(Some(page));
+        }
+        let counters = texts
+            .iter()
+            .filter(|t| in_area(t, [765, 100, 890, 800]) || in_area(t, [1580, 100, 1710, 800]))
+            .filter(|t| {
+                t["text"]
+                    .as_str()
+                    .and_then(predefined_teams::member_count)
+                    .is_some()
+            })
+            .count();
+        if counters < 2 {
+            return Ok(Some(page));
+        }
+        let selection_mark = texts.iter().any(|t| {
+            (in_area(t, [795, 215, 940, 960]) || in_area(t, [1610, 215, 1755, 960]))
+                && t["text"].as_str().is_some_and(|text| {
+                    text.to_uppercase().contains("SELECT")
+                        || text.to_uppercase().starts_with("TEAM")
+                })
+        });
+        if !has("预备出战", [1570, 985, 1880, 1070]) && !selection_mark {
+            page.mode = TeamPageMode::Editing;
+            return Ok(Some(page));
+        }
+        page.mode = TeamPageMode::Selection;
+        let white = self.recognize_prepared(frame, "OcrText", &json!({"model":"ppocrv5","roi":[1634,1000,192,54],
+            "threshold":0.6,"words":["预备出战"],"match_mode":"exact","color_range":[[240,240,240],[255,255,255]]}))?;
+        if !ready()? {
+            return Ok(None);
+        }
+        page.confirm_enabled = white.detail["hit"] == true;
+        let mut names = BTreeMap::new();
+        for reading in texts {
+            let Some(text) = reading["text"].as_str() else {
+                continue;
+            };
+            let Some(index) = predefined_teams::match_name(config, text) else {
+                continue;
+            };
+            let Some(bounds @ [x, y, _, _]) = rect(reading) else {
+                continue;
+            };
+            if !((140..=400).contains(&x) || (960..=1220).contains(&x)) || !(100..=740).contains(&y)
+            {
+                continue;
+            }
+            if names.insert(index, (bounds, text.to_owned())).is_some() {
+                page.unreadable.push(index);
+            }
+        }
+        for (index, (name_rect @ [x, y, _, _], recognized_name)) in names {
+            if page.unreadable.contains(&index) {
+                continue;
+            }
+            let counts: BTreeSet<_> = texts
+                .iter()
+                .filter(|t| in_area(t, [x + 580, y - 20, x + 740, y + 50]))
+                .filter_map(|t| t["text"].as_str())
+                .filter_map(predefined_teams::member_count)
+                .collect();
+            let Some(&members) = counts.iter().next().filter(|_| counts.len() == 1) else {
+                page.unreadable.push(index);
+                continue;
+            };
+            let marker_area = [x + 610, y + 70, x + 770, y + 195];
+            let mut words: Vec<_> = texts
+                .iter()
+                .filter(|t| in_area(t, marker_area))
+                .filter_map(|t| t["text"].as_str().map(String::from))
+                .collect();
+            let mut order = team_selection::marker(&words);
+            if order.is_err() {
+                let result = self.recognize_prepared(frame,"OCR",&json!({"model":"ppocrv5","roi":[marker_area[0],marker_area[1],160,125],"threshold":0.6}))?;
+                if !ready()? {
+                    return Ok(None);
+                }
+                words = result.detail["detail"]["filtered"]
+                    .as_array()
+                    .context("选队标记 OCR 缺少结果")?
+                    .iter()
+                    .filter_map(|t| t["text"].as_str().map(String::from))
+                    .collect();
+                order = team_selection::marker(&words);
+            }
+            match order {
+                Ok(order) => page.cards.push(SelectionCard {
+                    index,
+                    members,
+                    order,
+                    name_rect,
+                    recognized_name,
+                }),
+                Err(_) => page.unreadable.push(index),
+            }
+        }
+        if !ready()? {
+            return Ok(None);
+        }
+        page.cards.sort_by_key(|card| card.index);
+        page.unreadable.sort_unstable();
+        page.unreadable.dedup();
+        Ok(Some(page))
+    }
+
+    /// 调用方持有运行槽；每次投递前发布检查点，返回前等待 Tasker 与输入收尾。
+    pub fn select_predefined_teams(
+        &mut self,
+        config: &TeamConfig,
+        selection: &mut TeamSelection,
+        game: bool,
+        cancel: Arc<AtomicBool>,
+        timeout: Duration,
+        mut publish: impl FnMut(TeamSelection) -> Result<()>,
+    ) -> Result<SelectionEnd> {
+        ensure!(
+            self.game_window.is_some() == game
+                && self.input_mode == Some(crate::InputMode::Foreground),
+            "选队控制器须为前台界面控制器"
+        );
+        crate::validate_basic_daily_bundle(
+            self.daily_bundle.as_deref().unwrap_or(&self.resource_root),
+        )?;
+        config.validate().map_err(anyhow::Error::msg)?;
+        selection.validate().map_err(anyhow::Error::msg)?;
+        let mut resumed_confirmation = selection.pending == Some(SelectionAction::Confirm);
+        if !resumed_confirmation && selection.phase != SelectionPhase::Confirmed {
+            selection.restart().map_err(anyhow::Error::msg)?;
+        }
+        let definition = selection_pipeline();
+        self._resource.override_pipeline_json(&definition)?;
+        let started = Instant::now();
+        let result = (|| -> Result<SelectionEnd> {
+            loop {
+                if cancel.load(Ordering::Acquire) {
+                    return Ok(SelectionEnd::Cancelled);
+                }
+                if started.elapsed() >= timeout {
+                    return Ok(SelectionEnd::TimedOut);
+                }
+                let Some(frame) = self.navigation_frame(&cancel)? else {
+                    return Ok(SelectionEnd::Cancelled);
+                };
+                let Some(page) = self.inspect_team_selection(
+                    &frame.image,
+                    config,
+                    &cancel,
+                    timeout.saturating_sub(started.elapsed()),
+                )?
+                else {
+                    return Ok(SelectionEnd::Cancelled);
+                };
+                if cancel.load(Ordering::Acquire) {
+                    return Ok(SelectionEnd::Cancelled);
+                }
+                if page.deployment {
+                    if selection.phase != SelectionPhase::Confirmed {
+                        selection.observe_deployment().map_err(anyhow::Error::msg)?;
+                    }
+                    publish(selection.clone())?;
+                    return Ok(if cancel.load(Ordering::Acquire) {
+                        SelectionEnd::Cancelled
+                    } else {
+                        SelectionEnd::Completed
+                    });
+                }
+                ensure!(
+                    page.mode != TeamPageMode::Editing,
+                    "编队管理页不能执行出战选择"
+                );
+                let action = if page.mode != TeamPageMode::Selection
+                    || !page.unreadable.is_empty()
+                    || page.cards.is_empty()
+                {
+                    None
+                } else {
+                    if resumed_confirmation {
+                        selection.restart().map_err(anyhow::Error::msg)?;
+                        resumed_confirmation = false;
+                    }
+                    selection
+                        .next(&page.cards, page.confirm_enabled)
+                        .map_err(anyhow::Error::msg)?
+                };
+                if let Some(action) = action {
+                    let mut overrides = json!({});
+                    let entry = match action {
+                        SelectionAction::Up => "__ZzzSelect.Up",
+                        SelectionAction::Down => "__ZzzSelect.Down",
+                        SelectionAction::Confirm => "__ZzzSelect.Confirm",
+                        SelectionAction::Toggle { index, order } => {
+                            let card = page
+                                .cards
+                                .iter()
+                                .find(|card| card.index == index)
+                                .context("选队点击缺少当前帧卡片")?;
+                            let [x, y, w, h] = card.name_rect;
+                            overrides["__ZzzSelect.Name"] = json!({"roi":[x.saturating_sub(15),y.saturating_sub(10),(w+30).min(1920-x),h+20],
+                                "expected":[format!("^{}$",regex::escape(&card.recognized_name))]});
+                            overrides["__ZzzSelect.Marker"] = json!({"roi":[x+610,y+70,160,125],"expected":if order.is_some() { json!(["(?i).*SELECT.*"]) } else { json!(["(?i)^TEAM.*"]) }});
+                            overrides["__ZzzSelect.Toggle"] = json!({"target":[x+300,y+h/2]});
+                            "__ZzzSelect.Toggle"
+                        }
+                    };
+                    publish(selection.clone())?;
+                    if cancel.load(Ordering::Acquire) {
+                        return Ok(SelectionEnd::Cancelled);
+                    }
+                    let remaining = timeout.saturating_sub(started.elapsed());
+                    if remaining.is_zero() {
+                        return Ok(SelectionEnd::TimedOut);
+                    }
+                    let execution = self.run_pipeline_detailed(
+                        entry,
+                        &crate::PipelineInputPlan {
+                            keys: BTreeSet::new(),
+                            contacts: [0].into(),
+                        },
+                        cancel.clone(),
+                        remaining.min(Duration::from_secs(10)),
+                        &overrides.to_string(),
+                        false,
+                    )?;
+                    ensure!(execution.report.released, "选队 Pipeline 尚未确认释放输入");
+                    match execution.report.end {
+                        PipelineEnd::Cancelled => return Ok(SelectionEnd::Cancelled),
+                        PipelineEnd::TimedOut => return Ok(SelectionEnd::TimedOut),
+                        PipelineEnd::Failed => anyhow::bail!(
+                            "选队输入或对应画面检查失败（{entry}）：{:?}",
+                            execution.report
+                        ),
+                        PipelineEnd::Succeeded => {
+                            if matches!(action, SelectionAction::Up | SelectionAction::Down) {
+                                selection.acknowledge_scroll().map_err(anyhow::Error::msg)?;
+                            }
+                        }
+                    }
+                    publish(selection.clone())?;
+                } else {
+                    let idle = Instant::now();
+                    while idle.elapsed() < Duration::from_millis(100)
+                        && !cancel.load(Ordering::Acquire)
+                        && started.elapsed() < timeout
+                    {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                }
+            }
+        })();
+        let released = self.release_inputs();
+        result.and_then(|end| released.map(|_| end))
+    }
+}
+
+fn selection_pipeline() -> Value {
+    let ocr = |roi, text| json!({"recognition":"OCR","model":"ppocrv5","roi":roi,"expected":[text],"threshold":0.6,"action":"DoNothing","next":[]});
+    let mut p = json!({
+        "__ZzzSelect.Back":{"recognition":"TemplateMatch","template":"daily/back.png","roi":[54,12,115,80],"green_mask":true,"threshold":0.7},
+        "__ZzzSelect.Page":{"recognition":"And","all_of":["__ZzzSelect.Back","__ZzzSelect.Presence"]},
+        "__ZzzSelect.White":{"recognition":"ColorMatch","method":4,"lower":[240,240,240],"upper":[255,255,255]},
+        "__ZzzSelect.Toggle":{"recognition":"And","all_of":["__ZzzSelect.Page","__ZzzSelect.Name","__ZzzSelect.Marker"],"action":"LongPress","target":[450,160],"duration":100},
+        "__ZzzSelect.Confirm":{"recognition":"And","all_of":["__ZzzSelect.Page","__ZzzSelect.Enabled"],"box_index":1,"action":"LongPress","duration":100},
+        "__ZzzSelect.Up":{"recognition":"And","all_of":["__ZzzSelect.Page"],"action":"Swipe","begin":[960,300],"end":[960,900],"duration":500},
+        "__ZzzSelect.Down":{"recognition":"And","all_of":["__ZzzSelect.Page"],"action":"Swipe","begin":[960,850],"end":[960,250],"duration":500}
+    });
+    p["__ZzzSelect.Presence"] = ocr([1570, 985, 310, 85], "^预备出战$");
+    p["__ZzzSelect.Enabled"] = ocr([1634, 1000, 192, 54], "^预备出战$");
+    p["__ZzzSelect.Enabled"]["color_filter"] = json!("__ZzzSelect.White");
+    p["__ZzzSelect.Name"] = ocr([140, 100, 700, 70], ".+");
+    p["__ZzzSelect.Marker"] = ocr([795, 215, 160, 125], "(?i).*SELECT.*|^TEAM.*");
+    for node in p.as_object_mut().unwrap().values_mut() {
+        for (key, value) in [
+            ("action", json!("DoNothing")),
+            ("pre_delay", json!(0)),
+            ("post_delay", json!(500)),
+            ("timeout", json!(5000)),
+            ("rate_limit", json!(50)),
+            ("next", json!([])),
+            ("on_error", json!([])),
+        ] {
+            node.as_object_mut().unwrap().entry(key).or_insert(value);
+        }
+    }
+    p
+}

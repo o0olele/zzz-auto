@@ -1,3 +1,7 @@
+import { DismantleSettings } from './DismantleSettings';
+import { RandomPlaySettings } from './RandomPlaySettings';
+import { IntelBoardSettings } from './IntelBoardSettings';
+import { TeamSettings } from './TeamSettings';
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
 import type { AccountConfig, AppDefinition, AppGroup, Command, ConfigChange, GameRegion, RunPolicy, Snapshot } from './generated/protocol';
@@ -25,6 +29,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
   const [newName, setNewName] = useState('');
   const [groupLabel, setGroupLabel] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
+  const [addAppId, setAddAppId] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -66,6 +71,14 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
     return () => { generation.current++; };
   }, [connected]);
 
+  const savedTeamRevision = snapshot?.run?.daily?.find(item => item.team_check?.saved_revision != null)?.team_check?.saved_revision;
+  useEffect(() => {
+    if (!connected || savedTeamRevision == null || !config || config.revision >= savedTeamRevision || working.current) return;
+    const requested = generation.current;
+    load().then(value => { if (generation.current === requested) accept(value); })
+      .catch(reason => { if (generation.current === requested) setError(errorMessage(reason)); });
+  }, [connected, savedTeamRevision, config?.revision]);
+
   useEffect(() => {
     setName(instance?.name ?? ''); setEnabled(instance?.active_in_od ?? true);
   }, [instance?.id, instance?.name, instance?.active_in_od]);
@@ -78,6 +91,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
     setDeletingAccount(false); setAccountDeleteConfirmed(false);
   }, [connected, instanceId, groupId, config?.revision, active, blocked, importBusy, recordUnsaved]);
   useEffect(() => { setNewGroupName(''); }, [instanceId]);
+  useEffect(() => { setAddAppId(''); }, [instanceId, groupId, config?.revision]);
 
   useEffect(() => {
     setGroupId(current => instance?.groups.some(item => item.id === current) ? current : instance?.groups[0]?.id ?? 'one_dragon');
@@ -104,6 +118,10 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       else if (change.type === 'reorder_groups') setMessage('应用组顺序已保存。');
       else if (change.type === 'save_coffee') setMessage('咖啡设置已保存，可在原生诊断中采用所选组参数。');
       else if (change.type === 'save_daily') setMessage('日常设置已保存。');
+      else if (change.type === 'save_dismantle') setMessage('拆解设置已保存。');
+      else if (change.type === 'save_random_play') setMessage('录像店设置已保存。');
+      else if (change.type === 'save_intel_board') setMessage('情报板设置已保存。');
+      else if (change.type === 'save_teams') setMessage('预备编队已保存。');
       else if (change.type === 'save_game_launch') setMessage('游戏启动设置已保存，可在总览核对当前账号后手动启动。');
       else if (change.type === 'save_run_notifications') setMessage('运行提醒设置已保存，下次由桌面启动的应用组采用该设置。');
       if (change.type === 'create_group') {
@@ -192,6 +210,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       </Card>
       {instance && <GameLaunchEditor key={`launch-${instance.id}-${config.revision}-${connected}`} settings={instance.game_launch} disabled={disabled} onPickerBusy={setPickerBusy} onSave={settings => void update({ type: 'save_game_launch', instance_id: instance.id, settings })}/>}
       {instance && <RunNotificationEditor key={`notifications-${instance.id}-${config.revision}-${connected}`} settings={instance.run_notifications} disabled={disabled} onSave={settings => void update({ type: 'save_run_notifications', instance_id: instance.id, settings })}/>}
+      {instance && <TeamSettings key={`teams/${instance.id}/${config.revision}`} settings={instance.predefined_teams} disabled={disabled} onSave={settings => void update({ type: 'save_teams', instance_id: instance.id, settings })}/>}
       {instance && <Card><div className="card-title"><h2>应用组顺序</h2><Badge appearance="outline">{group?.apps.length ?? 0} 项</Badge></div>
         <Field label="应用组"><Select value={groupId} disabled={busy || importBusy || backupBusy || pickerBusy} onChange={(_, data) => { setGroupId(data.value); setMessage(''); }}>{instance.groups.map(item => <option key={item.id} value={item.id}>{groupName(item)}</option>)}</Select></Field>
         <div className="button-row"><Button disabled={disabled || !group || instance.groups[0].id === group.id} onClick={() => moveGroup(-1)}>上移应用组</Button><Button disabled={disabled || !group || instance.groups.at(-1)?.id === group.id} onClick={() => moveGroup(1)}>下移应用组</Button></div>
@@ -212,6 +231,13 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
         <Field label="运行策略"><Select value={runPolicy} disabled={disabled} onChange={(_, data) => setRunPolicy(data.value as RunPolicy)}>{runPolicyOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></Field>
         <Button disabled={disabled || !group || runPolicy === group.run_policy} onClick={() => group && void update({ type: 'set_run_policy', instance_id: instance.id, group_id: group.id, run_policy: runPolicy })}>保存运行策略</Button>
         <p>新账号的应用默认禁用。启用和排序会保存到当前编辑账号；应用完成迁移与验收后才开放运行。</p>
+        {group && <div className="account-create">
+          <Field label="添加应用到当前组"><Select value={addAppId} disabled={disabled} onChange={(_, data) => setAddAppId(data.value)}>
+            <option value="">选择尚未加入的应用</option>
+            {apps.filter(app => !group.apps.some(item => item.app_id === app.id)).map(app => <option key={app.id} value={app.id}>{app.name}</option>)}
+          </Select></Field>
+          <Button disabled={disabled || !addAppId || group.apps.length >= 256} onClick={() => void update({ type: 'add_group_app', instance_id: instance.id, group_id: group.id, app_id: addAppId })}>添加应用</Button>
+        </div>}
         <div className="account-apps">{group?.apps.map((item, index) => {
           const app = apps.find(app => app.id === item.app_id);
           return <div className="account-app" key={item.app_id} data-app-id={item.app_id}>
@@ -223,6 +249,9 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
         })}</div>
       </Card>}
       {instance && group && <CoffeeSettings key={`${instance.id}/${group.id}/${config.revision}`} settings={group.coffee ?? coffeeDefaultConfig} disabled={disabled} onSave={settings => void update({ type: 'save_coffee', instance_id: instance.id, group_id: group.id, settings })}/>}
+      {instance && group && <DismantleSettings key={`dismantle/${instance.id}/${group.id}/${config.revision}`} settings={group.dismantle} disabled={disabled} onSave={settings => void update({ type: 'save_dismantle', instance_id: instance.id, group_id: group.id, settings })}/>}
+      {instance && group && <RandomPlaySettings key={`random-play/${instance.id}/${group.id}/${config.revision}`} settings={group.random_play} disabled={disabled} onSave={settings => void update({ type: 'save_random_play', instance_id: instance.id, group_id: group.id, settings })}/>}
+      {instance && group && <IntelBoardSettings key={`intel-board/${instance.id}/${group.id}/${config.revision}`} settings={group.intel_board} teams={instance.predefined_teams} disabled={disabled} onSave={settings => void update({ type: 'save_intel_board', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <DailySettings key={`daily/${instance.id}/${group.id}/${config.revision}`} settings={group.daily} disabled={disabled} onSave={settings => void update({ type: 'save_daily', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <GroupRuns instanceId={instance.id} groupId={group.id} revision={config.revision} snapshot={snapshot} connected={connected} blocked={blocked || importBusy || backupBusy || busy} onCommand={onCommand}/>}
     </>}

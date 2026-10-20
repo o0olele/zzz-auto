@@ -21,10 +21,23 @@ export type GameRegion = "cn" | "cn_b" | "us" | "eu" | "asia" | "twhkmo";
 export type RunPolicy = "always" | "skip_daily_success";
 export type GameDay = { region: GameRegion, date: string, };
 export type RunContext = { instance_id: number, instance_name: string, group_id: string, group_name?: string, config_revision: number, app_ids: Array<string>, rerun_completed?: boolean, standalone?: boolean, game_day?: GameDay, };
-export type PlanDecision = "disabled" | "run" | "already_done" | "blocked";
+export type PlanDecision = "disabled" | "run" | "already_done" | "no_work" | "blocked";
 export type AppAvailability = "mail_trial" | "coffee_trial" | "daily_trial" | "unmigrated" | "unknown";
 export type PlannedApp = { app_id: string, name: string, enabled: boolean, availability: AppAvailability, decision: PlanDecision, completed_run_id: string | null, };
-export type GroupPlan = { after_done: AfterDoneAction, context: RunContext, mail_config: MailConfig, coffee_config: CoffeeConfig, daily_config?: DailyConfig, items: Array<PlannedApp>, blockers: Array<string>, executable: boolean, all_done: boolean, game_day: GameDay, run_policy: RunPolicy, warnings: Array<string>, valid_until: string, };
+export type IntelBoardConfig = { predefined_team_idx: number, auto_battle_config: string, exp_grind_mode: boolean, };
+export type IntelHistory = { week: IntelWeek | null, totals: WeeklyTotals, source_run_id: string | null, unreadable: number, };
+export type IntelWeek = { region: GameRegion, monday: string, };
+export type WeeklyTotals = { contribution: number,
+/**
+ * 与旧版相同的历史贡献估计，不是从游戏直接读出的经验值。
+ */
+estimated_base_exp: number, notorious_hunt_count: number, expert_challenge_count: number, };
+export type CommissionKind = "notorious_hunt" | "expert_challenge";
+export type SettledCommission = { kind: CommissionKind, result: NormalBattleResult, };
+export type PendingCommission = { kind: CommissionKind, deployed: boolean, result: NormalBattleResult | null, };
+export type IntelLedger = { config: IntelBoardConfig, week: IntelWeek, baseline: WeeklyTotals, initial_contribution: number | null, observed_contribution: number | null, estimated_base_exp: number, pending: PendingCommission | null, settled: Array<SettledCommission>, };
+export type NormalBattleResult = "completed" | "retreat";
+export type GroupPlan = { intel_board_config?: IntelBoardConfig, intel_board_history?: IntelHistory, predefined_teams?: TeamConfig, random_play_config?: RandomPlayConfig, redemption_codes?: Array<RedemptionCode>, redemption_history?: RedemptionHistory, after_done: AfterDoneAction, context: RunContext, mail_config: MailConfig, coffee_config: CoffeeConfig, daily_config?: DailyConfig, dismantle_config?: DismantleConfig, items: Array<PlannedApp>, blockers: Array<string>, executable: boolean, all_done: boolean, game_day: GameDay, run_policy: RunPolicy, warnings: Array<string>, valid_until: string, };
 export type HistoryItem = { record: RunRecord, interrupted: boolean, };
 export type RunHistory = { instance_id: number, items: Array<HistoryItem>, unreadable: number, has_more: boolean, };
 export type HistoryOutcome = "active" | "succeeded" | "failed" | "timed_out" | "stopped" | "interrupted";
@@ -38,8 +51,8 @@ export type DownloadProxy = { "mode": "system" } | { "mode": "direct" } | { "mod
 export type ShortcutKey = "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11";
 export type ShortcutSettings = { pause_resume: ShortcutKey | null, stop: ShortcutKey | null, };
 export type ShortcutStatus = { active: ShortcutSettings | null, registration_error: string | null, action_error: string | null, };
-export type AppGroup = { id: string, name?: string, run_policy: RunPolicy, coffee: CoffeeConfig, daily?: DailyConfig, apps: Array<GroupApp>, };
-export type AccountInstance = { id: number, name: string, active_in_od: boolean, combat?: CombatConfig, game_region: GameRegion, game_launch?: GameLaunchSettings, run_notifications?: RunNotificationSettings, groups: Array<AppGroup>, };
+export type AppGroup = { intel_board?: IntelBoardConfig, random_play?: RandomPlayConfig, id: string, name?: string, run_policy: RunPolicy, coffee: CoffeeConfig, daily?: DailyConfig, dismantle?: DismantleConfig, apps: Array<GroupApp>, };
+export type AccountInstance = { predefined_teams?: TeamConfig, redemption_used?: Array<string>, id: number, name: string, active_in_od: boolean, combat?: CombatConfig, game_region: GameRegion, game_launch?: GameLaunchSettings, run_notifications?: RunNotificationSettings, groups: Array<AppGroup>, };
 export type RunNotificationMode = "off" | "errors" | "all";
 export type RunNotificationSettings = { mode: RunNotificationMode, };
 export type RunNoticeLevel = "success" | "info" | "warning" | "error";
@@ -47,7 +60,7 @@ export type RunNotice = { id: string, session_id: string, run_id: string, instan
 export type RunNotifications = { revision: number, items: Array<RunNotice>, dropped: number, };
 export type GameLaunchSettings = { executable: string, use_arguments: boolean, fullscreen: boolean, borderless: boolean, monitor: number, };
 export type GameLaunchResult = { instance_id: number, pid: number, };
-export type AccountConfig = { schema: number, revision: number, general: GeneralSettings, active_instance: number, instances: Array<AccountInstance>, import_id: string | null, reserved_instance_ids?: Array<number>, };
+export type AccountConfig = { redemption?: RedemptionConfig, schema: number, revision: number, general: GeneralSettings, active_instance: number, instances: Array<AccountInstance>, import_id: string | null, reserved_instance_ids?: Array<number>, };
 export type ConfigBackup = { id: string, revision: number, bytes: number, modified_at: string | null, };
 export type ConfigBackups = { revision: number, items: Array<ConfigBackup>, omitted: number, unavailable: number, };
 export type ConfigBackupPreview = { id: string, preview_id: string, current: AccountConfig, backup: AccountConfig, };
@@ -60,7 +73,7 @@ export type ConfigRecoveryRequest = { "type": "list" } | { "type": "preview", id
 export type ConfigRecoveryJobState = "running" | "succeeded" | "failed";
 export type ConfigRecoveryJob = { id: string, request: ConfigRecoveryRequest, state: ConfigRecoveryJobState, phase: string, reconnected: boolean, reconnect_error: string | null, error: string | null, error_code: string | null, };
 export type DesktopConfigRecovery = { job: ConfigRecoveryJob | null, catalog: ConfigRecoveryCatalog | null, preview: ConfigRecoveryPreview | null, restored: ConfigRecoveryResult | null, };
-export type ConfigChange = { "type": "save_combat", instance_id: number, settings: CombatConfig, } | { "type": "save_daily", instance_id: number, group_id: string, settings: DailyConfig, } | { "type": "save_run_notifications", instance_id: number, settings: RunNotificationSettings, } | { "type": "save_game_launch", instance_id: number, settings: GameLaunchSettings, } | { "type": "set_after_done", action: AfterDoneAction, } | { "type": "save_coffee", instance_id: number, group_id: string, settings: CoffeeConfig, } | { "type": "set_game_region", instance_id: number, game_region: GameRegion, } | { "type": "set_run_policy", instance_id: number, group_id: string, run_policy: RunPolicy, } | { "type": "save_general", settings: GeneralSettings, } | { "type": "create_instance", name: string, } | { "type": "copy_instance", instance_id: number, name: string, } | { "type": "delete_instance", instance_id: number, confirm: boolean, } | { "type": "reorder_instances", instance_ids: Array<number>, } | { "type": "reorder_groups", instance_id: number, group_ids: Array<string>, } | { "type": "update_instance", instance_id: number, name: string, active_in_od: boolean, } | { "type": "switch_instance", instance_id: number, } | { "type": "save_group", instance_id: number, group_id: string, apps: Array<GroupApp>, } | { "type": "create_group", instance_id: number, name: string, source_group_id: string | null, } | { "type": "rename_group", instance_id: number, group_id: string, name: string, } | { "type": "delete_group", instance_id: number, group_id: string, };
+export type ConfigChange = { "type": "save_intel_board", instance_id: number, group_id: string, settings: IntelBoardConfig, } | { "type": "add_group_app", instance_id: number, group_id: string, app_id: string, } | { "type": "save_teams", instance_id: number, settings: TeamConfig, } | { "type": "save_random_play", instance_id: number, group_id: string, settings: RandomPlayConfig, } | { "type": "save_redemption", settings: RedemptionConfig, } | { "type": "save_combat", instance_id: number, settings: CombatConfig, } | { "type": "save_dismantle", instance_id: number, group_id: string, settings: DismantleConfig, } | { "type": "save_daily", instance_id: number, group_id: string, settings: DailyConfig, } | { "type": "save_run_notifications", instance_id: number, settings: RunNotificationSettings, } | { "type": "save_game_launch", instance_id: number, settings: GameLaunchSettings, } | { "type": "set_after_done", action: AfterDoneAction, } | { "type": "save_coffee", instance_id: number, group_id: string, settings: CoffeeConfig, } | { "type": "set_game_region", instance_id: number, game_region: GameRegion, } | { "type": "set_run_policy", instance_id: number, group_id: string, run_policy: RunPolicy, } | { "type": "save_general", settings: GeneralSettings, } | { "type": "create_instance", name: string, } | { "type": "copy_instance", instance_id: number, name: string, } | { "type": "delete_instance", instance_id: number, confirm: boolean, } | { "type": "reorder_instances", instance_ids: Array<number>, } | { "type": "reorder_groups", instance_id: number, group_ids: Array<string>, } | { "type": "update_instance", instance_id: number, name: string, active_in_od: boolean, } | { "type": "switch_instance", instance_id: number, } | { "type": "save_group", instance_id: number, group_id: string, apps: Array<GroupApp>, } | { "type": "create_group", instance_id: number, name: string, source_group_id: string | null, } | { "type": "rename_group", instance_id: number, group_id: string, name: string, } | { "type": "delete_group", instance_id: number, group_id: string, };
 export type ImportFile = { path: string, sha256: string, disposition: string, };
 export type ImportPreview = { preview_id: string, config: AccountConfig, files: Array<ImportFile>, warnings: Array<string>, };
 export type AppDefinition = { id: string, name: string, execution: string, reason: string, factory: string, configs: Array<string>, settings: Array<string>, run_records: Array<string>, source_files: Array<string>, priority: number, default_group: boolean, implemented: boolean, };
@@ -81,9 +94,27 @@ export type CoffeeConfig = { kind: CoffeeKind, timeout_ms: number, start_delay_m
 export type CoffeeState = "running" | "paused" | "succeeded" | "failed" | "stopped" | "timed_out";
 export type CoffeePhase = "inspect" | "order" | "wait_energy" | "confirm_energy" | "after_energy" | "confirm_buff" | "done";
 export type CoffeeProgress = { config: CoffeeConfig, state: CoffeeState, phase: CoffeePhase, approach?: CoffeeApproachProgress, order_attempted: boolean, energy_seen: boolean, inputs_released: boolean, active_ms: number, };
+export type RedemptionConfig = { user_codes: { [key in string]?: string }, };
+export type RedemptionCode = { code: string, expires_on: string, };
+export type RedemptionOutcome = "redeemed" | "already_redeemed" | "invalid" | "expired";
+export type RedemptionResult = { code: string, outcome: RedemptionOutcome, };
+export type RedemptionHistory = { results: Array<RedemptionResult>, unreadable: number, };
+export type RedemptionProgress = { codes: Array<RedemptionCode>, index: number, input_verified: boolean, submitted: boolean, results: Array<RedemptionResult>, };
+export type DismantleGrade = "b" | "a_and_below" | "s_and_below";
+export type DismantleConfig = { grade: DismantleGrade, include_abandoned: boolean, };
+export type DismantleProgress = { config: DismantleConfig, filter_reset: boolean, grade_selected: boolean, abandoned_selected: boolean, filter_applied: boolean, dismantle_attempted: boolean, confirmation_attempted: boolean, obtained: boolean, empty_selection: boolean, returned_storage: boolean, };
+export type ShopLocation = "counter" | "failume" | "buyast";
+export type RandomPlayConfig = { transport_point: ShopLocation, agent_name_1: string, agent_name_2: string, turn_dx: number, };
+export type ShopOutcome = "already_running" | "started";
+export type RandomPlayProgress = { config: RandomPlayConfig, game_day: string, promoter_ready: boolean, promoter_scrolls: number, themes: Array<string>, theme_index: number, theme_scrolls: number, recommended_attempted: boolean, video_ready: boolean, interaction_attempted: boolean, transport_retries: number, start_attempted: boolean, confirmation_attempted: boolean, outcome: ShopOutcome | null, };
+export type PredefinedTeam = { name: string, auto_battle: string, agent_ids: [string, string, string], };
+export type TeamConfig = { check_timeout_ms?: number, teams: Array<PredefinedTeam>, };
+export type TeamMembers = { index: number, name: string, member_count: number, agent_ids: [string, string, string], };
+export type TeamCheckProgress = { config: TeamConfig, pages_read: number, opened: boolean, top_scrolls: number, members: Array<TeamMembers>, conflicted: Array<number>, unreadable: Array<number>, saved_revision: number | null, };
+export const teamDefaultConfig = {"check_timeout_ms":300000,"teams":[{"name":"编队1","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队2","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队3","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队4","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队5","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队6","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队7","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队8","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队9","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队10","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队11","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队12","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队13","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队14","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队15","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队16","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队17","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队18","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队19","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]},{"name":"编队20","auto_battle":"全配队通用","agent_ids":["unknown","unknown","unknown"]}]} as TeamConfig;
 export type DailyConfig = { timeout_ms: number, start_delay_ms: number, };
-export type DailyProgress = { app_id: string, config: DailyConfig, state: MailState, stage: string, attempted: boolean, completion_proven: boolean, returned_world: boolean, inputs_released: boolean, scratch_rows: number, tasks_checked: boolean, levels_selected: boolean, route_confirmed: boolean, activation_attempted: boolean, transport_attempted: boolean, approach_attempted: boolean, active_ms: number, };
-export const trialAppOptions = [{"id":"city_fund","label":"丽都城募"},{"id":"engagement_reward","label":"活跃度奖励"},{"id":"coffee","label":"咖啡店"},{"id":"scratch_card","label":"刮刮卡"},{"id":"email","label":"邮件"}] as const;
+export type DailyProgress = { intel_board?: IntelLedger, team_check?: TeamCheckProgress, random_play?: RandomPlayProgress, redemption?: RedemptionProgress, dismantle?: DismantleProgress, app_id: string, config: DailyConfig, state: MailState, stage: string, attempted: boolean, completion_proven: boolean, returned_world: boolean, inputs_released: boolean, scratch_rows: number, tasks_checked: boolean, levels_selected: boolean, route_confirmed: boolean, activation_attempted: boolean, transport_attempted: boolean, approach_attempted: boolean, reward_checked?: boolean, reward_confirmed?: boolean, reveal_observed?: boolean, active_ms: number, };
+export const trialAppOptions = [{"id":"drive_disc_dismantle","label":"驱动盘拆解"},{"id":"ridu_weekly","label":"丽都周纪 (领奖励)"},{"id":"city_fund","label":"丽都城募"},{"id":"engagement_reward","label":"活跃度奖励"},{"id":"coffee","label":"咖啡店"},{"id":"random_play","label":"录像店营业"},{"id":"hou_hou_bakery","label":"吼吼饼铺"},{"id":"trigrams_collection","label":"卦象集录"},{"id":"scratch_card","label":"刮刮卡"},{"id":"email","label":"邮件"},{"id":"redemption_code","label":"兑换码"},{"id":"predefined_team_checker","label":"预备编队角色识别"}] as const;
 export type CoffeeApproachPhase = "inspect_world" | "open_map" | "wait_map" | "select_area" | "select_point" | "wait_dialog" | "confirm" | "wait_arrival" | "interact" | "wait_dialogue" | "advance_dialogue" | "done";
 export type CoffeeApproachProgress = { phase: CoffeeApproachPhase, dialogue_advances: number, };
 export type InputMode = "foreground" | "foreground_legacy" | "background" | "background_post" | "xbox" | "ds4";
@@ -359,3 +390,7 @@ export const screenSampleKindOptions = [
     "value": "other"
   }
 ] as const;
+export const redemptionSampleCodes = {
+  "PHOENIX1021": "2026-10-10",
+  "ZZZ888": "2099-01-01"
+} as const;

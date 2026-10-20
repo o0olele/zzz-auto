@@ -77,14 +77,14 @@ impl NativeSession {
         self.run_pipeline(entry, inputs, cancel, timeout)
     }
 
-    fn wait_tasker_idle(&self) {
+    pub(crate) fn wait_tasker_idle(&self) {
         // 任务状态可能先于 Tasker 收尾更新，不能只检查原任务的终态。
         while self.tasker.running() {
             std::thread::sleep(Duration::from_millis(5));
         }
     }
 
-    fn stop_pipeline(&self) -> Result<MaaStatus> {
+    pub(crate) fn stop_pipeline(&self) -> Result<MaaStatus> {
         let id = self.tasker.post_stop()?;
         ensure!(id > 0, "Maa 拒绝 Pipeline 停止请求");
         let status = Job::for_tasker(&self.tasker, id).wait();

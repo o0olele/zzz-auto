@@ -260,16 +260,13 @@ impl NativeSession {
             .map_err(|_| anyhow::anyhow!("原始闪光会话锁失效"))?;
         let setup_at = Instant::now();
         let session_setup_us = if cached.is_none() {
-            let path = self
-                .resource_root
+            let root = self.combat_bundle.as_ref().unwrap_or(&self.resource_root);
+            let path = root
                 .join("model/classify")
                 .join(RAW_FLASH_MODEL)
                 .canonicalize()
                 .context("缺少固定原始闪光模型")?;
-            ensure!(
-                path.starts_with(&self.resource_root),
-                "原始闪光模型指向资源目录之外"
-            );
+            ensure!(path.starts_with(root), "原始闪光模型指向资源目录之外");
             *cached = Some(RawClassifier::new(
                 &path,
                 self.inference_device,

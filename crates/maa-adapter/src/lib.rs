@@ -1,9 +1,10 @@
 mod basic_daily;
+pub mod challenge_move;
 mod coffee;
-pub use basic_daily::validate_basic_daily_bundle;
+pub use basic_daily::{validate_basic_daily_app_bundle, validate_basic_daily_bundle};
 mod coffee_run;
-mod combat_input;
 pub mod combat_contours;
+mod combat_input;
 pub mod combat_vision;
 mod engagement_reward;
 pub use coffee_run::{
@@ -13,13 +14,22 @@ pub use engagement_reward::{EngagementRewardObservation, validate_engagement_rew
 mod events;
 mod fixture;
 pub mod flash;
+mod handoff;
 mod inference;
 mod input;
+pub use handoff::{GameSessionConfig, SessionHandoff};
+pub mod intel_board;
 mod mail_bundle;
 mod map_transport;
+pub mod navigation;
+pub mod navigation_vision;
+pub mod predefined_teams;
+mod random_play;
+pub mod team_selection;
 pub use coffee::{CoffeeObservation, validate_coffee_bundle};
 pub use mail_bundle::validate_mail_bundle;
 pub use map_transport::{MapObservation, validate_map_bundle};
+pub use random_play::RandomPlayRead;
 pub mod ocr;
 mod pipeline;
 mod raw_control;
@@ -99,7 +109,7 @@ fn screenshot_quality(image: &MaaImageBuffer) -> Result<ScreenshotQuality> {
     })
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum InferenceDevice {
     #[default]
     Cpu,
@@ -127,6 +137,8 @@ pub struct NativeSession {
     map_bundle: Option<PathBuf>,
     coffee_bundle: Option<PathBuf>,
     daily_bundle: Option<PathBuf>,
+    combat_bundle: Option<PathBuf>,
+    detector_bundle: Option<PathBuf>,
     inference_device: InferenceDevice,
     raw_cpu_threads: usize,
     controller: fixture::NativeController,
@@ -269,6 +281,8 @@ impl NativeSession {
             map_bundle: None,
             coffee_bundle: None,
             daily_bundle: None,
+            combat_bundle: None,
+            detector_bundle: None,
             inference_device: device,
             raw_cpu_threads: raw_inference::DEFAULT_RAW_CPU_THREADS,
             controller,

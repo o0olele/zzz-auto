@@ -1,0 +1,446 @@
+[
+  {
+    "id": "anby",
+    "name": "安比",
+    "templates": [
+      "anby"
+    ]
+  },
+  {
+    "id": "anton",
+    "name": "安东",
+    "templates": [
+      "anton"
+    ]
+  },
+  {
+    "id": "ben",
+    "name": "本",
+    "templates": [
+      "ben"
+    ]
+  },
+  {
+    "id": "billy",
+    "name": "比利",
+    "templates": [
+      "billy"
+    ]
+  },
+  {
+    "id": "corin",
+    "name": "可琳",
+    "templates": [
+      "corin"
+    ]
+  },
+  {
+    "id": "ellen",
+    "name": "艾莲",
+    "templates": [
+      "ellen",
+      "ellen_on_campus"
+    ]
+  },
+  {
+    "id": "grace",
+    "name": "格莉丝",
+    "templates": [
+      "grace"
+    ]
+  },
+  {
+    "id": "koleda",
+    "name": "珂蕾妲",
+    "templates": [
+      "koleda"
+    ]
+  },
+  {
+    "id": "lucy",
+    "name": "露西",
+    "templates": [
+      "lucy",
+      "lucy_princess_on_holiday"
+    ]
+  },
+  {
+    "id": "lycaon",
+    "name": "莱卡恩",
+    "templates": [
+      "lycaon"
+    ]
+  },
+  {
+    "id": "nekomata",
+    "name": "猫又",
+    "templates": [
+      "nekomata"
+    ]
+  },
+  {
+    "id": "nicole",
+    "name": "妮可",
+    "templates": [
+      "nicole",
+      "nicole_cunning_cutie"
+    ]
+  },
+  {
+    "id": "piper",
+    "name": "派派",
+    "templates": [
+      "piper"
+    ]
+  },
+  {
+    "id": "rina",
+    "name": "丽娜",
+    "templates": [
+      "rina"
+    ]
+  },
+  {
+    "id": "soldier_11",
+    "name": "11号",
+    "templates": [
+      "soldier_11"
+    ]
+  },
+  {
+    "id": "soukaku",
+    "name": "苍角",
+    "templates": [
+      "soukaku"
+    ]
+  },
+  {
+    "id": "zhu_yuan",
+    "name": "朱鸢",
+    "templates": [
+      "zhu_yuan"
+    ]
+  },
+  {
+    "id": "qingyi",
+    "name": "青衣",
+    "templates": [
+      "qingyi"
+    ]
+  },
+  {
+    "id": "jane_doe",
+    "name": "简",
+    "templates": [
+      "jane_doe",
+      "jane_doe_nocturne_of_light"
+    ]
+  },
+  {
+    "id": "seth_lowell",
+    "name": "赛斯",
+    "templates": [
+      "seth_lowell"
+    ]
+  },
+  {
+    "id": "caesar_king",
+    "name": "凯撒",
+    "templates": [
+      "caesar_king"
+    ]
+  },
+  {
+    "id": "burnice_white",
+    "name": "柏妮思",
+    "templates": [
+      "burnice_white"
+    ]
+  },
+  {
+    "id": "yanagi",
+    "name": "柳",
+    "templates": [
+      "yanagi"
+    ]
+  },
+  {
+    "id": "lighter",
+    "name": "莱特",
+    "templates": [
+      "lighter"
+    ]
+  },
+  {
+    "id": "asaba_harumasa",
+    "name": "悠真",
+    "templates": [
+      "asaba_harumasa"
+    ]
+  },
+  {
+    "id": "hoshimi_miyabi",
+    "name": "雅",
+    "templates": [
+      "hoshimi_miyabi",
+      "hoshimi_miyabi_dignified_blossom"
+    ]
+  },
+  {
+    "id": "astra_yao",
+    "name": "耀嘉音",
+    "templates": [
+      "astra_yao",
+      "astra_yao_chandelier"
+    ]
+  },
+  {
+    "id": "evelyn_chevalier",
+    "name": "伊芙琳",
+    "templates": [
+      "evelyn_chevalier"
+    ]
+  },
+  {
+    "id": "soldier_0_anby",
+    "name": "零号安比",
+    "templates": [
+      "soldier_0_anby"
+    ]
+  },
+  {
+    "id": "pulchra",
+    "name": "波可娜",
+    "templates": [
+      "pulchra"
+    ]
+  },
+  {
+    "id": "trigger",
+    "name": "扳机",
+    "templates": [
+      "trigger"
+    ]
+  },
+  {
+    "id": "vivian",
+    "name": "薇薇安",
+    "templates": [
+      "vivian",
+      "vivian_iris_of_the_shore"
+    ]
+  },
+  {
+    "id": "hugo_vlad",
+    "name": "雨果",
+    "templates": [
+      "hugo_vlad"
+    ]
+  },
+  {
+    "id": "yixuan",
+    "name": "仪玄",
+    "templates": [
+      "yixuan",
+      "yixuan_trails_of_ink"
+    ]
+  },
+  {
+    "id": "panyinhu",
+    "name": "潘引壶",
+    "templates": [
+      "panyinhu",
+      "panyinhu_culinary_jewel"
+    ]
+  },
+  {
+    "id": "ju_fufu",
+    "name": "橘福福",
+    "templates": [
+      "ju_fufu"
+    ]
+  },
+  {
+    "id": "yuzuha",
+    "name": "浮波柚叶",
+    "templates": [
+      "yuzuha",
+      "yuzuha_tanuki_in_broad_daylight"
+    ]
+  },
+  {
+    "id": "alice",
+    "name": "爱丽丝",
+    "templates": [
+      "alice",
+      "alice_sea_of_thyme"
+    ]
+  },
+  {
+    "id": "seed",
+    "name": "席德",
+    "templates": [
+      "seed"
+    ]
+  },
+  {
+    "id": "orphie",
+    "name": "奥菲丝",
+    "templates": [
+      "orphie"
+    ]
+  },
+  {
+    "id": "lucia",
+    "name": "卢西娅",
+    "templates": [
+      "lucia"
+    ]
+  },
+  {
+    "id": "manato",
+    "name": "真斗",
+    "templates": [
+      "manato",
+      "manato_white_heart_silhouette"
+    ]
+  },
+  {
+    "id": "yidhari",
+    "name": "伊德海莉",
+    "templates": [
+      "yidhari"
+    ]
+  },
+  {
+    "id": "dialyn",
+    "name": "琉音",
+    "templates": [
+      "dialyn"
+    ]
+  },
+  {
+    "id": "banyue",
+    "name": "般岳",
+    "templates": [
+      "banyue"
+    ]
+  },
+  {
+    "id": "zhao",
+    "name": "照",
+    "templates": [
+      "zhao"
+    ]
+  },
+  {
+    "id": "sunna",
+    "name": "千夏",
+    "templates": [
+      "sunna",
+      "sunna_afternoon_tea_break",
+      "sunna_delusions_in_business"
+    ]
+  },
+  {
+    "id": "yeshunguang",
+    "name": "叶瞬光",
+    "templates": [
+      "yeshunguang",
+      "yeshunguang_touch_of_dawnlight"
+    ]
+  },
+  {
+    "id": "aria",
+    "name": "爱芮",
+    "templates": [
+      "aria",
+      "aria_discordant_note",
+      "aria_cuteness_loading"
+    ]
+  },
+  {
+    "id": "nangongyu",
+    "name": "南宫羽",
+    "templates": [
+      "nangongyu",
+      "nangongyu_muse",
+      "nangongyu_heartfelt_support"
+    ]
+  },
+  {
+    "id": "cissia",
+    "name": "希希芙",
+    "templates": [
+      "cissia"
+    ]
+  },
+  {
+    "id": "promeia",
+    "name": "普罗米娅",
+    "templates": [
+      "promeia"
+    ]
+  },
+  {
+    "id": "velina",
+    "name": "维琳娜",
+    "templates": [
+      "velina",
+      "velina_shade_of_leisure"
+    ]
+  },
+  {
+    "id": "pyrois_wise",
+    "name": "佩洛伊斯",
+    "templates": [
+      "pyrois_wise"
+    ]
+  },
+  {
+    "id": "starlight_billy_kid",
+    "name": "星辉比利",
+    "templates": [
+      "starlight_billy_kid"
+    ]
+  },
+  {
+    "id": "norma",
+    "name": "诺姆",
+    "templates": [
+      "norma"
+    ]
+  },
+  {
+    "id": "remielle",
+    "name": "蕾米埃尔",
+    "templates": [
+      "remielle",
+      "remielle_dark",
+      "remielle_dark_veil",
+      "remielle_seashade"
+    ]
+  },
+  {
+    "id": "sigrid",
+    "name": "希格莉德",
+    "templates": [
+      "sigrid",
+      "sigrid_majestic_wavechaser"
+    ]
+  },
+  {
+    "id": "claret",
+    "name": "克拉蕾",
+    "templates": [
+      "claret"
+    ]
+  },
+  {
+    "id": "roxy",
+    "name": "洛克茜",
+    "templates": [
+      "roxy"
+    ]
+  }
+]

@@ -1,3 +1,6 @@
+import { RedemptionStatus } from './RedemptionSettings';
+import { RandomPlayStatus } from './RandomPlaySettings';
+import { TeamCheckStatus } from './TeamSettings';
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
 import { trialAppOptions, type AccountConfig, type HistoryCursor, type HistoryPage, type HistoryQuery, type HistoryItem } from './generated/protocol';
@@ -5,7 +8,7 @@ import { errorMessage, request } from './bridge';
 
 const emptyQuery = (): HistoryQuery => ({ group_id: null, app_id: null, game_day: null, outcome: null, before: null });
 const outcomes = { active: '运行中', succeeded: '完成', failed: '失败', timed_out: '超时', stopped: '已停止', interrupted: '异常中断' };
-const stepNames = { pending: '等待执行', running: '执行中', skipped: '按日跳过', succeeded: '执行完成', failed: '执行失败', stopped: '执行停止' };
+const stepNames = { pending: '等待执行', running: '执行中', skipped: '已跳过', succeeded: '执行完成', failed: '执行失败', stopped: '执行停止' };
 const appName = (id: string) => trialAppOptions.find(app => app.id === id)?.label ?? id;
 
 function outcome(item: HistoryItem) {
@@ -117,6 +120,9 @@ export function RunHistory({ connected }: { connected: boolean }) {
         {item.record.context?.standalone && <p>独立应用运行</p>}
         {item.record.context?.rerun_completed && <p>本次重新运行已完成应用</p>}
         <p>{item.interrupted ? '上次引擎退出前未保存终态，实际结束时间未知，不会自动继续。' : item.record.message}</p>
+        {item.record.daily?.filter(app => app.redemption).map(app => <RedemptionStatus key={app.app_id} progress={app.redemption!}/>)}
+        {item.record.daily?.filter(app => app.random_play).map(app => <RandomPlayStatus key={app.app_id} progress={app.random_play!}/>)}
+        {item.record.daily?.filter(app => app.team_check).map(app => <TeamCheckStatus key={app.app_id} progress={app.team_check!}/>)}
         {item.record.group && <ol aria-label="历史分项结果">{item.record.group.steps.map(step => <li key={step.app_id}>{appName(step.app_id)} · {stepNames[step.state]} · {step.inputs_released ? '分项输入已释放' : '分项输入待释放'}</li>)}</ol>}
         {!item.record.group && item.record.mail && <p>邮件 · {item.record.mail.inputs_released ? '输入已释放' : '等待输入收尾'}</p>}
         {item.record.combat && <p>{item.record.combat.config.dodge_only ? '闪避助手' : item.record.combat.config.script} · 动作 {item.record.combat.actions} 次 · 抢占 {item.record.combat.preemptions} 次 · {item.record.combat.inputs_released ? '输入已释放' : '等待输入收尾'}</p>}

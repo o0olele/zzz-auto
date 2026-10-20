@@ -3,7 +3,74 @@ use crate::mail::MailState;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const APP_IDS: [&str; 3] = ["engagement_reward", "city_fund", "scratch_card"];
+pub const LEGACY_APP_IDS: [&str; 3] = ["engagement_reward", "city_fund", "scratch_card"];
+pub const SCHEMA_TWO_APP_IDS: [&str; 6] = [
+    "engagement_reward",
+    "city_fund",
+    "scratch_card",
+    "ridu_weekly",
+    "trigrams_collection",
+    "hou_hou_bakery",
+];
+
+pub const SCHEMA_THREE_APP_IDS: [&str; 7] = [
+    "engagement_reward",
+    "city_fund",
+    "scratch_card",
+    "ridu_weekly",
+    "trigrams_collection",
+    "hou_hou_bakery",
+    "drive_disc_dismantle",
+];
+
+pub const SCHEMA_FOUR_APP_IDS: [&str; 8] = [
+    "engagement_reward",
+    "city_fund",
+    "scratch_card",
+    "ridu_weekly",
+    "trigrams_collection",
+    "hou_hou_bakery",
+    "drive_disc_dismantle",
+    "redemption_code",
+];
+pub const SCHEMA_FIVE_APP_IDS: [&str; 9] = [
+    "engagement_reward",
+    "city_fund",
+    "scratch_card",
+    "ridu_weekly",
+    "trigrams_collection",
+    "hou_hou_bakery",
+    "drive_disc_dismantle",
+    "redemption_code",
+    "random_play",
+];
+pub const SCHEMA_SIX_APP_IDS: [&str; 10] = [
+    "engagement_reward",
+    "city_fund",
+    "scratch_card",
+    "ridu_weekly",
+    "trigrams_collection",
+    "hou_hou_bakery",
+    "drive_disc_dismantle",
+    "redemption_code",
+    "random_play",
+    "predefined_team_checker",
+];
+pub const APP_IDS: [&str; 10] = SCHEMA_SIX_APP_IDS;
+/// 资源包先提供情报板内部节点，运行注册仍由 APP_IDS 单独控制。
+pub const RESOURCE_APP_IDS: [&str; 11] = [
+    "engagement_reward",
+    "city_fund",
+    "scratch_card",
+    "ridu_weekly",
+    "trigrams_collection",
+    "hou_hou_bakery",
+    "drive_disc_dismantle",
+    "redemption_code",
+    "random_play",
+    "predefined_team_checker",
+    "intel_board",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -37,6 +104,21 @@ impl DailyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct DailyProgress {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub intel_board: Option<crate::intel_board::IntelLedger>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub team_check: Option<crate::team_check::TeamCheckProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub random_play: Option<crate::random_play::RandomPlayProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub redemption: Option<crate::redemption::RedemptionProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub dismantle: Option<crate::dismantle::DismantleProgress>,
     pub app_id: String,
     pub config: DailyConfig,
     pub state: MailState,
@@ -52,6 +134,15 @@ pub struct DailyProgress {
     pub activation_attempted: bool,
     pub transport_attempted: bool,
     pub approach_attempted: bool,
+    #[serde(default)]
+    #[ts(as = "Option<bool>", optional)]
+    pub reward_checked: bool,
+    #[serde(default)]
+    #[ts(as = "Option<bool>", optional)]
+    pub reward_confirmed: bool,
+    #[serde(default)]
+    #[ts(as = "Option<bool>", optional)]
+    pub reveal_observed: bool,
     #[ts(type = "number")]
     pub active_ms: u64,
 }
@@ -62,7 +153,26 @@ impl DailyProgress {
             return Err("日常应用未注册");
         }
         Ok(Self {
+            intel_board: None,
+            team_check: if app_id == "predefined_team_checker" {
+                Some(crate::team_check::TeamCheckProgress::new(
+                    Default::default(),
+                )?)
+            } else {
+                None
+            },
+            random_play: if app_id == "random_play" {
+                Some(crate::random_play::RandomPlayProgress::new(
+                    Default::default(),
+                    "1970-01-01".into(),
+                )?)
+            } else {
+                None
+            },
             app_id: app_id.into(),
+            redemption: (app_id == "redemption_code").then(Default::default),
+            dismantle: (app_id == "drive_disc_dismantle")
+                .then(|| crate::dismantle::DismantleProgress::new(Default::default())),
             config,
             state: MailState::Running,
             stage: "Inspect".into(),
@@ -77,6 +187,9 @@ impl DailyProgress {
             activation_attempted: false,
             transport_attempted: false,
             approach_attempted: false,
+            reward_checked: false,
+            reward_confirmed: false,
+            reveal_observed: false,
             active_ms: 0,
         })
     }
@@ -84,6 +197,13 @@ impl DailyProgress {
         match self.app_id.as_str() {
             "engagement_reward" => "Engagement",
             "city_fund" => "Fund",
+            "drive_disc_dismantle" => "Disc",
+            "redemption_code" => "Redeem",
+            "random_play" => "Shop",
+            "predefined_team_checker" => "Teams",
+            "ridu_weekly" => "Weekly",
+            "trigrams_collection" => "Trigram",
+            "hou_hou_bakery" => "Bakery",
             _ => "Scratch",
         }
     }
@@ -97,9 +217,12 @@ impl DailyProgress {
     }
     /// 先于投递发布；中断后只能重新识别后态，不能直接再次投递领取。
     pub fn before_step(&mut self) {
+        crate::dismantle::before_step(self);
+        crate::redemption::before_step(self);
+        crate::random_play::before_step(self);
         if matches!(
             self.stage.as_str(),
-            "Claim" | "ClaimTasks" | "ClaimLevels" | "SelectCard"
+            "Claim" | "ClaimTasks" | "ClaimLevels" | "SelectCard" | "SelectGift" | "ClaimScore"
         ) {
             self.attempted = true;
         }
@@ -112,19 +235,90 @@ impl DailyProgress {
         if self.stage == "Approach" {
             self.approach_attempted = true;
         }
+        if self.stage == "ClaimReward" {
+            self.reward_checked = true;
+        }
         self.inputs_released = false;
     }
     pub fn completed(&self) -> bool {
-        self.stage == "Done"
+        self.navigation_completed()
+            && self
+                .team_check
+                .as_ref()
+                .is_none_or(|scan| scan.saved_revision.is_some())
+            && self.stage == "Done"
+    }
+    pub fn timeout_ms(&self) -> u32 {
+        self.team_check
+            .as_ref()
+            .map_or(self.config.timeout_ms, |scan| scan.config.check_timeout_ms)
+    }
+    pub fn navigation_completed(&self) -> bool {
+        (self.stage == "Done" || (self.app_id == "predefined_team_checker" && self.stage == "Save"))
+            && (self.app_id != "predefined_team_checker"
+                || self
+                    .team_check
+                    .as_ref()
+                    .is_some_and(|s| s.validate().is_ok() && s.scan_completed()))
+            && (self.app_id != "random_play"
+                || self
+                    .random_play
+                    .as_ref()
+                    .is_some_and(|s| s.validate().is_ok() && s.outcome.is_some()))
+            && (self.app_id != "redemption_code"
+                || self
+                    .redemption
+                    .as_ref()
+                    .is_some_and(crate::redemption::RedemptionProgress::completed))
+            && (self.app_id != "drive_disc_dismantle"
+                || self
+                    .dismantle
+                    .as_ref()
+                    .is_some_and(crate::dismantle::DismantleProgress::completed))
             && self.completion_proven
             && self.returned_world
             && self.inputs_released
     }
     pub fn resume(&mut self) {
+        if self.app_id == "predefined_team_checker" {
+            if self.stage != "Done" {
+                if let Some(scan) = &mut self.team_check {
+                    let _ = scan.restart();
+                }
+                self.stage = "Inspect".into();
+                self.returned_world = false;
+                self.completion_proven = false;
+            }
+            self.state = MailState::Running;
+            return;
+        }
+        if self.app_id == "random_play" {
+            if self.stage != "Done" {
+                crate::random_play::resume(self);
+            }
+            self.state = MailState::Running;
+            return;
+        }
+        if self.app_id == "redemption_code" {
+            if self.stage != "Done" {
+                crate::redemption::resume(self);
+            }
+            self.state = MailState::Running;
+            return;
+        }
+        if self.app_id == "drive_disc_dismantle" {
+            if self.stage != "Done" {
+                crate::dismantle::resume(self);
+            }
+            self.state = MailState::Running;
+            return;
+        }
         // 返回阶段不退回入口；刮层只重做当前未确认完成的拖动。
         if self.stage != "Return" && self.stage != "Done" {
-            self.stage = if self.app_id == "scratch_card"
-                && self.transport_attempted
+            self.stage = if matches!(
+                self.app_id.as_str(),
+                "scratch_card" | "trigrams_collection" | "hou_hou_bakery"
+            ) && self.transport_attempted
                 && !self.route_confirmed
             {
                 "WaitArrival"
@@ -139,6 +333,21 @@ impl DailyProgress {
     pub fn observe(&mut self, node: &str) -> Result<(), &'static str> {
         let prefix = format!("{}.", self.prefix());
         let node = node.strip_prefix(&prefix).ok_or("日常节点不属于当前应用")?;
+        if self.app_id == "predefined_team_checker" {
+            return crate::team_check::observe(self, node);
+        }
+        if self.app_id == "random_play" {
+            return crate::random_play::observe(self, node);
+        }
+        if self.app_id == "redemption_code" {
+            return crate::redemption::observe(self, node);
+        }
+        if self.app_id == "drive_disc_dismantle" {
+            return crate::dismantle::observe(self, node);
+        }
+        if !LEGACY_APP_IDS.contains(&self.app_id.as_str()) {
+            return super::remaining_daily::observe(self, node);
+        }
         let stage = self.stage.clone();
         let next = match (self.app_id.as_str(), stage.as_str(), node) {
             (_, "Return", "World") => {
@@ -296,6 +505,12 @@ pub fn recovery_inputs() -> Vec<crate::InputProbeConfig> {
 #[path = "basic_daily_pipeline.rs"]
 mod definition;
 pub use definition::pipeline;
+pub use definition::pipeline as legacy_pipeline;
+
+/// schema 1..6 保持冻结；schema 7 加入情报板界面节点及距离检测资源。
+pub fn current_pipeline() -> serde_json::Value {
+    super::intel_board::pipeline()
+}
 
 pub fn templates() -> [(&'static str, &'static [u8]); 7] {
     [

@@ -1,0 +1,22 @@
+[
+  {
+    "path": "assets/game_data/screen_info/random_play.yml",
+    "sha256": "8f0f57ca36671a157026d64a8230c489dec08685226e315dda024e949bb98e4f"
+  },
+  {
+    "path": "assets/game_data/screen_info/normal_world.yml",
+    "sha256": "b9b6be9ca171ea50bd02752ca5a9c32b30f7dfc151f3c2672e34e444f5b64950"
+  },
+  {
+    "path": "src/zzz_od/game_data/agent.py",
+    "sha256": "9e10212ee7d9925e6ac00493b59f2e86ca2db5d4ac8df6836f95a0180814e3c0"
+  },
+  {
+    "path": "src/zzz_od/application/random_play/random_play_app.py",
+    "sha256": "5f90db9d3b32c75ce65784a49bd80d0edc7130beb9f1e383c3b52481816d6085"
+  },
+  {
+    "path": "src/zzz_od/application/random_play/random_play_config.py",
+    "sha256": "8c1e57e41f6c1df55d24618612580386759a254919b036b92ae774e9d4925eee"
+  }
+]

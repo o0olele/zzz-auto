@@ -73,6 +73,22 @@ fn resource_files(schema: u32) -> Vec<&'static str> {
         .collect()
 }
 
+fn daily_extension_path(name: &str) -> bool {
+    name.strip_prefix("generated/basic-daily/")
+        .is_some_and(|relative| {
+            od_core::random_play::templates().contains_key(relative)
+                || intel_extension_relative(relative)
+        })
+}
+fn intel_extension_relative(relative: &str) -> bool {
+    od_core::intel_board::templates().contains_key(relative)
+        || od_core::intel_board::DETECTOR_FILES.contains(&relative)
+}
+fn intel_extension_path(name: &str) -> bool {
+    name.strip_prefix("generated/basic-daily/")
+        .is_some_and(intel_extension_relative)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceFile {
@@ -217,6 +233,10 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
     for file in &manifest.files {
         ensure!(
             (files.contains(&file.path.as_str())
+                || (manifest.schema_version >= 3
+                    && manifest.protocol_version >= 38
+                    && (!intel_extension_path(&file.path) || manifest.protocol_version >= 41)
+                    && daily_extension_path(&file.path))
                 || (manifest.schema_version == 4 && safe_combat_path(&file.path)))
                 && paths.insert(file.path.as_str()),
             "资源文件未登记或重复"
@@ -397,6 +417,24 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
         .into_iter()
         .map(str::to_string)
         .collect();
+    if manifest.schema_version >= 3 {
+        let daily =
+            maa_adapter::validate_basic_daily_bundle(&source.join("generated/basic-daily"))?;
+        let daily_manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(daily.join("basic-daily-manifest.json"))?)?;
+        for file in daily_manifest["files"]
+            .as_array()
+            .context("日常清单缺少文件列表")?
+        {
+            let name = format!(
+                "generated/basic-daily/{}",
+                file["path"].as_str().context("日常文件名无效")?
+            );
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
     if manifest.schema_version == 4 {
         maa_adapter::combat_vision::CombatBundle::load(&source.join("generated/combat"))?;
         let mut combat = Vec::new();
@@ -501,6 +539,7 @@ fn extract(
                     || FILES.contains(&entry.name())
                     || COFFEE_FILES.contains(&entry.name())
                     || DAILY_FILES.contains(&entry.name())
+                    || daily_extension_path(entry.name())
                     || safe_combat_path(entry.name()))
                 && names.insert(entry.name().to_owned()),
             "ZIP 包含多余、重复或非法条目"

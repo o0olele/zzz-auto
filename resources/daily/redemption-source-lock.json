@@ -1,0 +1,14 @@
+[
+  {
+    "path": "assets/game_data/screen_info/menu.yml",
+    "sha256": "a0bb70becd7beb9e4a7b9faf6e666c5860f50d052bcae1f53a86c8e19fde1efc"
+  },
+  {
+    "path": "assets/game_data/screen_info/menu_more.yml",
+    "sha256": "ec12b632522e36ee886afca8ed63738b15a010fe6a98f06e729ef9f6ec99111c"
+  },
+  {
+    "path": "config/redemption_codes.sample.yml",
+    "sha256": "ca0de4cbe2ac6d9028f4455b97cc3502098e64d9b9d437d9b84a27c144ee30b9"
+  }
+]

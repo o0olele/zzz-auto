@@ -1,6 +1,9 @@
 pub mod after_done;
+pub mod app_combat;
 pub mod audio_dodge;
 pub mod basic_daily;
+pub mod battle_result;
+pub mod challenge_move;
 pub mod coffee;
 pub mod coffee_approach;
 pub mod coffee_run;
@@ -13,15 +16,23 @@ pub mod conditional;
 pub mod config;
 pub mod config_import;
 pub mod daily;
+pub mod dismantle;
 pub mod download_proxy;
 pub mod engagement_reward;
 pub mod game_launch;
 pub mod group_run;
+pub mod intel_board;
+pub mod intel_board_flow;
 pub mod mail;
 pub mod map_transport;
 pub mod model_resources;
+pub mod navigation;
 pub mod ocr;
 pub mod pipeline;
+pub mod predefined_teams;
+pub mod random_play;
+pub mod redemption;
+pub mod remaining_daily;
 pub mod run_history;
 pub mod run_logs;
 pub mod run_notifications;
@@ -31,6 +42,8 @@ pub mod runtime_resources;
 pub mod screen_sample_library;
 pub mod screen_samples;
 pub mod shortcuts;
+pub mod team_check;
+pub mod team_selection;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -446,26 +459,41 @@ impl RunSlot {
         debug_assert!(schedule.permitted_app(&permit).is_none());
         self.current.as_mut().expect("运行已创建").group = Some(schedule.progress().clone());
         self.group_schedule = Some(schedule);
-        self.prepare_group_app(config, plan.coffee_config, plan.daily_config)?;
+        self.prepare_group_app(config, plan)?;
         Ok(self.current.as_ref().expect("运行已创建").clone())
     }
 
     fn prepare_group_app(
         &mut self,
         mail: mail::MailConfig,
-        coffee: coffee_run::CoffeeConfig,
-        daily: basic_daily::DailyConfig,
+        plan: &run_plan::GroupPlan,
     ) -> Result<(), &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
         match self.group_schedule.as_ref().and_then(|s| s.current_app()) {
             Some("email") => run.mail = Some(mail::MailProgress::new(mail)),
             Some("coffee") => {
-                let mut progress = coffee_run::CoffeeProgress::new(coffee);
+                let mut progress = coffee_run::CoffeeProgress::new(plan.coffee_config);
                 progress.approach = Some(coffee_approach::CoffeeApproachProgress::default());
                 run.coffee = Some(progress);
             }
             Some(app) if basic_daily::APP_IDS.contains(&app) => {
-                run.daily.push(basic_daily::DailyProgress::new(app, daily)?);
+                let mut progress = basic_daily::DailyProgress::new(app, plan.daily_config)?;
+                if let Some(state) = progress.team_check.as_mut() {
+                    *state = team_check::TeamCheckProgress::new(plan.predefined_teams.clone())?;
+                }
+                if let Some(state) = progress.dismantle.as_mut() {
+                    state.config = plan.dismantle_config;
+                }
+                if let Some(state) = progress.redemption.as_mut() {
+                    *state = redemption::RedemptionProgress::new(plan.redemption_codes.clone())?;
+                }
+                if let Some(state) = progress.random_play.as_mut() {
+                    *state = random_play::RandomPlayProgress::new(
+                        plan.random_play_config.clone(),
+                        plan.game_day.date.clone(),
+                    )?;
+                }
+                run.daily.push(progress);
             }
             _ => return Err("当前分项没有执行器"),
         }
@@ -480,7 +508,7 @@ impl RunSlot {
         schedule.start_next(Utc::now())?.ok_or("应用组已经结束")?;
         let run = self.current.as_mut().ok_or("当前没有任务")?;
         run.group = Some(schedule.progress().clone());
-        self.prepare_group_app(plan.mail_config, plan.coffee_config, plan.daily_config)?;
+        self.prepare_group_app(plan.mail_config, plan)?;
         Ok(self.current.as_ref().expect("运行存在").clone())
     }
 
@@ -737,7 +765,10 @@ impl RunSlot {
             run.group = Some(schedule.progress().clone());
         }
         run.state = RunState::Running;
-        if let Some(progress) = &mut run.combat { progress.state = RunState::Running; progress.inputs_released = false; }
+        if let Some(progress) = &mut run.combat {
+            progress.state = RunState::Running;
+            progress.inputs_released = false;
+        }
         let current_app = self.group_schedule.as_ref().and_then(|s| s.current_app());
         for progress in &mut run.daily {
             if current_app == Some(progress.app_id.as_str()) {
@@ -785,7 +816,68 @@ impl RunSlot {
             .iter_mut()
             .find(|p| p.app_id == progress.app_id)
             .ok_or("日常进度缺失")?;
-        if previous.config != progress.config || progress.scratch_rows > 3 {
+        match (&previous.intel_board, &progress.intel_board) {
+            (Some(before), Some(after)) => before.check_update(after)?,
+            (None, None) => {}
+            _ => return Err("情报板检查点不能添加或删除"),
+        }
+        if let Some(redemption) = &progress.redemption {
+            redemption.validate()?;
+        }
+        if let Some(shop) = &progress.random_play {
+            shop.validate()?;
+        }
+        if let Some(scan) = &progress.team_check {
+            scan.validate()?;
+            if let Some(revision) = scan.saved_revision
+                && run
+                    .context
+                    .as_ref()
+                    .and_then(|c| c.config_revision.checked_add(1))
+                    != Some(revision)
+            {
+                return Err("编队回写修订与本次冻结配置不符");
+            }
+        }
+        if previous.team_check.as_ref().map(|s| &s.config)
+            != progress.team_check.as_ref().map(|s| &s.config)
+        {
+            return Err("检查运行的冻结编队不能修改或删除");
+        }
+        if let Some(saved) = previous.team_check.as_ref().and_then(|s| s.saved_revision)
+            && progress.team_check.as_ref().and_then(|s| s.saved_revision) != Some(saved)
+        {
+            return Err("已经回写的编队结果不能撤销");
+        }
+        if previous
+            .random_play
+            .as_ref()
+            .map(|s| (&s.config, &s.game_day))
+            != progress
+                .random_play
+                .as_ref()
+                .map(|s| (&s.config, &s.game_day))
+        {
+            return Err("录像店冻结设置与游戏日不能修改或删除");
+        }
+        if let (Some(before), Some(after)) = (&previous.random_play, &progress.random_play)
+            && ((before.confirmation_attempted && !after.confirmation_attempted)
+                || (before.outcome.is_some() && before.outcome != after.outcome))
+        {
+            return Err("录像店已提交营业或取得的结果不能撤销");
+        }
+        if let (Some(before), Some(after)) = (&previous.redemption, &progress.redemption)
+            && (after.index < before.index || !after.results.starts_with(&before.results))
+        {
+            return Err("已经确认的逐码结果不能撤销或修改");
+        }
+        if previous.config != progress.config
+            || previous.redemption.as_ref().map(|p| &p.codes)
+                != progress.redemption.as_ref().map(|p| &p.codes)
+            || previous.dismantle.as_ref().map(|p| p.config)
+                != progress.dismantle.as_ref().map(|p| p.config)
+            || progress.scratch_rows > 3
+        {
             return Err("日常冻结配置或进度无效");
         }
         if matches!(progress.state, MailState::Paused | MailState::Succeeded)
@@ -903,11 +995,9 @@ impl RunSlot {
     }
 
     pub fn begin(&mut self, app_id: &str) -> Result<RunRecord, &'static str> {
-        if self
-            .current
-            .as_ref()
-            .is_some_and(|run| (run.group.is_some() || run.combat.is_some()) && !run.inputs_released())
-        {
+        if self.current.as_ref().is_some_and(|run| {
+            (run.group.is_some() || run.combat.is_some()) && !run.inputs_released()
+        }) {
             return Err("上次应用组输入尚未确认释放，请先恢复遗留输入");
         }
         if self.busy() {

@@ -8,12 +8,19 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const TRIAL_APP_IDS: [&str; 5] = [
+pub const TRIAL_APP_IDS: [&str; 12] = [
     "email",
     "coffee",
     "engagement_reward",
     "city_fund",
     "scratch_card",
+    "ridu_weekly",
+    "trigrams_collection",
+    "hou_hou_bakery",
+    "drive_disc_dismantle",
+    "redemption_code",
+    "random_play",
+    "predefined_team_checker",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -88,6 +95,7 @@ pub enum PlanDecision {
     Disabled,
     Run,
     AlreadyDone,
+    NoWork,
     Blocked,
 }
 
@@ -104,6 +112,24 @@ pub struct PlannedApp {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GroupPlan {
     #[serde(default)]
+    #[ts(as = "Option<crate::intel_board::IntelBoardConfig>", optional)]
+    pub intel_board_config: crate::intel_board::IntelBoardConfig,
+    #[serde(default)]
+    #[ts(as = "Option<crate::intel_board::IntelHistory>", optional)]
+    pub intel_board_history: crate::intel_board::IntelHistory,
+    #[serde(default)]
+    #[ts(as = "Option<crate::predefined_teams::TeamConfig>", optional)]
+    pub predefined_teams: crate::predefined_teams::TeamConfig,
+    #[serde(default)]
+    #[ts(as = "Option<crate::random_play::RandomPlayConfig>", optional)]
+    pub random_play_config: crate::random_play::RandomPlayConfig,
+    #[serde(default)]
+    #[ts(as = "Option<Vec<crate::redemption::RedemptionCode>>", optional)]
+    pub redemption_codes: Vec<crate::redemption::RedemptionCode>,
+    #[serde(default)]
+    #[ts(as = "Option<crate::redemption::RedemptionHistory>", optional)]
+    pub redemption_history: crate::redemption::RedemptionHistory,
+    #[serde(default)]
     pub after_done: crate::after_done::AfterDoneAction,
     pub context: RunContext,
     pub mail_config: crate::mail::MailConfig,
@@ -111,6 +137,9 @@ pub struct GroupPlan {
     #[serde(default)]
     #[ts(as = "Option<crate::basic_daily::DailyConfig>", optional)]
     pub daily_config: crate::basic_daily::DailyConfig,
+    #[serde(default)]
+    #[ts(as = "Option<crate::dismantle::DismantleConfig>", optional)]
+    pub dismantle_config: crate::dismantle::DismantleConfig,
     pub items: Vec<PlannedApp>,
     pub blockers: Vec<String>,
     pub executable: bool,
@@ -308,10 +337,43 @@ fn plan_account_at(
     if app_ids.is_empty() {
         blockers.push("应用组没有启用的应用".into());
     }
+    if items
+        .iter()
+        .any(|item| item.app_id == "drive_disc_dismantle" && item.decision == PlanDecision::Run)
+    {
+        warnings.push(format!(
+            "驱动盘拆解：{}，{}全选已弃置；所选驱动盘将被消耗。",
+            group.dismantle.grade.label(),
+            if group.dismantle.include_abandoned {
+                ""
+            } else {
+                "不"
+            }
+        ));
+    }
+    let redemption_codes = config
+        .redemption
+        .pending(&game_day.date, &instance.redemption_used)
+        .map_err(str::to_owned)?;
+    if let Some(item) = items
+        .iter_mut()
+        .find(|item| item.app_id == "redemption_code" && item.enabled)
+    {
+        item.decision = if redemption_codes.is_empty() {
+            PlanDecision::NoWork
+        } else {
+            PlanDecision::Run
+        };
+    }
     let has_pending = items.iter().any(|item| item.decision == PlanDecision::Run);
     let executable = blockers.is_empty() && has_pending;
     let all_done = blockers.is_empty() && !has_pending;
     Ok(GroupPlan {
+        intel_board_config: group.intel_board.clone(),
+        intel_board_history: Default::default(),
+        predefined_teams: instance.predefined_teams.clone(),
+        redemption_codes,
+        redemption_history: Default::default(),
         after_done: if standalone {
             crate::after_done::AfterDoneAction::None
         } else {
@@ -329,6 +391,8 @@ fn plan_account_at(
         mail_config: config.general.mail,
         coffee_config: group.coffee,
         daily_config: group.daily,
+        dismantle_config: group.dismantle,
+        random_play_config: group.random_play.clone(),
         context: RunContext {
             instance_id,
             instance_name: instance.name.clone(),

@@ -1,3 +1,5 @@
+import { RedemptionSettings } from './RedemptionSettings';
+import type { RedemptionConfig } from './generated/protocol';
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
 import type { AccountConfig, CaptureMethod, GeneralSettings as Settings, ShortcutKey, ShortcutSettings, ShortcutStatus, DownloadProxy } from './generated/protocol';
@@ -70,6 +72,24 @@ export function GeneralSettings({ connected, active, blocked, onLoaded, shortcut
     } finally { if (generation.current === requested) setBusy(false); }
   }
 
+  async function saveRedemption(settings: RedemptionConfig) {
+    if (disabled) return;
+    const requested = generation.current;
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const result = await request({ type: 'update_account_config', params: { revision: config.revision, change: { type: 'save_redemption', settings } } });
+      if (generation.current !== requested) return;
+      if (result.type !== 'account_config') throw new Error('引擎未返回保存结果');
+      setConfig(result.data); setMessage('兑换码已保存，下次运行计划使用最新码表。');
+    } catch (reason) {
+      if (generation.current !== requested) return;
+      if (typeof reason === 'object' && reason && 'code' in reason && reason.code === 'config_conflict') {
+        try { const value = await load(); if (generation.current === requested) { accept(value); setError('配置已变化，已读取最新设置。请核对后重新编辑。'); } }
+        catch (refreshError) { if (generation.current === requested) { setConfig(null); setError(errorMessage(refreshError)); } }
+      } else setError(errorMessage(reason));
+    } finally { if (generation.current === requested) setBusy(false); }
+  }
+
   return <>
     <div className="page-heading"><div><div className="eyebrow">GENERAL SETTINGS</div><h1>通用设置</h1><p>调整本机外观，以及所有本地账号共用的运行参数。</p></div><Button disabled={!connected || blocked || busy} onClick={async () => {
       const requested = generation.current;
@@ -111,5 +131,6 @@ export function GeneralSettings({ connected, active, blocked, onLoaded, shortcut
       <DownloadProxyFields mode={proxyMode} url={proxyUrl} disabled={disabled} onMode={mode => { setProxyMode(mode); setMessage(''); }} onUrl={url => { setProxyUrl(url); setMessage(''); }}/>
       <div className="button-row"><Button appearance="primary" disabled={disabled || !valid} onClick={() => void save()}>保存通用设置</Button>{busy && <Spinner size="tiny" label="保存设置"/>}</div>
     </Card>
+    {config && <RedemptionSettings key={JSON.stringify(config.redemption)} settings={config.redemption ?? { user_codes: {} }} disabled={disabled} onSave={settings => void saveRedemption(settings)}/>}
   </>;
 }

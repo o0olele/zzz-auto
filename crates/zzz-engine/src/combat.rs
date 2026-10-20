@@ -5,6 +5,7 @@ use maa_adapter::{
 };
 use od_core::{
     RunState,
+    battle_result::{BattleEndTracker, NormalBattleResult},
     combat::{CombatConfig, CombatProgress},
     combat_inputs::InputLedger,
     conditional::{Action, ButtonWay, Decision, Scheduler, Script, StateUpdate},
@@ -55,6 +56,12 @@ enum Step {
     ReleaseTurn,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CombatSegmentEnd {
+    Result(NormalBattleResult),
+    Interrupted(Interrupt),
+}
+
 pub struct CombatRun {
     pub id: Uuid,
     pub progress: CombatProgress,
@@ -64,6 +71,8 @@ pub struct CombatRun {
     elapsed: f64,
     sequence: Option<u64>,
     random: u64,
+    parented: bool,
+    end_tracker: BattleEndTracker,
 }
 impl CombatRun {
     pub fn new(id: Uuid, config: CombatConfig, script: Script) -> Result<Self> {
@@ -79,7 +88,21 @@ impl CombatRun {
             elapsed: 0.0,
             sequence: None,
             random,
+            parented: false,
+            end_tracker: BattleEndTracker::default(),
         })
+    }
+    /// 应用内战斗与外层流程共用请求句柄，结束当前战斗不能结束整个应用。
+    pub fn new_segment(
+        id: Uuid,
+        config: CombatConfig,
+        script: Script,
+        control: PipelineControl,
+    ) -> Result<Self> {
+        let mut run = Self::new(id, config, script)?;
+        run.parented = true;
+        run.control = control;
+        Ok(run)
     }
     pub fn control(&self) -> PipelineRequest {
         self.control.requester()
@@ -88,6 +111,7 @@ impl CombatRun {
         self.control.requested() == Some(Interrupt::Stop)
     }
     pub fn resume(&mut self) -> Result<()> {
+        ensure!(!self.parented, "应用内战斗由外层流程继续");
         ensure!(
             self.progress.state == RunState::Paused
                 && self.progress.inputs_released
@@ -128,8 +152,20 @@ impl CombatRun {
         allow_audio: bool,
         mut publish: impl FnMut(CombatProgress),
     ) -> Result<()> {
+        ensure!(!self.parented, "应用内战斗须使用执行到结算的入口");
         let started = Instant::now();
-        let result = self.execute_inner(native, recognizer, allow_audio, &mut publish);
+        let result = self
+            .execute_inner(
+                native,
+                recognizer,
+                allow_audio,
+                &mut |progress| {
+                    publish(progress);
+                    Ok(())
+                },
+                false,
+            )
+            .map(|_| ());
         self.elapsed += started.elapsed().as_secs_f64();
         let released = native.release_inputs();
         self.progress.inputs_released = released.is_ok();
@@ -156,13 +192,83 @@ impl CombatRun {
         publish(self.progress.clone());
         Ok(())
     }
+    pub fn execute_segment(
+        &mut self,
+        native: &mut NativeSession,
+        recognizer: &mut CombatRecognizer,
+        allow_audio: bool,
+        mut publish: impl FnMut(CombatProgress) -> Result<()>,
+    ) -> Result<CombatSegmentEnd> {
+        ensure!(
+            self.parented && !self.progress.state.is_terminal() && self.progress.inputs_released,
+            "战斗交接缺少可继续状态或输入释放证明"
+        );
+        self.scheduler.resume();
+        self.sequence = None;
+        self.end_tracker.reset_confirmation();
+        self.progress.state = RunState::Running;
+        let started = Instant::now();
+        let result = self.execute_inner(native, recognizer, allow_audio, &mut publish, true);
+        self.elapsed += started.elapsed().as_secs_f64();
+        let released = native.release_inputs();
+        self.progress.inputs_released = released.is_ok();
+        self.progress.in_battle = false;
+        self.scheduler.pause();
+        self.sequence = None;
+        let result = result.and_then(|result| released.map(|_| result));
+        let mut end = match result {
+            Err(error) => {
+                self.progress.state = RunState::Failed;
+                self.message = format!("应用内战斗失败：{error:#}");
+                // 错误不能被一次失败的状态发布吞掉，外层仍负责持久化并收尾。
+                let _ = publish(self.progress.clone());
+                return Err(error);
+            }
+            Ok(result) => match self.control.requested() {
+                Some(interrupt) => {
+                    self.progress.state = match interrupt {
+                        Interrupt::Pause => RunState::Paused,
+                        Interrupt::Stop => RunState::Stopped,
+                    };
+                    self.message = "应用内战斗已中断，输入已释放".into();
+                    CombatSegmentEnd::Interrupted(interrupt)
+                }
+                None => {
+                    let result = result.context("应用内战斗没有结算或中断证据")?;
+                    self.progress.state = match result {
+                        NormalBattleResult::Completed => RunState::Succeeded,
+                        NormalBattleResult::Retreat => RunState::Failed,
+                    };
+                    self.message = "战斗结算已确认，输入已释放，交回应用流程".into();
+                    CombatSegmentEnd::Result(result)
+                }
+            },
+        };
+        if let Err(error) = publish(self.progress.clone()) {
+            self.progress.state = RunState::Failed;
+            self.message = format!("战斗交接状态保存失败：{error:#}");
+            return Err(error);
+        }
+        // 发布检查点期间也可能收到暂停或停止；外层仍须在实际交接前检查请求。
+        if let Some(interrupt) = self.control.requested() {
+            self.progress.state = match interrupt {
+                Interrupt::Pause => RunState::Paused,
+                Interrupt::Stop => RunState::Stopped,
+            };
+            self.message = "应用内战斗已中断，输入已释放".into();
+            end = CombatSegmentEnd::Interrupted(interrupt);
+        }
+        Ok(end)
+    }
     fn execute_inner(
         &mut self,
         native: &mut NativeSession,
         recognizer: &mut CombatRecognizer,
         allow_audio: bool,
-        publish: &mut impl FnMut(CombatProgress),
-    ) -> Result<()> {
+        publish: &mut impl FnMut(CombatProgress) -> Result<()>,
+        check_end: bool,
+    ) -> Result<Option<NormalBattleResult>> {
+        native.check_combat_input_mode(self.progress.config.mode)?;
         recognizer.reset();
         for prefix in [
             "前台-",
@@ -232,7 +338,7 @@ impl CombatRun {
         let delay = Instant::now();
         while delay.elapsed() < Duration::from_millis(self.progress.config.start_delay_ms as u64) {
             if self.control.requested().is_some() {
-                return Ok(());
+                return Ok(None);
             }
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -266,10 +372,10 @@ impl CombatRun {
         let mut pending_states = Vec::new();
         let mut observation = CombatObservation::default();
         self.progress.inputs_released = false;
-        publish(self.progress.clone());
+        publish(self.progress.clone())?;
         loop {
             if self.control.requested().is_some() {
-                return Ok(());
+                return Ok(None);
             }
             let mut now = self.elapsed + started.elapsed().as_secs_f64();
             ensure!(
@@ -291,7 +397,7 @@ impl CombatRun {
                 let recognition_started = Instant::now();
                 let frame_at = now;
                 let Some(frame) = native.combat_frame(&cancel)? else {
-                    return Ok(());
+                    return Ok(None);
                 };
                 self.progress.frames += 1;
                 let mut intervals = self.intervals()?;
@@ -305,9 +411,48 @@ impl CombatRun {
                     &cancel,
                 )?;
                 if self.control.requested().is_some() {
-                    return Ok(());
+                    return Ok(None);
+                }
+                let has_chain = fresh.states.iter().any(|state| {
+                    !state.clear
+                        && (state.name == "连携技-准备"
+                            || state.name.starts_with("连携技-1-")
+                            || state.name.starts_with("连携技-2-"))
+                });
+                let end = if check_end && !fresh.in_battle && !has_chain {
+                    // 结算识别可能耗时，先释放战斗输入并丢弃尚未执行的动作。
+                    native.release_inputs()?;
+                    ledger.clear();
+                    queue.clear();
+                    until = None;
+                    pending_states.clear();
+                    self.scheduler.pause();
+                    self.scheduler.resume();
+                    self.sequence = None;
+                    recognizer.normal_battle_result(native, &frame, &cancel)?
+                } else {
+                    None
+                };
+                if self.control.requested().is_some() {
+                    return Ok(None);
+                }
+                if check_end {
+                    ensure!(
+                        (self.elapsed + started.elapsed().as_secs_f64()) * 1000.0
+                            < f64::from(self.progress.config.timeout_ms),
+                        "战斗运行达到超时上限"
+                    );
                 }
                 self.progress.frame_age_ms = frame.age_ms();
+                if check_end
+                    && let Some(end) = self.end_tracker.observe(
+                        fresh.in_battle,
+                        end,
+                        self.progress.frame_age_ms <= self.progress.config.max_frame_age_ms,
+                    )
+                {
+                    return Ok(Some(end));
+                }
                 now = self.elapsed + started.elapsed().as_secs_f64();
                 recognition_seconds = recognition_started.elapsed().as_secs_f64();
                 next_frame = now + self.progress.config.frame_interval_ms as f64 / 1000.0;
@@ -464,7 +609,7 @@ impl CombatRun {
                         Step::ReleaseTurn => {
                             for (action, down) in ledger.set("__turn", Vec::new(), false) {
                                 if !native.combat_input(action, down, &cancel)? {
-                                    return Ok(());
+                                    return Ok(None);
                                 }
                             }
                         }
@@ -478,7 +623,7 @@ impl CombatRun {
                                 pressed,
                             ) {
                                 if !native.combat_input(action, down, &cancel)? {
-                                    return Ok(());
+                                    return Ok(None);
                                 }
                             }
                             pending_states.push(StateUpdate {
@@ -674,7 +819,7 @@ impl CombatRun {
                                                 ledger.set("__turn", vec![action], true)
                                             {
                                                 if !native.combat_input(action, down, &cancel)? {
-                                                    return Ok(());
+                                                    return Ok(None);
                                                 }
                                             }
                                             queue.push_front(Step::ReleaseTurn);
@@ -698,7 +843,7 @@ impl CombatRun {
                     .take(128)
                     .map(|(n, v)| (n.clone(), v.at))
                     .collect();
-                publish(self.progress.clone());
+                publish(self.progress.clone())?;
                 last_publish = now;
             }
             std::thread::sleep(Duration::from_millis(2));

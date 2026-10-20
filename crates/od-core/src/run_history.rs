@@ -18,8 +18,12 @@ use uuid::Uuid;
 const RECORD_LIMIT: u64 = 1024 * 1024;
 const DIRECTORY_LIMIT: usize = 10_000;
 
+#[path = "intel_board_history.rs"]
+mod intel_board;
 #[path = "run_history_query.rs"]
 mod query;
+#[path = "redemption_history.rs"]
+mod redemption;
 pub use query::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

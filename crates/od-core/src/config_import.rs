@@ -251,7 +251,7 @@ fn scan(source: &Path, data: &Path) -> Result<Vec<SourceFile>> {
         }
         let name = entry.file_name().to_string_lossy().to_lowercase();
         if !(name.ends_with(".yml") || name.ends_with(".yaml"))
-            || name.ends_with(".sample.yml")
+            || (name.ends_with(".sample.yml") && name != "redemption_codes.sample.yml")
             || name.ends_with(".sample.yaml")
         {
             continue;
@@ -372,6 +372,17 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         warnings.push("任务快捷键只暂停 / 继续或停止已有任务；旧开始键不会启动新任务。".into());
         converted.insert(env.relative.clone());
     }
+    let mut redemption = crate::redemption::RedemptionConfig::default();
+    for name in ["redemption_codes.sample.yml", "redemption_codes.yml"] {
+        if let Some(file) = files.iter().find(|f| f.relative == name) {
+            let value: serde_json::Value = parse(file)?;
+            redemption
+                .user_codes
+                .extend(crate::redemption::import_codes(&value).map_err(anyhow::Error::msg)?);
+            converted.insert(file.relative.clone());
+        }
+    }
+    redemption.validate().map_err(anyhow::Error::msg)?;
     for item in legacy.instance_list {
         if item.active {
             active.push(item.idx);
@@ -467,11 +478,14 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             if parts.len() == 2 && parts[1] == "_group.yml" {
                 let group: LegacyGroup = parse(file)?;
                 groups.push(AppGroup {
+                    intel_board: Default::default(),
                     id: parts[0].into(),
                     name: None,
                     run_policy: crate::daily::RunPolicy::default(),
                     coffee: crate::coffee_run::CoffeeConfig::default(),
                     daily: crate::basic_daily::DailyConfig::default(),
+                    dismantle: crate::dismantle::DismantleConfig::default(),
+                    random_play: crate::random_play::RandomPlayConfig::default(),
                     apps: group
                         .app_list
                         .into_iter()
@@ -486,11 +500,14 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         }
         if !groups.iter().any(|g| g.id == "one_dragon") {
             let mut group = AppGroup {
+                intel_board: Default::default(),
                 id: "one_dragon".into(),
                 name: None,
                 run_policy: crate::daily::RunPolicy::default(),
                 coffee: crate::coffee_run::CoffeeConfig::default(),
                 daily: crate::basic_daily::DailyConfig::default(),
+                dismantle: crate::dismantle::DismantleConfig::default(),
+                random_play: crate::random_play::RandomPlayConfig::default(),
                 apps: Vec::new(),
             };
             if let Some(file) = files
@@ -556,6 +573,64 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 warnings.push(format!("账号 {} 的 {} 组旧咖啡选择由体力计划动态决定，未转换为固定咖啡；采用汀曼特调、60000ms 超时、3000ms 延时，请导入后核对。咖啡为试运行，完整领取仍待实机验收。", item.idx, group.id));
             }
         }
+        for group in &mut groups {
+            let grouped_intel = format!("{prefix}{}/intel_board.yml", group.id);
+            let old_intel = format!("{prefix}intel_board.yml");
+            if let Some(file) = files
+                .iter()
+                .find(|file| file.relative == grouped_intel)
+                .or_else(|| files.iter().find(|file| file.relative == old_intel))
+            {
+                group.intel_board = crate::intel_board::import(&parse::<serde_json::Value>(file)?)
+                    .map_err(anyhow::Error::msg)?;
+                converted.insert(file.relative.clone());
+                warnings.push(format!("账号 {} 的 {} 组情报板设置已转换：{}；预备编队索引 {}。旧周计数仅归档，不作为新版完成证明。",
+                    item.idx, group.id, if group.intel_board.exp_grind_mode { "经验目标 5000" } else { "贡献目标 1000" },
+                    group.intel_board.predefined_team_idx));
+            }
+            let grouped_shop = format!("{prefix}{}/random_play.yml", group.id);
+            let old_shop = format!("{prefix}random_play.yml");
+            let game = files
+                .iter()
+                .find(|f| f.relative == format!("{prefix}game.yml"))
+                .map(parse::<serde_json::Value>)
+                .transpose()?
+                .unwrap_or_default();
+            let turn_dx = game
+                .get("turn_dx")
+                .map(|v| v.as_f64().context("旧鼠标转向标定不是数值"))
+                .transpose()?;
+            if let Some(file) = files
+                .iter()
+                .find(|f| f.relative == grouped_shop)
+                .or_else(|| files.iter().find(|f| f.relative == old_shop))
+            {
+                group.random_play =
+                    crate::random_play::import(&parse::<serde_json::Value>(file)?, turn_dx)
+                        .map_err(anyhow::Error::msg)?;
+                converted.insert(file.relative.clone());
+                warnings.push(format!("账号 {} 的 {} 组录像店设置已转换：{}，宣传员 {} / {}，转向 {} 像素/度；实机经营仍待验收。",
+                    item.idx, group.id, group.random_play.transport_point.label(),
+                    group.random_play.agent_name_1, group.random_play.agent_name_2, group.random_play.turn_dx));
+            } else if let Some(dx) = turn_dx {
+                group.random_play.turn_dx = dx;
+                group.random_play.validate().map_err(anyhow::Error::msg)?;
+            }
+            let grouped = format!("{prefix}{}/drive_disc_dismantle.yml", group.id);
+            let old = format!("{prefix}drive_disc_dismantle.yml");
+            if let Some(file) = files
+                .iter()
+                .find(|f| f.relative == grouped)
+                .or_else(|| files.iter().find(|f| f.relative == old))
+            {
+                let legacy: serde_json::Value = parse(file)?;
+                group.dismantle = crate::dismantle::import(&legacy).map_err(anyhow::Error::msg)?;
+                converted.insert(file.relative.clone());
+                warnings.push(format!("账号 {} 的 {} 组驱动盘拆解设置已转换：{}，{}全选已弃置。拆解会消耗所选驱动盘，请核对；真实游戏仍待验收。",
+                    item.idx, group.id, group.dismantle.grade.label(),
+                    if group.dismantle.include_abandoned { "" } else { "不" }));
+            }
+        }
         let mut run_notifications = crate::run_notifications::RunNotificationSettings::default();
         if let Some(file) = files
             .iter()
@@ -570,14 +645,51 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             warnings.push(format!("账号 {} 的旧通知开关仅转换为本机应用组结果提醒；应用、节点、开始通知及远程渠道设置只归档，请导入后核对。", item.idx));
             converted.insert(file.relative.clone());
         }
-        let battle_file=files.iter().find(|file|file.relative==format!("{prefix}battle_assistant.yml"));
-        let game_file=files.iter().find(|file|file.relative==format!("{prefix}game.yml"));
-        let battle:serde_json::Value=battle_file.map(parse).transpose()?.unwrap_or_default();
-        let game:serde_json::Value=game_file.map(parse).transpose()?.unwrap_or_default();
-        let (combat,combat_warnings)=crate::combat_legacy::settings(&battle,&game)?;
-        warnings.extend(combat_warnings.into_iter().map(|message|format!("账号 {}：{message}",item.idx)));
-        if let Some(file)=battle_file {converted.insert(file.relative.clone());warnings.push(format!("账号 {} 的战斗与闪避脚本名称、截图间隔、输入方式及开关已转换；脚本文件请在战斗页单独预览导入，声音默认关闭，请核对后启用。",item.idx));}
+        let battle_file = files
+            .iter()
+            .find(|file| file.relative == format!("{prefix}battle_assistant.yml"));
+        let game_file = files
+            .iter()
+            .find(|file| file.relative == format!("{prefix}game.yml"));
+        let battle: serde_json::Value = battle_file.map(parse).transpose()?.unwrap_or_default();
+        let game: serde_json::Value = game_file.map(parse).transpose()?.unwrap_or_default();
+        let (combat, combat_warnings) = crate::combat_legacy::settings(&battle, &game)?;
+        warnings.extend(
+            combat_warnings
+                .into_iter()
+                .map(|message| format!("账号 {}：{message}", item.idx)),
+        );
+        if let Some(file) = battle_file {
+            converted.insert(file.relative.clone());
+            warnings.push(format!("账号 {} 的战斗与闪避脚本名称、截图间隔、输入方式及开关已转换；脚本文件请在战斗页单独预览导入，声音默认关闭，请核对后启用。",item.idx));
+        }
+        let redemption_used = if let Some(file) = files
+            .iter()
+            .find(|f| f.relative == format!("{prefix}app_run_record/redemption_code.yml"))
+        {
+            let value: serde_json::Value = parse(file)?;
+            let used = crate::redemption::import_used(&value).map_err(anyhow::Error::msg)?;
+            converted.insert(file.relative.clone());
+            warnings.push(format!("账号 {} 的 {} 条旧兑换记录按已处理保留；旧版未区分兑换结果，不作为新版本已验证成功。",item.idx,used.len()));
+            used
+        } else {
+            Vec::new()
+        };
+        let predefined_teams = if let Some(file) = files
+            .iter()
+            .find(|f| f.relative == format!("{prefix}team.yml"))
+        {
+            let teams = crate::predefined_teams::import(&parse::<serde_json::Value>(file)?)
+                .map_err(anyhow::Error::msg)?;
+            converted.insert(file.relative.clone());
+            warnings.push(format!("账号 {} 的 20 个预备编队槽位、名称、脚本和已登记成员已转换；游戏内角色识别需另行运行。", item.idx));
+            teams
+        } else {
+            Default::default()
+        };
         instances.push(AccountInstance {
+            predefined_teams,
+            redemption_used,
             id: item.idx,
             name: item.name,
             active_in_od: item.active_in_od,
@@ -614,7 +726,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v10\0");
+    hash.update(b"zzz-auto-config-import-v16\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());
@@ -632,6 +744,13 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 && converted.contains(&file.relative)
             {
                 "已检查区服；凭据和其他账号字段仅归档，待迁移"
+            } else if converted.contains(&file.relative)
+                && (file.relative.starts_with("redemption_codes.")
+                    || file
+                        .relative
+                        .ends_with("/app_run_record/redemption_code.yml"))
+            {
+                "兑换码配置 / 旧已处理记录已转换；旧记录不作为已验证成功，完整原文归档"
             } else if converted.contains(&file.relative) {
                 "账号 / 应用组已转换；完整原文归档"
             } else {
@@ -642,6 +761,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let preview_id = hex::encode(hash.finalize());
     let config = AccountConfig {
+        redemption,
         reserved_instance_ids: Vec::new(),
         schema: CONFIG_SCHEMA,
         revision: 0,

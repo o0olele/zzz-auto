@@ -71,9 +71,15 @@ pub struct GroupApp {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AppGroup {
+    #[serde(default)]
+    #[ts(as = "Option<crate::intel_board::IntelBoardConfig>", optional)]
+    pub intel_board: crate::intel_board::IntelBoardConfig,
+    #[serde(default)]
+    #[ts(as = "Option<crate::random_play::RandomPlayConfig>", optional)]
+    pub random_play: crate::random_play::RandomPlayConfig,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -85,6 +91,9 @@ pub struct AppGroup {
     #[serde(default)]
     #[ts(as = "Option<crate::basic_daily::DailyConfig>", optional)]
     pub daily: crate::basic_daily::DailyConfig,
+    #[serde(default)]
+    #[ts(as = "Option<crate::dismantle::DismantleConfig>", optional)]
+    pub dismantle: crate::dismantle::DismantleConfig,
     pub apps: Vec<GroupApp>,
 }
 
@@ -98,9 +107,15 @@ impl AppGroup {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AccountInstance {
+    #[serde(default)]
+    #[ts(as = "Option<crate::predefined_teams::TeamConfig>", optional)]
+    pub predefined_teams: crate::predefined_teams::TeamConfig,
+    #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub redemption_used: Vec<String>,
     pub id: u32,
     pub name: String,
     pub active_in_od: bool,
@@ -122,9 +137,12 @@ pub struct AccountInstance {
 }
 
 // 仅包含可公开的编排字段；账号凭据和未迁移 YAML 不进入协议。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AccountConfig {
+    #[serde(default)]
+    #[ts(as = "Option<crate::redemption::RedemptionConfig>", optional)]
+    pub redemption: crate::redemption::RedemptionConfig,
     pub schema: u32,
     pub revision: u32,
     // v1 文件缺少整个设置对象时兼容默认值；对象存在时仍严格校验字段。
@@ -142,9 +160,36 @@ pub struct AccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConfigChange {
+    SaveIntelBoard {
+        instance_id: u32,
+        group_id: String,
+        settings: crate::intel_board::IntelBoardConfig,
+    },
+    AddGroupApp {
+        instance_id: u32,
+        group_id: String,
+        app_id: String,
+    },
+    SaveTeams {
+        instance_id: u32,
+        settings: crate::predefined_teams::TeamConfig,
+    },
+    SaveRandomPlay {
+        instance_id: u32,
+        group_id: String,
+        settings: crate::random_play::RandomPlayConfig,
+    },
+    SaveRedemption {
+        settings: crate::redemption::RedemptionConfig,
+    },
     SaveCombat {
         instance_id: u32,
         settings: crate::combat::CombatConfig,
+    },
+    SaveDismantle {
+        instance_id: u32,
+        group_id: String,
+        settings: crate::dismantle::DismantleConfig,
     },
     SaveDaily {
         instance_id: u32,
@@ -249,11 +294,14 @@ pub fn default_group() -> AppGroup {
     let mut apps = crate::applications().expect("内置应用登记无效");
     apps.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
     AppGroup {
+        intel_board: Default::default(),
         id: "one_dragon".into(),
         name: None,
         run_policy: crate::daily::RunPolicy::default(),
         coffee: crate::coffee_run::CoffeeConfig::default(),
         daily: crate::basic_daily::DailyConfig::default(),
+        dismantle: crate::dismantle::DismantleConfig::default(),
+        random_play: crate::random_play::RandomPlayConfig::default(),
         apps: apps
             .into_iter()
             .filter(|app| app.default_group)
@@ -269,10 +317,13 @@ impl Default for AccountConfig {
     fn default() -> Self {
         Self {
             schema: CONFIG_SCHEMA,
+            redemption: Default::default(),
             revision: 0,
             general: GeneralSettings::default(),
             active_instance: 1,
             instances: vec![AccountInstance {
+                predefined_teams: Default::default(),
+                redemption_used: Vec::new(),
                 id: 1,
                 name: "默认账号".into(),
                 active_in_od: true,
@@ -294,7 +345,10 @@ impl AccountConfig {
             return Err(invalid("账号配置版本不支持"));
         }
         self.general.validate()?;
-        for instance in &self.instances { instance.combat.validate().map_err(invalid)?; }
+        self.redemption.validate().map_err(invalid)?;
+        for instance in &self.instances {
+            instance.combat.validate().map_err(invalid)?;
+        }
         let mut reserved = HashSet::new();
         if self.reserved_instance_ids.len() > 9999
             || self
@@ -314,18 +368,22 @@ impl AccountConfig {
         }
         let mut ids = HashSet::new();
         for instance in &self.instances {
+            instance.predefined_teams.validate().map_err(invalid)?;
             if instance.id == 0 || instance.id > 9999 || !ids.insert(instance.id) {
                 return Err(invalid("账号编号重复或不在 1..9999 范围内"));
             }
             validate_name(&instance.name)?;
+            crate::redemption::validate_used(&instance.redemption_used).map_err(invalid)?;
             instance.game_launch.validate().map_err(invalid)?;
             if instance.groups.is_empty() || instance.groups.len() > 64 {
                 return Err(invalid("每个账号的应用组数量必须为 1..64"));
             }
             let mut groups = HashSet::new();
             for group in &instance.groups {
+                group.intel_board.validate().map_err(invalid)?;
                 group.coffee.validate().map_err(invalid)?;
                 group.daily.validate().map_err(invalid)?;
+                group.random_play.validate().map_err(invalid)?;
                 if !valid_identifier(&group.id) || !groups.insert(&group.id) {
                     return Err(invalid("应用组标识无效或重复"));
                 }
@@ -351,10 +409,59 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
-            ConfigChange::SaveCombat { instance_id, settings } => {
+            ConfigChange::SaveIntelBoard {
+                instance_id,
+                group_id,
+                settings,
+            } => {
+                settings.validate().map_err(invalid)?;
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .intel_board = settings;
+            }
+            ConfigChange::AddGroupApp {
+                instance_id,
+                group_id,
+                app_id,
+            } => {
+                if !crate::applications()
+                    .map_err(|_| invalid("应用登记无法读取"))?
+                    .iter()
+                    .any(|app| app.id == app_id)
+                {
+                    return Err(invalid("只能添加已登记应用"));
+                }
+                let group = self
+                    .instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?;
+                if group.apps.len() >= 256 || group.apps.iter().any(|app| app.app_id == app_id) {
+                    return Err(invalid("应用已在组内或应用数量已达上限"));
+                }
+                group.apps.push(GroupApp {
+                    app_id,
+                    enabled: false,
+                });
+            }
+            ConfigChange::SaveTeams {
+                instance_id,
+                settings,
+            } => {
+                settings.validate().map_err(invalid)?;
+                self.instance_mut(instance_id)?.predefined_teams = settings;
+            }
+            ConfigChange::SaveCombat {
+                instance_id,
+                settings,
+            } => {
                 settings.validate().map_err(invalid)?;
                 self.instance_mut(instance_id)?.combat = settings;
-            },
+            }
             ConfigChange::SaveRunNotifications {
                 instance_id,
                 settings,
@@ -368,6 +475,32 @@ impl AccountConfig {
                 self.instance_mut(instance_id)?.game_launch = settings;
             }
             ConfigChange::SetAfterDone { action } => self.general.after_done = action,
+            ConfigChange::SaveRedemption { settings } => self.redemption = settings,
+            ConfigChange::SaveRandomPlay {
+                instance_id,
+                group_id,
+                settings,
+            } => {
+                settings.validate().map_err(invalid)?;
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|g| g.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .random_play = settings;
+            }
+            ConfigChange::SaveDismantle {
+                instance_id,
+                group_id,
+                settings,
+            } => {
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .dismantle = settings;
+            }
             ConfigChange::SaveDaily {
                 instance_id,
                 group_id,
@@ -397,6 +530,7 @@ impl AccountConfig {
                 let id = self.new_instance_id()?;
                 let mut copy = self.instance_mut(instance_id)?.clone();
                 copy.id = id;
+                copy.redemption_used.clear();
                 copy.name = name.trim().into();
                 copy.active_in_od = false;
                 // 只复制可公开的编排；新编号隔离历史，当前账号与导入归档保持原值。
@@ -540,6 +674,8 @@ impl AccountConfig {
                 validate_name(&name)?;
                 let id = self.new_instance_id()?;
                 self.instances.push(AccountInstance {
+                    predefined_teams: Default::default(),
+                    redemption_used: Vec::new(),
                     id,
                     name,
                     active_in_od: true,

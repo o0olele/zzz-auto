@@ -1,0 +1,26 @@
+[
+  {
+    "path": "src/zzz_od/config/team_config.py",
+    "sha256": "99b410c8cd450a007dd121cccea351a32ca41515ad47c56b1b7d21f777a5e9c3"
+  },
+  {
+    "path": "src/zzz_od/application/game_config_checker/predefined_team_checker/predefined_team_checker.py",
+    "sha256": "5a60f292721cf4ebc42ee0f0f43a969c3024824c707abd9eea1648d3a41d6041"
+  },
+  {
+    "path": "src/zzz_od/operation/agent_template_matcher.py",
+    "sha256": "e128b4122b021b441f98f023e7ded2cf34ea2a720f688c87fa249140cbb3694f"
+  },
+  {
+    "path": "src/zzz_od/operation/choose_predefined_team.py",
+    "sha256": "60275717bb18a5421a4b4c25eb307d054258d2a6c2bf547c26477e55f6a8c28d"
+  },
+  {
+    "path": "assets/game_data/screen_info/menu_more.yml",
+    "sha256": "ec12b632522e36ee886afca8ed63738b15a010fe6a98f06e729ef9f6ec99111c"
+  },
+  {
+    "path": "docs/game/screens/预备编队.md",
+    "sha256": "470b7b50e6bbaaa30afc4e7aac70611a461e3f6f32cd7d20e1d5cf00c97e25cf"
+  }
+]

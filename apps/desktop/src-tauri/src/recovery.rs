@@ -146,7 +146,7 @@ impl RecoveryJournal {
                     .is_some_and(|p| p.inputs_released && p.state == run.state)
                     && run.matches_account_context()
                     && run.inputs_released()
-            } else if matches!(plan.version, 6 | 7) {
+            } else if matches!(plan.version, 6 | 7 | 9 | 10) {
                 run.group
                     .as_ref()
                     .is_some_and(|group| group.state == run.state && group.current_index.is_none())

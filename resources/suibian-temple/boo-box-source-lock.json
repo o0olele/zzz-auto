@@ -1,0 +1,10 @@
+[
+  {
+    "sha256": "b8b045c61e2a10fad20ce49297ef8ed243551b23718b40151dde2d6053b02bbf",
+    "path": "src/zzz_od/application/suibian_temple/operations/suibian_temple_boo_box.py"
+  },
+  {
+    "sha256": "2294eb11f053d17959346ec3b5e6344c51f253b1cec8f0285c39970f6aad6f69",
+    "path": "assets/game_data/screen_info/suibian_temple_boobox.yml"
+  }
+]

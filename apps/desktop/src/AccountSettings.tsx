@@ -1,3 +1,4 @@
+import { SuibianTempleSettings } from './SuibianTempleSettings';
 import { DismantleSettings } from './DismantleSettings';
 import { RandomPlaySettings } from './RandomPlaySettings';
 import { IntelBoardSettings } from './IntelBoardSettings';
@@ -120,6 +121,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       else if (change.type === 'save_daily') setMessage('日常设置已保存。');
       else if (change.type === 'save_dismantle') setMessage('拆解设置已保存。');
       else if (change.type === 'save_random_play') setMessage('录像店设置已保存。');
+      else if (change.type === 'save_suibian_temple') setMessage('随便观设置已保存。');
       else if (change.type === 'save_intel_board') setMessage('情报板设置已保存。');
       else if (change.type === 'save_teams') setMessage('预备编队已保存。');
       else if (change.type === 'save_game_launch') setMessage('游戏启动设置已保存，可在总览核对当前账号后手动启动。');
@@ -252,6 +254,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       {instance && group && <DismantleSettings key={`dismantle/${instance.id}/${group.id}/${config.revision}`} settings={group.dismantle} disabled={disabled} onSave={settings => void update({ type: 'save_dismantle', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <RandomPlaySettings key={`random-play/${instance.id}/${group.id}/${config.revision}`} settings={group.random_play} disabled={disabled} onSave={settings => void update({ type: 'save_random_play', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <IntelBoardSettings key={`intel-board/${instance.id}/${group.id}/${config.revision}`} settings={group.intel_board} teams={instance.predefined_teams} disabled={disabled} onSave={settings => void update({ type: 'save_intel_board', instance_id: instance.id, group_id: group.id, settings })}/>}
+      {instance && group && <SuibianTempleSettings key={`suibian-temple/${instance.id}/${group.id}/${config.revision}`} settings={group.suibian_temple} disabled={disabled} onSave={settings => void update({ type: 'save_suibian_temple', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <DailySettings key={`daily/${instance.id}/${group.id}/${config.revision}`} settings={group.daily} disabled={disabled} onSave={settings => void update({ type: 'save_daily', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <GroupRuns instanceId={instance.id} groupId={group.id} revision={config.revision} snapshot={snapshot} connected={connected} blocked={blocked || importBusy || backupBusy || busy} onCommand={onCommand}/>}
     </>}

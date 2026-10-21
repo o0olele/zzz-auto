@@ -80,9 +80,12 @@ impl GroupSchedule {
             .iter()
             .map(|item| &item.app_id)
             .ne(plan.context.app_ids.iter())
-            || enabled
-                .iter()
-                .any(|item| !matches!(item.decision, PlanDecision::Run | PlanDecision::AlreadyDone | PlanDecision::NoWork))
+            || enabled.iter().any(|item| {
+                !matches!(
+                    item.decision,
+                    PlanDecision::Run | PlanDecision::AlreadyDone | PlanDecision::NoWork
+                )
+            })
             || plan
                 .items
                 .iter()
@@ -94,7 +97,10 @@ impl GroupSchedule {
             .into_iter()
             .map(|item| GroupStepProgress {
                 app_id: item.app_id.clone(),
-                state: if matches!(item.decision, PlanDecision::AlreadyDone | PlanDecision::NoWork) {
+                state: if matches!(
+                    item.decision,
+                    PlanDecision::AlreadyDone | PlanDecision::NoWork
+                ) {
                     GroupStepState::Skipped
                 } else {
                     GroupStepState::Pending

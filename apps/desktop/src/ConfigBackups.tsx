@@ -1,3 +1,4 @@
+import { SuibianTempleSummary } from './SuibianTempleSettings';
 import { RedemptionConfigSummary } from './RedemptionSettings';
 import { dismantleSummary } from './DismantleSettings';
 import { randomPlaySummary } from './RandomPlaySettings';
@@ -68,6 +69,7 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     <p>拆解设置：{oldGroup ? dismantleSummary(oldGroup.dismantle) : '无此组'} → {newGroup ? dismantleSummary(newGroup.dismantle) : '无此组'}。</p>
     <p>录像店设置：{oldGroup ? randomPlaySummary(oldGroup.random_play) : '无此组'} → {newGroup ? randomPlaySummary(newGroup.random_play) : '无此组'}。</p>
     <p>情报板设置：{oldGroup ? intelBoardSummary(oldGroup.intel_board) : '无此组'} → {newGroup ? intelBoardSummary(newGroup.intel_board) : '无此组'}。</p>
+    <div aria-label="随便观恢复差异">{oldGroup && <><p>当前配置</p><SuibianTempleSummary settings={oldGroup.suibian_temple}/></>}{newGroup && <><p>恢复后配置</p><SuibianTempleSummary settings={newGroup.suibian_temple}/></>}</div>
     <div className="input-fields">{[{ group: oldGroup, title: '当前应用顺序' }, { group: newGroup, title: '恢复后应用顺序' }].map(({ group, title }) => {
       return <div role="group" aria-label={title} key={title}><h3>{title}</h3>{group ? <ol className="group-plan">{group.apps.map(item => <li key={item.app_id}>{apps.find(app => app.id === item.app_id)?.name ?? item.app_id} · {item.enabled ? '启用' : '禁用'}</li>)}</ol> : <p>无此组</p>}</div>;
     })}</div>

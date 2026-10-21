@@ -197,6 +197,10 @@ enum Action {
         #[arg(long)]
         image: PathBuf,
     },
+    SuibianTempleBundleCheck {
+        #[arg(long, default_value = "resources/generated/suibian-temple")]
+        bundle: PathBuf,
+    },
     BasicDailyBundleCheck {
         #[arg(long)]
         bundle: PathBuf,
@@ -504,6 +508,7 @@ async fn main() -> Result<()> {
                 | Action::CoffeeBundleCheck { .. }
                 | Action::EngagementRewardBundleCheck { .. }
                 | Action::EngagementRewardInspect { .. }
+                | Action::SuibianTempleBundleCheck { .. }
                 | Action::BasicDailyBundleCheck { .. }
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
@@ -891,6 +896,15 @@ async fn main() -> Result<()> {
         }
         Action::EngagementRewardInspect { ref bundle, .. } => {
             maa_adapter::validate_engagement_reward_bundle(bundle)?;
+        }
+        Action::SuibianTempleBundleCheck { ref bundle } => {
+            let bundle = maa_adapter::suibian_temple::validate_suibian_temple_bundle(bundle)?;
+            let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(
+                bundle.join("suibian-temple-manifest.json"),
+            )?)?;
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"capabilities":manifest["capabilities"],"bundle":bundle}),
+            );
         }
         Action::BasicDailyBundleCheck { ref bundle } => {
             return print(

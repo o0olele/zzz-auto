@@ -1,0 +1,10 @@
+[
+  {
+    "sha256": "db27768cfe3addaf05d2b7696ae8f8c9626332e6412c819c1ca0b5240c042e40",
+    "path": "src/zzz_od/application/suibian_temple/operations/suibian_temple_sales_stall.py"
+  },
+  {
+    "sha256": "abd4b9a777277d3e534e4d053b8bc0b021f11d4bbcda9aa28aa0adeab455a840",
+    "path": "assets/game_data/screen_info/suibian_temple_sales_stall.yml"
+  }
+]

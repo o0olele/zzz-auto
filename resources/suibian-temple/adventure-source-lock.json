@@ -1,0 +1,14 @@
+[
+  {
+    "path": "src/zzz_od/application/suibian_temple/operations/suibian_temple_adventure_squad.py",
+    "sha256": "82e5bf1c0d7cf69c143c00024d9b0a68d5d29e8526f439c50df1a4c48aa23f96"
+  },
+  {
+    "path": "src/zzz_od/application/suibian_temple/operations/suibian_temple_adventure_dispatch.py",
+    "sha256": "2d49ad4794280268f26dfa121826f082b3a55ccf1c8435cd59c1875443b49142"
+  },
+  {
+    "path": "assets/game_data/screen_info/suibian_temple_adventure.yml",
+    "sha256": "2f009049f66b6f3d519cd426a6dc4a3429d4452c89601b5c29a9fbaa1e4aae85"
+  }
+]

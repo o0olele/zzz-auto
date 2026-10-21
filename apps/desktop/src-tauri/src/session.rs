@@ -201,6 +201,74 @@ impl EngineSession {
                 ..
             }
         );
+        let group_request = match &command {
+            Command::StartGroupTrial {
+                instance_id,
+                group_id,
+                revision,
+                app_ids,
+                allow_input: true,
+                ..
+            } => Some((*instance_id, group_id, *revision, app_ids.as_deref(), None)),
+            Command::StartStandaloneTrial {
+                instance_id,
+                group_id,
+                revision,
+                app_id,
+                allow_input: true,
+                ..
+            } => Some((
+                *instance_id,
+                group_id,
+                *revision,
+                None,
+                Some(app_id.as_str()),
+            )),
+            _ => None,
+        };
+        let mut mixed_combat = None;
+        if let Some((instance_id, group_id, revision, selection, standalone)) = group_request {
+            let Payload::AccountConfig(saved) = self.request_raw(Command::AccountConfig).await?
+            else {
+                return Err(offline("无法读取应用组账号配置"));
+            };
+            if saved.revision != revision || saved.active_instance != instance_id {
+                return Err(ApiError::new(
+                    "account_changed",
+                    "账号或修订已变化，请重新预览并确认",
+                ));
+            }
+            let instance = saved
+                .instances
+                .iter()
+                .find(|i| i.id == instance_id)
+                .ok_or_else(|| offline("账号缺失"))?;
+            let group = instance
+                .groups
+                .iter()
+                .find(|g| g.id == *group_id)
+                .ok_or_else(|| offline("应用组缺失"))?;
+            let intel_selected = standalone.map_or_else(
+                || {
+                    selection.map_or_else(
+                        || {
+                            group
+                                .apps
+                                .iter()
+                                .any(|a| a.enabled && a.app_id == "intel_board")
+                        },
+                        |ids| ids.iter().any(|id| id == "intel_board"),
+                    )
+                },
+                |id| id == "intel_board",
+            );
+            if intel_selected {
+                mixed_combat = Some(
+                    od_core::app_combat::intel_settings(instance, &group.intel_board)
+                        .map_err(|e| ApiError::new("invalid_input", e))?,
+                );
+            }
+        }
         let input = match &command {
             Command::StartCombat {
                 instance_id,
@@ -273,7 +341,12 @@ impl EngineSession {
             }
             | Command::StartStandaloneTrial {
                 allow_input: true, ..
-            } => Some(od_core::redemption::recovery_inputs()),
+            } => Some(if let Some(combat) = &mixed_combat {
+                od_core::app_combat::recovery_inputs(combat)
+                    .map_err(|e| ApiError::new("invalid_input", e))?
+            } else {
+                od_core::redemption::recovery_inputs()
+            }),
             Command::StartInputProbe {
                 config,
                 allow_input: true,
@@ -308,7 +381,9 @@ impl EngineSession {
                 .window
                 .ok_or_else(|| ApiError::new("not_connected", "请先连接游戏窗口"))?;
             let plan = od_platform::InputRecoveryPlan {
-                version: if matches!(command, Command::StartCombat { .. }) {
+                version: if mixed_combat.is_some() {
+                    10
+                } else if matches!(command, Command::StartCombat { .. }) {
                     8
                 } else if matches!(
                     command,
@@ -332,7 +407,7 @@ impl EngineSession {
                 window,
                 config: configs[0],
                 additional_inputs: configs.iter().skip(1).copied().collect(),
-                combat_config: None,
+                combat_config: mixed_combat,
                 engine_integrity: self.privilege.engine_integrity,
                 run_id: None,
             };
@@ -365,7 +440,16 @@ impl EngineSession {
             {
                 8
             } else if snapshot.run.as_ref().is_some_and(|run| run.group.is_some()) {
-                9
+                if snapshot
+                    .run
+                    .as_ref()
+                    .and_then(|r| r.context.as_ref())
+                    .is_some_and(|c| c.app_ids.iter().any(|id| id == "intel_board"))
+                {
+                    10
+                } else {
+                    9
+                }
             } else if snapshot
                 .run
                 .as_ref()
@@ -473,7 +557,14 @@ impl EngineSession {
             }
             response.result.ok_or_else(|| offline("引擎返回空响应"))
         };
-        let timeout = if matches!(&request.command, Command::LaunchGame { .. }) {
+        let timeout = if matches!(
+            &request.command,
+            Command::LaunchGame { .. }
+                | Command::PreviewGroup { .. }
+                | Command::PreviewStandalone { .. }
+                | Command::StartGroupTrial { .. }
+                | Command::StartStandaloneTrial { .. }
+        ) {
             120
         } else {
             15

@@ -1,3 +1,4 @@
+import { SuibianTempleSummary } from './SuibianTempleSettings';
 import { RedemptionConfigSummary } from './RedemptionSettings';
 import { dismantleSummary } from './DismantleSettings';
 import { randomPlaySummary } from './RandomPlaySettings';
@@ -103,6 +104,7 @@ export function ConfigImport({ connected, active, blocked, current, apps, onImpo
           <p>拆解设置：{dismantleSummary(group.dismantle)}。</p>
           <p>录像店设置：{randomPlaySummary(group.random_play)}。</p>
           <p>情报板设置：{intelBoardSummary(group.intel_board)}。</p>
+          <SuibianTempleSummary settings={group.suibian_temple}/>
           <ol>{group.apps.map(app => <li key={app.app_id}>{apps.find(item => item.id === app.app_id)?.name ?? app.app_id} · {app.enabled ? '启用' : '禁用'}</li>)}</ol>
         </details>)}
       </div>)}

@@ -1,6 +1,7 @@
 mod basic_daily;
 pub mod challenge_move;
 mod coffee;
+pub mod suibian_temple;
 pub use basic_daily::{validate_basic_daily_app_bundle, validate_basic_daily_bundle};
 mod coffee_run;
 pub mod combat_contours;
@@ -137,6 +138,7 @@ pub struct NativeSession {
     map_bundle: Option<PathBuf>,
     coffee_bundle: Option<PathBuf>,
     daily_bundle: Option<PathBuf>,
+    suibian_temple_bundle: Option<PathBuf>,
     combat_bundle: Option<PathBuf>,
     detector_bundle: Option<PathBuf>,
     inference_device: InferenceDevice,
@@ -281,6 +283,7 @@ impl NativeSession {
             map_bundle: None,
             coffee_bundle: None,
             daily_bundle: None,
+            suibian_temple_bundle: None,
             combat_bundle: None,
             detector_bundle: None,
             inference_device: device,
@@ -576,3 +579,10 @@ impl Drop for NativeSession {
         self.tasker.clear_sinks();
     }
 }
+
+pub mod suibian_adventure;
+pub mod suibian_boo_box;
+pub mod suibian_craft;
+pub mod suibian_good_goods;
+pub mod suibian_sales;
+pub mod suibian_yum;

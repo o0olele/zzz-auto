@@ -478,6 +478,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             if parts.len() == 2 && parts[1] == "_group.yml" {
                 let group: LegacyGroup = parse(file)?;
                 groups.push(AppGroup {
+                    suibian_temple: Default::default(),
                     intel_board: Default::default(),
                     id: parts[0].into(),
                     name: None,
@@ -500,6 +501,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         }
         if !groups.iter().any(|g| g.id == "one_dragon") {
             let mut group = AppGroup {
+                suibian_temple: Default::default(),
                 intel_board: Default::default(),
                 id: "one_dragon".into(),
                 name: None,
@@ -574,6 +576,19 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             }
         }
         for group in &mut groups {
+            let grouped_temple = format!("{prefix}{}/suibian_temple.yml", group.id);
+            let old_temple = format!("{prefix}suibian_temple.yml");
+            if let Some(file) = files
+                .iter()
+                .find(|file| file.relative == grouped_temple)
+                .or_else(|| files.iter().find(|file| file.relative == old_temple))
+            {
+                group.suibian_temple =
+                    crate::suibian_temple::import(&parse::<serde_json::Value>(file)?)
+                        .map_err(anyhow::Error::msg)?;
+                converted.insert(file.relative.clone());
+                warnings.push(format!("账号 {} 的 {} 组随便观设置已转换；旧德丰大押设置仅保留，原应用已停用此功能，不执行兑换。完整随便观流程仍在开发。", item.idx, group.id));
+            }
             let grouped_intel = format!("{prefix}{}/intel_board.yml", group.id);
             let old_intel = format!("{prefix}intel_board.yml");
             if let Some(file) = files
@@ -726,7 +741,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v16\0");
+    hash.update(b"zzz-auto-config-import-v17\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());

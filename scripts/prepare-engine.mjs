@@ -26,6 +26,8 @@ cargo(['run', '--locked', '-p', 'od-tools', '--', 'coffee-run-bundle', '--refere
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'basic-daily-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+cargo(['run', '--locked', '-p', 'od-tools', '--', 'suibian-temple-bundle', '--reference',
+  process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'combat-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['build', '--locked', '-p', 'zzz-engine', ...(release ? ['--release'] : [])]);
@@ -46,6 +48,10 @@ if (release) {
     ['--root', root, 'basic-daily-bundle-check', '--bundle', path.join(root, 'resources/generated/basic-daily')], { cwd: root, stdio: 'inherit', shell: false });
   if (dailyCheck.error) throw dailyCheck.error;
   if (dailyCheck.status !== 0) process.exit(dailyCheck.status ?? 1);
+  const templeCheck = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),
+    ['--root', root, 'suibian-temple-bundle-check', '--bundle', path.join(root, 'resources/generated/suibian-temple')], { cwd: root, stdio: 'inherit', shell: false });
+  if (templeCheck.error) throw templeCheck.error;
+  if (templeCheck.status !== 0) process.exit(templeCheck.status ?? 1);
   const combatCheck = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),
     ['--root', root, 'combat-bundle-check', '--bundle', path.join(root, 'resources/generated/combat')], { cwd: root, stdio: 'inherit', shell: false });
   if (combatCheck.error) throw combatCheck.error;

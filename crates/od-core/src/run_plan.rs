@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const TRIAL_APP_IDS: [&str; 12] = [
+pub const TRIAL_APP_IDS: [&str; 13] = [
     "email",
     "coffee",
     "engagement_reward",
@@ -21,6 +21,7 @@ pub const TRIAL_APP_IDS: [&str; 12] = [
     "redemption_code",
     "random_play",
     "predefined_team_checker",
+    "intel_board",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -111,6 +112,12 @@ pub struct PlannedApp {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GroupPlan {
+    #[serde(default)]
+    #[ts(as = "Option<crate::suibian_temple::SuibianTempleConfig>", optional)]
+    pub suibian_temple_config: crate::suibian_temple::SuibianTempleConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub app_combat: Option<crate::app_combat::AppCombatPlan>,
     #[serde(default)]
     #[ts(as = "Option<crate::intel_board::IntelBoardConfig>", optional)]
     pub intel_board_config: crate::intel_board::IntelBoardConfig,
@@ -369,6 +376,8 @@ fn plan_account_at(
     let executable = blockers.is_empty() && has_pending;
     let all_done = blockers.is_empty() && !has_pending;
     Ok(GroupPlan {
+        suibian_temple_config: group.suibian_temple.clone(),
+        app_combat: None,
         intel_board_config: group.intel_board.clone(),
         intel_board_history: Default::default(),
         predefined_teams: instance.predefined_teams.clone(),

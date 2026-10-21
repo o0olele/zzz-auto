@@ -1,0 +1,18 @@
+[
+  {
+    "path": "src/zzz_od/application/suibian_temple/suibian_temple_app.py",
+    "sha256": "675fb6263047240852275be08d22de8db2ca4bfc8f10b3a50a398f47c342de0b"
+  },
+  {
+    "path": "src/zzz_od/application/suibian_temple/suibian_temple_config.py",
+    "sha256": "3ff204356181cf47f0b06e11ddd9e1ef15fd97645dc74348dc3c713006b7b180"
+  },
+  {
+    "path": "src/zzz_od/application/suibian_temple/operations/suibian_temple_auto_manage.py",
+    "sha256": "47fb1b390ead3db99ec56db59cb750741574019b2bfc549aec6e0c60579a8edb"
+  },
+  {
+    "path": "assets/game_data/screen_info/suibian_temple_entry.yml",
+    "sha256": "bcc61042f7792dc7319a4e829ac1bd522def00ec1e6b00e1e09684f4e48dbbac"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "path": "src/zzz_od/application/suibian_temple/operations/suibian_temple_craft.py",
+    "sha256": "8f0a0405426d9d66fffadf9183c281a802558a12d719ac2dc4a4124210b2deb1"
+  },
+  {
+    "path": "src/zzz_od/application/suibian_temple/operations/suibian_temple_craft_dispatch.py",
+    "sha256": "9b5651d9bba3f51880f81a61d91f78baba5eab0131f698e98511f1394e594214"
+  },
+  {
+    "path": "assets/game_data/screen_info/suibian_temple_craft.yml",
+    "sha256": "81c29730373b78768ce67b3a3ae5d3286177fd4abe6868d25ec455b76dd7ebfb"
+  }
+]

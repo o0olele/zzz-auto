@@ -56,8 +56,8 @@ pub const SCHEMA_SIX_APP_IDS: [&str; 10] = [
     "random_play",
     "predefined_team_checker",
 ];
-pub const APP_IDS: [&str; 10] = SCHEMA_SIX_APP_IDS;
-/// 资源包先提供情报板内部节点，运行注册仍由 APP_IDS 单独控制。
+pub const APP_IDS: [&str; 11] = RESOURCE_APP_IDS;
+/// schema 7 增加情报板，旧版本的文件与应用范围保持冻结。
 pub const RESOURCE_APP_IDS: [&str; 11] = [
     "engagement_reward",
     "city_fund",
@@ -104,6 +104,15 @@ impl DailyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct DailyProgress {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub intel_flow: Option<crate::intel_board_flow::IntelFlow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub app_combat: Option<crate::app_combat::AppCombatPlan>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub intel_battle: Option<crate::combat::CombatProgress>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub intel_board: Option<crate::intel_board::IntelLedger>,
@@ -153,6 +162,9 @@ impl DailyProgress {
             return Err("日常应用未注册");
         }
         Ok(Self {
+            intel_flow: None,
+            app_combat: None,
+            intel_battle: None,
             intel_board: None,
             team_check: if app_id == "predefined_team_checker" {
                 Some(crate::team_check::TeamCheckProgress::new(
@@ -201,6 +213,7 @@ impl DailyProgress {
             "redemption_code" => "Redeem",
             "random_play" => "Shop",
             "predefined_team_checker" => "Teams",
+            "intel_board" => "Intel",
             "ridu_weekly" => "Weekly",
             "trigrams_collection" => "Trigram",
             "hou_hou_bakery" => "Bakery",
@@ -249,12 +262,26 @@ impl DailyProgress {
             && self.stage == "Done"
     }
     pub fn timeout_ms(&self) -> u32 {
+        if self.app_id == "intel_board" {
+            return self
+                .app_combat
+                .as_ref()
+                .map_or(self.config.timeout_ms, |p| p.config.timeout_ms);
+        }
         self.team_check
             .as_ref()
             .map_or(self.config.timeout_ms, |scan| scan.config.check_timeout_ms)
     }
     pub fn navigation_completed(&self) -> bool {
         (self.stage == "Done" || (self.app_id == "predefined_team_checker" && self.stage == "Save"))
+            && (self.app_id != "intel_board"
+                || self
+                    .intel_flow
+                    .as_ref()
+                    .zip(self.intel_board.as_ref())
+                    .is_some_and(|(flow, ledger)| {
+                        flow.stage == "Done" && flow.validate(ledger).is_ok()
+                    }))
             && (self.app_id != "predefined_team_checker"
                 || self
                     .team_check

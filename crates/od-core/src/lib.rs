@@ -42,6 +42,9 @@ pub mod runtime_resources;
 pub mod screen_sample_library;
 pub mod screen_samples;
 pub mod shortcuts;
+pub mod suibian_temple;
+pub mod suibian_temple_auto;
+pub mod suibian_temple_flow;
 pub mod team_check;
 pub mod team_selection;
 
@@ -444,6 +447,21 @@ impl RunSlot {
         config.validate()?;
         plan.coffee_config.validate()?;
         plan.daily_config.validate()?;
+        if plan
+            .items
+            .iter()
+            .any(|i| i.app_id == "intel_board" && i.decision == run_plan::PlanDecision::Run)
+        {
+            plan.app_combat
+                .as_ref()
+                .ok_or("情报板缺少冻结战斗脚本")?
+                .validate()?;
+            intel_board::IntelLedger::new(
+                plan.intel_board_config.clone(),
+                &plan.game_day,
+                plan.intel_board_history.totals.clone(),
+            )?;
+        }
         self.begin(if plan.context.app_ids == ["email"] {
             "email"
         } else {
@@ -478,6 +496,19 @@ impl RunSlot {
             }
             Some(app) if basic_daily::APP_IDS.contains(&app) => {
                 let mut progress = basic_daily::DailyProgress::new(app, plan.daily_config)?;
+                if app == "intel_board" {
+                    let combat = plan.app_combat.clone().ok_or("情报板缺少冻结战斗脚本")?;
+                    combat.validate()?;
+                    let ledger = intel_board::IntelLedger::new(
+                        plan.intel_board_config.clone(),
+                        &plan.game_day,
+                        plan.intel_board_history.totals.clone(),
+                    )?;
+                    progress.intel_flow = Some(intel_board_flow::IntelFlow::new(&ledger)?);
+                    progress.stage = progress.intel_flow.as_ref().unwrap().stage.clone();
+                    progress.intel_board = Some(ledger);
+                    progress.app_combat = Some(combat);
+                }
                 if let Some(state) = progress.team_check.as_mut() {
                     *state = team_check::TeamCheckProgress::new(plan.predefined_teams.clone())?;
                 }
@@ -820,6 +851,30 @@ impl RunSlot {
             (Some(before), Some(after)) => before.check_update(after)?,
             (None, None) => {}
             _ => return Err("情报板检查点不能添加或删除"),
+        }
+        if previous.app_combat != progress.app_combat {
+            return Err("应用内冻结战斗设置与脚本修订不能修改或删除");
+        }
+        if progress.app_id == "intel_board" {
+            let ledger = progress.intel_board.as_ref().ok_or("情报板缺少周记录")?;
+            let flow = progress.intel_flow.as_ref().ok_or("情报板缺少流程检查点")?;
+            flow.validate(ledger)?;
+            if progress.stage != flow.stage {
+                return Err("情报板流程阶段不一致");
+            }
+            let combat = progress.app_combat.as_ref().ok_or("情报板缺少战斗设置")?;
+            combat.validate()?;
+            if let Some(battle) = &progress.intel_battle
+                && (battle.config != combat.config
+                    || battle.script_revision != combat.script_revision)
+            {
+                return Err("子战斗不是冻结的情报板战斗配置");
+            }
+        } else if progress.intel_flow.is_some()
+            || progress.app_combat.is_some()
+            || progress.intel_battle.is_some()
+        {
+            return Err("其他应用不能添加情报板执行检查点");
         }
         if let Some(redemption) = &progress.redemption {
             redemption.validate()?;
@@ -1235,3 +1290,16 @@ pub struct Screenshot {
     #[ts(type = "number")]
     pub elapsed_ms: u64,
 }
+pub mod suibian_adventure;
+pub mod suibian_boo_box;
+pub mod suibian_boo_box_pipeline;
+pub mod suibian_craft;
+pub mod suibian_craft_pipeline;
+pub mod suibian_good_goods;
+pub mod suibian_good_goods_pipeline;
+pub mod suibian_sales;
+pub mod suibian_sales_pipeline;
+pub mod suibian_yum;
+pub mod suibian_yum_pipeline;
+
+pub mod suibian_adventure_pipeline;

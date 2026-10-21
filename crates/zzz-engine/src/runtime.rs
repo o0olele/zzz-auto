@@ -90,6 +90,7 @@ impl AccountPlanSelection {
 }
 
 struct AccountRunRequest {
+    combat_revision: Option<String>,
     instance_id: u32,
     group_id: String,
     revision: u32,
@@ -473,7 +474,17 @@ impl Engine {
         native
     }
 
-    pub async fn execute(&self, command: Command) -> Result<Payload, ApiError> {
+    // 命令含完整配置 / 计划，各业务分支的 future 会随迁移扩大。
+    // 在公共边界装箱，避免 CLI、管道或桌面调用方把它嵌进自己的栈帧。
+    pub fn execute(
+        &self,
+        command: Command,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Payload, ApiError>> + Send + '_>>
+    {
+        Box::pin(self.execute_inner(command))
+    }
+
+    async fn execute_inner(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
             Command::LaunchGame {
                 instance_id,
@@ -594,6 +605,7 @@ impl Engine {
                     .map_err(|error| ApiError::new("history_error", error.to_string()))
             }
             Command::StartGroupTrial {
+                combat_revision,
                 instance_id,
                 group_id,
                 revision,
@@ -604,6 +616,7 @@ impl Engine {
                 confirm_account,
             } => {
                 self.start_account_run(AccountRunRequest {
+                    combat_revision,
                     instance_id,
                     group_id,
                     revision,
@@ -618,6 +631,7 @@ impl Engine {
                 .await
             }
             Command::StartStandaloneTrial {
+                combat_revision,
                 instance_id,
                 group_id,
                 app_id,
@@ -627,6 +641,7 @@ impl Engine {
                 confirm_account,
             } => {
                 self.start_account_run(AccountRunRequest {
+                    combat_revision,
                     instance_id,
                     group_id,
                     revision,
@@ -925,6 +940,7 @@ impl Engine {
 
     async fn start_account_run(&self, request: AccountRunRequest) -> Result<Payload, ApiError> {
         let AccountRunRequest {
+            combat_revision,
             instance_id,
             group_id,
             revision,
@@ -968,6 +984,12 @@ impl Engine {
                 "预览的游戏日已过期，请重新预览并确认",
             ));
         }
+        if plan.app_combat.as_ref().map(|p| &p.script_revision) != combat_revision.as_ref() {
+            return Err(ApiError::new(
+                "combat_scripts_changed",
+                "情报板战斗脚本或资源与预览不符，请重新预览并确认",
+            ));
+        }
         self.start_mail(None, true, Some(PreparedGroup { plan, previous_run }))
     }
 
@@ -991,6 +1013,8 @@ impl Engine {
             return Ok(plan);
         }
         let history = self.history.clone();
+        let combat_root = self.combat_root.clone();
+        let combat_data = self.combat_data.clone();
         tokio::task::spawn_blocking(move || {
             let completed = history
                 .daily_completions(instance_id, plan.game_day, now)
@@ -1018,6 +1042,38 @@ impl Engine {
                     .map_err(|error| ApiError::new("history_error", error.to_string()))?;
                 od_core::intel_board::apply_history(&mut plan, results)
                     .map_err(|error| ApiError::new("history_error", error))?;
+                if plan.items.iter().any(|i| {
+                    i.app_id == "intel_board" && i.decision == od_core::run_plan::PlanDecision::Run
+                }) {
+                    let instance = config
+                        .instances
+                        .iter()
+                        .find(|i| i.id == instance_id)
+                        .ok_or_else(|| ApiError::new("invalid_account", "情报板账号缺失"))?;
+                    let settings =
+                        od_core::app_combat::intel_settings(instance, &plan.intel_board_config)
+                            .map_err(|e| ApiError::new("invalid_combat", e))?;
+                    let bundle = maa_adapter::combat_vision::CombatBundle::load(&combat_root)
+                        .map_err(native_error)?;
+                    let revision = crate::combat::script_catalog(&bundle, &combat_data)
+                        .map_err(native_error)?
+                        .revision;
+                    let frozen = od_core::app_combat::AppCombatPlan {
+                        config: settings,
+                        script_revision: revision,
+                    };
+                    crate::intel_board::PreparedIntel::from_bundle(
+                        frozen.clone(),
+                        bundle,
+                        &combat_data,
+                    )
+                    .map_err(native_error)?;
+                    plan.warnings.push(format!(
+                        "情报板将执行代行战斗，采用脚本 {}；当前无委托不代表周目标完成。",
+                        frozen.config.script
+                    ));
+                    plan.app_combat = Some(frozen);
+                }
             }
             Ok(plan)
         })

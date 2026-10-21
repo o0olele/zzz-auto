@@ -73,6 +73,7 @@ pub struct CombatRun {
     random: u64,
     parented: bool,
     end_tracker: BattleEndTracker,
+    parent_deadline: Option<Instant>,
 }
 impl CombatRun {
     pub fn new(id: Uuid, config: CombatConfig, script: Script) -> Result<Self> {
@@ -90,6 +91,7 @@ impl CombatRun {
             random,
             parented: false,
             end_tracker: BattleEndTracker::default(),
+            parent_deadline: None,
         })
     }
     /// 应用内战斗与外层流程共用请求句柄，结束当前战斗不能结束整个应用。
@@ -191,6 +193,38 @@ impl CombatRun {
         }
         publish(self.progress.clone());
         Ok(())
+    }
+    pub fn execute_segment_with_budget(
+        &mut self,
+        native: &mut NativeSession,
+        recognizer: &mut CombatRecognizer,
+        allow_audio: bool,
+        budget: Duration,
+        publish: impl FnMut(CombatProgress) -> Result<()>,
+    ) -> Result<CombatSegmentEnd> {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let deadline = Instant::now() + budget;
+        self.parent_deadline = Some(deadline);
+        let finished = AtomicBool::new(false);
+        let raw = recognizer.cancellation_handle();
+        let control = self.control.clone();
+        let result = std::thread::scope(|scope| {
+            scope.spawn(|| {
+                while !finished.load(Ordering::Acquire) {
+                    if (control.requested().is_some() || Instant::now() >= deadline)
+                        && let Some(raw) = raw.lock().expect("应用内战斗推理取消锁失效").clone()
+                    {
+                        let _ = raw.cancel();
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            });
+            let result = self.execute_segment(native, recognizer, allow_audio, publish);
+            finished.store(true, Ordering::Release);
+            result
+        });
+        self.parent_deadline = None;
+        result
     }
     pub fn execute_segment(
         &mut self,
@@ -377,6 +411,11 @@ impl CombatRun {
             if self.control.requested().is_some() {
                 return Ok(None);
             }
+            ensure!(
+                self.parent_deadline
+                    .is_none_or(|deadline| Instant::now() < deadline),
+                "应用总运行预算已耗尽"
+            );
             let mut now = self.elapsed + started.elapsed().as_secs_f64();
             ensure!(
                 now * 1000.0 < self.progress.config.timeout_ms as f64,
@@ -413,6 +452,11 @@ impl CombatRun {
                 if self.control.requested().is_some() {
                     return Ok(None);
                 }
+                ensure!(
+                    self.parent_deadline
+                        .is_none_or(|deadline| Instant::now() < deadline),
+                    "应用总运行预算已耗尽"
+                );
                 let has_chain = fresh.states.iter().any(|state| {
                     !state.clear
                         && (state.name == "连携技-准备"
@@ -437,6 +481,11 @@ impl CombatRun {
                     return Ok(None);
                 }
                 if check_end {
+                    ensure!(
+                        self.parent_deadline
+                            .is_none_or(|deadline| Instant::now() < deadline),
+                        "应用总运行预算已耗尽"
+                    );
                     ensure!(
                         (self.elapsed + started.elapsed().as_secs_f64()) * 1000.0
                             < f64::from(self.progress.config.timeout_ms),

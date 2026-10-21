@@ -1,0 +1,10 @@
+[
+  {
+    "path": "src/zzz_od/application/suibian_temple/operations/suibian_temple_yum_cha_sin.py",
+    "sha256": "146ab1e6629619ffa62a23d2cf4d4588cb4fe30e735fbd2be4a5020f15053f25"
+  },
+  {
+    "path": "assets/game_data/screen_info/suibian_temple_yumchaxian.yml",
+    "sha256": "de541c9ffa08e9cf7a77bfdcfdf7a3fde417d3afa2fe9f95840402b724b3efcc"
+  }
+]

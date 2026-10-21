@@ -30,6 +30,15 @@ enum Tool {
         #[arg(long, default_value = "resources/generated/basic-daily")]
         output: PathBuf,
     },
+    /// 生成随便观托管、游历、制造、饮茶仙、售卖、好物铺与邦巢子流程包，完整应用仍在开发。
+    SuibianTempleBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/suibian-temple")]
+        output: PathBuf,
+    },
     /// 生成活跃度奖励离线只读识别包，不包含游戏动作。
     EngagementRewardBundle {
         #[arg(long)]
@@ -138,6 +147,15 @@ fn main() -> Result<()> {
         } => {
             od_tools::engagement_reward::build_bundle(&reference, &models, &output)?;
             println!("已生成活跃度奖励只读资源：{}", output.display());
+            Ok(())
+        }
+        Tool::SuibianTempleBundle {
+            reference,
+            models,
+            output,
+        } => {
+            let manifest = od_tools::suibian_temple::build_bundle(&reference, &models, &output)?;
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
             Ok(())
         }
         Tool::BasicDailyBundle {
@@ -266,6 +284,12 @@ fn main() -> Result<()> {
                 od_core::run_plan::PlanDecision::decl(),
                 od_core::run_plan::AppAvailability::decl(),
                 od_core::run_plan::PlannedApp::decl(),
+                od_core::suibian_temple::SuibianTempleConfig::decl(),
+                od_core::suibian_temple::AdventureDuration::decl(),
+                od_core::suibian_temple::BangbooPrice::decl(),
+                od_core::suibian_temple::LegacyPawnshopConfig::decl(),
+                od_core::suibian_temple::PawnshopOmnicoinGoods::decl(),
+                od_core::suibian_temple::PawnshopCrestGoods::decl(),
                 od_core::intel_board::IntelBoardConfig::decl(),
                 od_core::intel_board::IntelHistory::decl(),
                 od_core::intel_board::IntelWeek::decl(),
@@ -274,6 +298,15 @@ fn main() -> Result<()> {
                 od_core::intel_board::SettledCommission::decl(),
                 od_core::intel_board::PendingCommission::decl(),
                 od_core::intel_board::IntelLedger::decl(),
+                od_core::app_combat::AppCombatPlan::decl(),
+                od_core::intel_board_flow::IntelFlow::decl(),
+                od_core::intel_board_flow::IntelOutcome::decl(),
+                od_core::team_selection::TeamSelection::decl(),
+                od_core::team_selection::SelectionPhase::decl(),
+                od_core::team_selection::SelectionAction::decl(),
+                od_core::challenge_move::ChallengeMove::decl(),
+                od_core::challenge_move::MoveStage::decl(),
+                od_core::challenge_move::MoveAction::decl(),
                 od_core::battle_result::NormalBattleResult::decl(),
                 od_core::run_plan::GroupPlan::decl(),
                 od_core::run_history::HistoryItem::decl(),
@@ -432,7 +465,7 @@ fn main() -> Result<()> {
             std::fs::write(
                 output,
                 format!(
-                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const dailySettingsFields = {} as const;\nexport const dailyDefaultConfig = {} as const;\nexport const afterDoneOptions = {} as const;\nexport const gameLaunchDefaultConfig = {} as const;\nexport const runNotificationOptions = {} as const;\nexport const screenSampleKindOptions = {} as const;\nexport const redemptionSampleCodes = {} as const;\n",
+                    "// 由 od-tools types 生成；请修改 Rust 协议。\n{}\nexport const generalSettingsFields = {} as const;\nexport const gameRegionOptions = {} as const;\nexport const runPolicyOptions = {} as const;\nexport const shortcutKeys = {} as const;\nexport const coffeeSettingsFields = {} as const;\nexport const coffeeDefaultConfig = {} as const;\nexport const dailySettingsFields = {} as const;\nexport const dailyDefaultConfig = {} as const;\nexport const suibianTempleDefaults = {} as SuibianTempleConfig;\nexport const suibianDurationOptions = {} as const;\nexport const suibianMissionOptions = {} as const;\nexport const suibianPriceOptions = {} as const;\nexport const afterDoneOptions = {} as const;\nexport const gameLaunchDefaultConfig = {} as const;\nexport const runNotificationOptions = {} as const;\nexport const screenSampleKindOptions = {} as const;\nexport const redemptionSampleCodes = {} as const;\n",
                     declarations
                         .into_iter()
                         .map(|decl| format!("export {decl}"))
@@ -450,6 +483,12 @@ fn main() -> Result<()> {
                     serde_json::to_string_pretty(&od_core::coffee_run::CoffeeConfig::default())?,
                     serde_json::to_string_pretty(&od_core::basic_daily::DailyConfig::fields())?,
                     serde_json::to_string_pretty(&od_core::basic_daily::DailyConfig::default())?,
+                    serde_json::to_string_pretty(
+                        &od_core::suibian_temple::SuibianTempleConfig::default()
+                    )?,
+                    od_core::suibian_temple::SuibianTempleConfig::duration_options(),
+                    od_core::suibian_temple::SuibianTempleConfig::mission_options(),
+                    od_core::suibian_temple::SuibianTempleConfig::price_options(),
                     serde_json::to_string_pretty(&od_core::after_done::AfterDoneAction::options())?,
                     serde_json::to_string_pretty(
                         &od_core::game_launch::GameLaunchSettings::default()

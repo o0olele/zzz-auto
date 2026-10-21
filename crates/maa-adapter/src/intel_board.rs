@@ -25,6 +25,7 @@ pub enum IntelBoardRead {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntelPickEnd {
+    /// 已投递打开动作或读到对应后态，不代表已经接取或完成委托。
     Opened,
     Changed,
     Retry,
@@ -33,6 +34,50 @@ pub enum IntelPickEnd {
 }
 
 impl NativeSession {
+    pub fn intel_battle_ready(
+        &self,
+        recognizer: &crate::combat_vision::CombatRecognizer,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<bool> {
+        let Some(frame) = self.combat_frame(cancel)? else {
+            return Ok(false);
+        };
+        let hud =
+            od_core::challenge_move::ChallengeMove::new(true, 3).map_err(anyhow::Error::msg)?;
+        Ok(self
+            .inspect_challenge_move(recognizer, &frame, &hud, cancel, timeout, 1000)?
+            .is_some_and(|o| o.fresh && (o.attack || o.interact || o.boss)))
+    }
+    pub fn read_intel_board(
+        &self,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<IntelBoardRead> {
+        let started = Instant::now();
+        if cancel.load(Ordering::Acquire) {
+            return Ok(IntelBoardRead::Cancelled);
+        }
+        ensure!(!timeout.is_zero(), "情报板读取超时");
+        let Some(frame) = self.navigation_frame(cancel)? else {
+            return Ok(IntelBoardRead::Cancelled);
+        };
+        let read = self.inspect_intel_board(
+            &frame.image,
+            "intel-board/star.png",
+            cancel,
+            timeout.saturating_sub(started.elapsed()),
+        )?;
+        if cancel.load(Ordering::Acquire) {
+            return Ok(IntelBoardRead::Cancelled);
+        }
+        ensure!(started.elapsed() < timeout, "情报板读取超时");
+        Ok(if frame.age() > Duration::from_millis(1000) {
+            IntelBoardRead::Unknown
+        } else {
+            read
+        })
+    }
     /// 在本次委托检查点保存后调用；重新读板，绝不点击跨步骤保存的位置。
     pub fn choose_intel_commission(
         &mut self,
@@ -153,13 +198,9 @@ impl NativeSession {
                 std::thread::sleep(Duration::from_millis(5));
             }
             self.combat_input(action, false, &AtomicBool::new(false))?;
-            Ok(if cancel.load(Ordering::Acquire) {
-                IntelPickEnd::Cancelled
-            } else if started.elapsed() >= timeout {
-                IntelPickEnd::TimedOut
-            } else {
-                IntelPickEnd::Opened
-            })
+            // 已实际投递点击，取消或超时不能撤回这一事实。外层先推进到等待详情，
+            // 再确认暂停；即使服务器仍显示原列表，继续时也不能再次点击帖子。
+            Ok(IntelPickEnd::Opened)
         })();
         let released = self.release_inputs();
         result.and_then(|end| released.map(|_| end))

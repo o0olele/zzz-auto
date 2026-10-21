@@ -1,9 +1,16 @@
 use super::*;
 
 enum GroupAppWork {
+    Intel(Box<IntelWork>),
     Mail(MailWork),
     Coffee(CoffeeWork),
     Daily(DailyWork),
+}
+struct IntelWork {
+    run: crate::intel_board::IntelRun,
+    window: WindowInfo,
+    capture: CaptureMethod,
+    fixture: bool,
 }
 
 struct DailyWork {
@@ -24,6 +31,7 @@ pub(super) struct GroupWork {
     fixture: bool,
     checked: bool,
     current: Option<GroupAppWork>,
+    intel: Option<crate::intel_board::PreparedIntel>,
 }
 
 impl GroupWork {
@@ -41,6 +49,32 @@ impl GroupWork {
             .and_then(|g| g.current_index.map(|i| g.steps[i].app_id.as_str()))
             .ok_or_else(|| anyhow::anyhow!("缺少当前分项"))?;
         let (work, control) = match app {
+            "intel_board" => {
+                let progress = record
+                    .daily
+                    .iter()
+                    .find(|p| p.app_id == app)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("缺少情报板检查点"))?;
+                let run = crate::intel_board::IntelRun::new(
+                    record.id,
+                    progress,
+                    self.intel
+                        .take()
+                        .ok_or_else(|| anyhow::anyhow!("缺少预检战斗脚本"))?,
+                    self.plan.predefined_teams.clone(),
+                )?;
+                let control = run.control();
+                (
+                    GroupAppWork::Intel(Box::new(IntelWork {
+                        run,
+                        window: self.window.clone(),
+                        capture: self.capture,
+                        fixture: self.fixture,
+                    })),
+                    control,
+                )
+            }
             "email" => {
                 let run = Box::new(MailRun::with_id(record.id, self.plan.mail_config)?);
                 let control = run.control();
@@ -107,6 +141,18 @@ impl GroupWork {
 
     pub(super) fn control(&mut self, resume: bool) {
         match &mut self.current {
+            Some(GroupAppWork::Intel(work)) => {
+                if resume
+                    && work.run.interrupt_requested() != Some(od_core::pipeline::Interrupt::Stop)
+                {
+                    if let Err(error) = work.run.resume() {
+                        work.run.progress.state = MailState::Failed;
+                        work.run.message = error.to_string();
+                    }
+                } else {
+                    work.run.control().stop();
+                }
+            }
             Some(GroupAppWork::Mail(work)) => {
                 if resume
                     && work.run.interrupt_requested() != Some(od_core::pipeline::Interrupt::Stop)
@@ -155,6 +201,22 @@ impl Engine {
         plan: GroupPlan,
         window: WindowInfo,
     ) -> Result<Payload, ApiError> {
+        let intel = if plan.items.iter().any(|i| {
+            i.app_id == "intel_board" && i.decision == od_core::run_plan::PlanDecision::Run
+        }) {
+            Some(
+                crate::intel_board::PreparedIntel::load(
+                    plan.app_combat
+                        .clone()
+                        .ok_or_else(|| ApiError::new("invalid_combat", "缺少情报板冻结战斗设置"))?,
+                    &self.combat_root,
+                    &self.combat_data,
+                )
+                .map_err(native_error)?,
+            )
+        } else {
+            None
+        };
         let record = state
             .slot
             .begin_group_plan(plan.mail_config, &plan)
@@ -167,6 +229,7 @@ impl Engine {
             fixture: self.fixture,
             checked: false,
             current: None,
+            intel,
         });
         let control = work.prepare(&record).map_err(native_error)?;
         if let Err(error) = self.history.save(&record) {
@@ -285,6 +348,9 @@ pub(super) fn run_group_work(
     loop {
         if let Some(current) = work.current.take() {
             work.current = match current {
+                GroupAppWork::Intel(app) => {
+                    run_intel_work(app, paths, shared, native).map(GroupAppWork::Intel)
+                }
                 GroupAppWork::Mail(app) => {
                     run_mail_work(app, paths, shared, native).map(GroupAppWork::Mail)
                 }
@@ -350,6 +416,92 @@ pub(super) fn run_group_work(
                 return None;
             }
         }
+    }
+}
+
+fn run_intel_work(
+    mut work: Box<IntelWork>,
+    paths: &EnginePaths,
+    shared: &Arc<Mutex<State>>,
+    native: &mut Option<NativeSession>,
+) -> Option<Box<IntelWork>> {
+    let id = work.run.id;
+    let result = if work.run.progress.state.is_terminal() {
+        Ok(())
+    } else {
+        work.run.execute(
+            native,
+            crate::intel_board::IntelSessionOptions {
+                window: &work.window,
+                capture: work.capture,
+                resources: &paths.resources,
+                fixture: work.fixture,
+            },
+            |progress| {
+                let mut state = shared.lock().expect("运行状态锁失效");
+                let record = state
+                    .slot
+                    .update_daily(id, progress, "情报板执行中".into())
+                    .map_err(anyhow::Error::msg)?;
+                save_run(paths, &mut state, &record);
+                anyhow::ensure!(
+                    state.record_error.is_none(),
+                    "情报板检查点保存失败，未投递后续输入"
+                );
+                Ok(())
+            },
+        )
+    };
+    if let Err(error) = result {
+        work.run.message = format!("情报板失败：{error:#}");
+    }
+    let mut state = shared.lock().expect("运行状态锁失效");
+    match state
+        .slot
+        .update_daily(id, work.run.progress.clone(), work.run.message.clone())
+    {
+        Ok(record) => {
+            save_run(paths, &mut state, &record);
+            state.event(
+                Some(id),
+                if record.state == RunState::Failed {
+                    "error"
+                } else {
+                    "info"
+                },
+                record.message,
+            );
+        }
+        Err(error) => {
+            state.event(
+                Some(id),
+                "error",
+                format!("情报板结果未能写入运行槽：{error}"),
+            );
+            // 发布失败不能让外层误认为分项已结束并推进下一个应用。
+            if let Some(mut previous) = state
+                .slot
+                .current()
+                .and_then(|r| r.daily.iter().find(|p| p.app_id == "intel_board"))
+                .cloned()
+            {
+                previous.state = MailState::Failed;
+                previous.inputs_released = work.run.progress.inputs_released;
+                if let Ok(record) =
+                    state
+                        .slot
+                        .update_daily(id, previous, format!("情报板检查点无效：{error}"))
+                {
+                    save_run(paths, &mut state, &record);
+                }
+            }
+        }
+    }
+    if work.run.progress.state == MailState::Paused {
+        Some(work)
+    } else {
+        state.pipeline_control = None;
+        None
     }
 }
 
@@ -447,18 +599,44 @@ fn run_daily_work(
                 work.run.acknowledge_idle();
                 return Ok(());
             }
-            let active = state.slot.current().ok_or_else(|| anyhow::anyhow!("编队运行已不存在"))?;
-            anyhow::ensure!(active.id == id && active.state == RunState::Running,
-                "编队运行身份或状态已变化，未回写配置");
-            let context = active.context.clone().ok_or_else(|| anyhow::anyhow!("编队运行缺少账号"))?;
+            let active = state
+                .slot
+                .current()
+                .ok_or_else(|| anyhow::anyhow!("编队运行已不存在"))?;
+            anyhow::ensure!(
+                active.id == id && active.state == RunState::Running,
+                "编队运行身份或状态已变化，未回写配置"
+            );
+            let context = active
+                .context
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("编队运行缺少账号"))?;
             // 先保存完成扫描、返回及释放输入的检查点，失败时不能改写账号。
-            let record = state.slot.update_daily(id, work.run.progress.clone(), "编队扫描已完成，准备保存可靠结果".into())
+            let record = state
+                .slot
+                .update_daily(
+                    id,
+                    work.run.progress.clone(),
+                    "编队扫描已完成，准备保存可靠结果".into(),
+                )
                 .map_err(anyhow::Error::msg)?;
             save_run(paths, &mut state, &record);
-            anyhow::ensure!(state.record_error.is_none(), "编队结果检查点未保存，未回写配置");
-            let scan = work.run.progress.team_check.as_ref().ok_or_else(|| anyhow::anyhow!("缺少编队扫描结果"))?;
+            anyhow::ensure!(
+                state.record_error.is_none(),
+                "编队结果检查点未保存，未回写配置"
+            );
+            let scan = work
+                .run
+                .progress
+                .team_check
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("缺少编队扫描结果"))?;
             let revision = od_core::team_check::save_members(
-                &ConfigStore::new(&paths.data)?, context.instance_id, context.config_revision, scan)?;
+                &ConfigStore::new(&paths.data)?,
+                context.instance_id,
+                context.config_revision,
+                scan,
+            )?;
             work.run.finish_team_save(revision)?;
         }
         Ok(())

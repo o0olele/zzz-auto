@@ -1,5 +1,42 @@
 //! 应用内界面与战斗共用的输入恢复清单；不开放额外输入动作。
 use crate::{InputMode, InputProbeAction, InputProbeConfig, combat::CombatConfig};
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct AppCombatPlan {
+    pub config: CombatConfig,
+    pub script_revision: String,
+}
+impl AppCombatPlan {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        self.config.validate()?;
+        if self.config.dodge_only
+            || self.config.start_delay_ms != 0
+            || self.script_revision.len() != 64
+            || !self
+                .script_revision
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            return Err("应用内战斗须冻结完整战斗脚本、有效修订及零启动延时");
+        }
+        Ok(())
+    }
+}
+
+pub fn intel_settings(
+    instance: &crate::config::AccountInstance,
+    settings: &crate::intel_board::IntelBoardConfig,
+) -> Result<CombatConfig, &'static str> {
+    let mut combat = instance.combat.clone();
+    combat.script = settings.script(&instance.predefined_teams)?.into();
+    combat.dodge_only = false;
+    combat.start_delay_ms = 0;
+    combat.validate()?;
+    Ok(combat)
+}
 
 /// UI Pipeline、选队和战前移动固定使用前台键鼠，覆盖应用组的全部输入。
 pub fn interface_recovery_inputs() -> Vec<InputProbeConfig> {

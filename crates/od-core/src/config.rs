@@ -75,6 +75,9 @@ pub struct GroupApp {
 #[serde(deny_unknown_fields)]
 pub struct AppGroup {
     #[serde(default)]
+    #[ts(as = "Option<crate::suibian_temple::SuibianTempleConfig>", optional)]
+    pub suibian_temple: crate::suibian_temple::SuibianTempleConfig,
+    #[serde(default)]
     #[ts(as = "Option<crate::intel_board::IntelBoardConfig>", optional)]
     pub intel_board: crate::intel_board::IntelBoardConfig,
     #[serde(default)]
@@ -160,6 +163,11 @@ pub struct AccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConfigChange {
+    SaveSuibianTemple {
+        instance_id: u32,
+        group_id: String,
+        settings: crate::suibian_temple::SuibianTempleConfig,
+    },
     SaveIntelBoard {
         instance_id: u32,
         group_id: String,
@@ -294,6 +302,7 @@ pub fn default_group() -> AppGroup {
     let mut apps = crate::applications().expect("内置应用登记无效");
     apps.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
     AppGroup {
+        suibian_temple: Default::default(),
         intel_board: Default::default(),
         id: "one_dragon".into(),
         name: None,
@@ -381,6 +390,7 @@ impl AccountConfig {
             let mut groups = HashSet::new();
             for group in &instance.groups {
                 group.intel_board.validate().map_err(invalid)?;
+                group.suibian_temple.validate().map_err(invalid)?;
                 group.coffee.validate().map_err(invalid)?;
                 group.daily.validate().map_err(invalid)?;
                 group.random_play.validate().map_err(invalid)?;
@@ -409,6 +419,19 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::SaveSuibianTemple {
+                instance_id,
+                group_id,
+                settings,
+            } => {
+                settings.validate().map_err(invalid)?;
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .suibian_temple = settings;
+            }
             ConfigChange::SaveIntelBoard {
                 instance_id,
                 group_id,

@@ -1,3 +1,4 @@
+import { IntelBoardStatus } from './IntelBoardSettings';
 import { RedemptionStatus } from './RedemptionSettings';
 import { RandomPlayStatus } from './RandomPlaySettings';
 import { TeamCheckStatus } from './TeamSettings';
@@ -123,6 +124,7 @@ export function RunHistory({ connected }: { connected: boolean }) {
         {item.record.daily?.filter(app => app.redemption).map(app => <RedemptionStatus key={app.app_id} progress={app.redemption!}/>)}
         {item.record.daily?.filter(app => app.random_play).map(app => <RandomPlayStatus key={app.app_id} progress={app.random_play!}/>)}
         {item.record.daily?.filter(app => app.team_check).map(app => <TeamCheckStatus key={app.app_id} progress={app.team_check!}/>)}
+        {item.record.daily?.filter(app => app.intel_board).map(app => <IntelBoardStatus key={app.app_id} progress={app}/>)}
         {item.record.group && <ol aria-label="历史分项结果">{item.record.group.steps.map(step => <li key={step.app_id}>{appName(step.app_id)} · {stepNames[step.state]} · {step.inputs_released ? '分项输入已释放' : '分项输入待释放'}</li>)}</ol>}
         {!item.record.group && item.record.mail && <p>邮件 · {item.record.mail.inputs_released ? '输入已释放' : '等待输入收尾'}</p>}
         {item.record.combat && <p>{item.record.combat.config.dodge_only ? '闪避助手' : item.record.combat.config.script} · 动作 {item.record.combat.actions} 次 · 抢占 {item.record.combat.preemptions} 次 · {item.record.combat.inputs_released ? '输入已释放' : '等待输入收尾'}</p>}

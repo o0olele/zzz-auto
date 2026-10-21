@@ -8,7 +8,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 // v34 接通 Rust 战斗；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 41;
+pub const PROTOCOL_VERSION: u32 = 43;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -82,6 +82,9 @@ pub enum Command {
         app_id: String,
     },
     StartStandaloneTrial {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        combat_revision: Option<String>,
         instance_id: u32,
         group_id: String,
         app_id: String,
@@ -103,6 +106,9 @@ pub enum Command {
         rerun_completed: bool,
     },
     StartGroupTrial {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        combat_revision: Option<String>,
         instance_id: u32,
         group_id: String,
         revision: u32,

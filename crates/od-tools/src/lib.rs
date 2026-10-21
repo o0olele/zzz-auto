@@ -1,8 +1,8 @@
 pub mod baseline;
 pub mod coffee;
 pub mod coffee_run;
-pub mod combat_source;
 pub mod combat;
+pub mod combat_source;
 pub mod config_import;
 pub mod engagement_reward;
 pub mod flash_model;
@@ -29,3 +29,5 @@ pub fn sha256(path: &Path) -> Result<String> {
     Ok(hex::encode(Sha256::digest(std::fs::read(path)?)))
 }
 pub mod basic_daily;
+
+pub mod suibian_temple;

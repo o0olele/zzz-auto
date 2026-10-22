@@ -4,6 +4,7 @@ pub mod audio_dodge;
 pub mod basic_daily;
 pub mod battle_result;
 pub mod challenge_move;
+pub mod charge_plan;
 pub mod coffee;
 pub mod coffee_approach;
 pub mod coffee_run;

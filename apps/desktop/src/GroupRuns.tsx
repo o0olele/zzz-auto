@@ -1,4 +1,5 @@
 import { SuibianTempleSummary } from './SuibianTempleSettings';
+import { ChargePlanSummary } from './ChargePlanSettings';
 import { RedemptionResults, RedemptionStatus } from './RedemptionSettings';
 import { IntelBoardPlan, IntelBoardStatus } from './IntelBoardSettings';
 import { dismantleSummary } from './DismantleSettings';
@@ -105,6 +106,7 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
         {plan.context.rerun_completed && <p>仅本次：重新运行已完成应用，长期运行策略保留。</p>}
         <p>启动 / 继续延时 {plan.mail_config.start_delay_ms} ms · 邮件超时 {plan.mail_config.timeout_ms} ms</p>
         {plan.items.some(item => item.app_id === 'coffee' && item.enabled) && <p>咖啡：{coffeeSummary(plan.coffee_config)} · 澄辉坪 → 汀曼咖啡</p>}
+        {plan.items.some(item => item.app_id === 'charge_plan' && item.enabled) && <ChargePlanSummary settings={plan.charge_plan_config}/>}
         {plan.items.some(item => item.app_id === 'intel_board' && item.enabled) && <IntelBoardPlan plan={plan}/>}
         {plan.items.some(item => item.app_id === 'suibian_temple' && item.enabled) && <><SuibianTempleSummary settings={plan.suibian_temple_config}/><p>澄辉坪 → 随便观 · 总活动时间包括全部经营子流程。已开启的购买将消耗玩法货币。</p></>}
         {plan.items.some(item => item.availability === 'daily_trial' && item.enabled) && <p>日常：{dailySummary(plan.daily_config)} · 刮刮卡：六分街 → 报刊亭；卦象：澄辉坪 → 阿朔；饼铺：布亚斯特城区 → 吼吼饼铺。三项共享每日领取次数。</p>}

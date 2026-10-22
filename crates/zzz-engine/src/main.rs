@@ -90,6 +90,8 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    /// 按保存计划和人工资源数估算下一项，不初始化 SDK 或写入配置。
+    ChargePlanPreview(ChargePlanPreviewArgs),
     /// 使用当前账号保存的战斗设置，Ctrl+C 请求停止与输入收尾。
     Combat {
         #[arg(long)]
@@ -272,36 +274,7 @@ enum Action {
         #[arg(long)]
         cancel_after_ms: Option<u64>,
     },
-    InputProbe {
-        #[arg(long)]
-        hwnd: String,
-        #[arg(long, value_enum, default_value = "key")]
-        action: ProbeAction,
-        #[arg(long, required_if_eq("action", "key"), conflicts_with_all = ["button", "side", "x", "y", "value"])]
-        key: Option<i32>,
-        #[arg(long, value_enum, required_if_eq("action", "mouse"), conflicts_with_all = ["side", "value"])]
-        button: Option<Button>,
-        #[arg(long, value_enum, required_if_eq_any = [("action", "stick"), ("action", "trigger")])]
-        side: Option<Side>,
-        #[arg(long, allow_hyphen_values = true, required_if_eq_any = [("action", "mouse"), ("action", "stick")])]
-        x: Option<i32>,
-        #[arg(long, allow_hyphen_values = true, required_if_eq_any = [("action", "mouse"), ("action", "stick")])]
-        y: Option<i32>,
-        #[arg(long, required_if_eq("action", "trigger"), conflicts_with_all = ["x", "y"])]
-        value: Option<i32>,
-        #[arg(long, default_value_t = 100)]
-        hold_ms: u64,
-        #[arg(long, default_value_t = 3000)]
-        start_delay_ms: u32,
-        #[arg(long)]
-        cancel_after_ms: Option<u64>,
-        #[arg(long, value_enum, default_value = "foreground")]
-        mode: Input,
-        #[arg(long, value_enum, default_value = "frame-pool")]
-        capture: Capture,
-        #[arg(long)]
-        allow_input: bool,
-    },
+    InputProbe(InputProbeArgs),
 }
 
 #[derive(Subcommand)]
@@ -459,6 +432,55 @@ fn print(value: impl serde::Serialize) -> Result<()> {
     Ok(())
 }
 
+// 单独派生参数较多的子命令，避免整个 Action 的 Clap 构建耗尽 Windows 默认栈。
+#[derive(clap::Args)]
+struct InputProbeArgs {
+    #[arg(long)]
+    hwnd: String,
+    #[arg(long, value_enum, default_value = "key")]
+    action: ProbeAction,
+    #[arg(long, required_if_eq("action", "key"), conflicts_with_all = ["button", "side", "x", "y", "value"])]
+    key: Option<i32>,
+    #[arg(long, value_enum, required_if_eq("action", "mouse"), conflicts_with_all = ["side", "value"])]
+    button: Option<Button>,
+    #[arg(long, value_enum, required_if_eq_any = [("action", "stick"), ("action", "trigger")])]
+    side: Option<Side>,
+    #[arg(long, allow_hyphen_values = true, required_if_eq_any = [("action", "mouse"), ("action", "stick")])]
+    x: Option<i32>,
+    #[arg(long, allow_hyphen_values = true, required_if_eq_any = [("action", "mouse"), ("action", "stick")])]
+    y: Option<i32>,
+    #[arg(long, required_if_eq("action", "trigger"), conflicts_with_all = ["x", "y"])]
+    value: Option<i32>,
+    #[arg(long, default_value_t = 100)]
+    hold_ms: u64,
+    #[arg(long, default_value_t = 3000)]
+    start_delay_ms: u32,
+    #[arg(long)]
+    cancel_after_ms: Option<u64>,
+    #[arg(long, value_enum, default_value = "foreground")]
+    mode: Input,
+    #[arg(long, value_enum, default_value = "frame-pool")]
+    capture: Capture,
+    #[arg(long)]
+    allow_input: bool,
+}
+
+#[derive(clap::Args)]
+struct ChargePlanPreviewArgs {
+    #[arg(long)]
+    instance_id: u32,
+    #[arg(long, default_value = "one_dragon")]
+    group_id: String,
+    #[arg(long)]
+    charge: Option<u32>,
+    #[arg(long)]
+    backup: Option<u32>,
+    #[arg(long)]
+    ether: Option<u32>,
+    #[arg(long)]
+    double_reward_left: Option<u8>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -512,11 +534,45 @@ async fn main() -> Result<()> {
                 | Action::BasicDailyBundleCheck { .. }
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
+                | Action::ChargePlanPreview(_)
         )
     {
         paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
     }
     match args.command {
+        Action::ChargePlanPreview(ChargePlanPreviewArgs {
+            instance_id,
+            group_id,
+            charge,
+            backup,
+            ether,
+            double_reward_left,
+        }) => {
+            let resources = match (charge, backup, ether) {
+                (None, None, None) => None,
+                (Some(charge), Some(backup), Some(ether)) => {
+                    Some(od_core::charge_plan::ChargeResources {
+                        charge,
+                        backup,
+                        ether,
+                    })
+                }
+                _ => anyhow::bail!("人工资源估算须同时提供 --charge、--backup 和 --ether"),
+            };
+            let config = od_core::config::ConfigStore::new(&paths.data)?.read()?;
+            return print(
+                od_core::charge_plan::preview_group(
+                    &config,
+                    instance_id,
+                    &group_id,
+                    config.revision,
+                    chrono::Utc::now(),
+                    resources,
+                    double_reward_left,
+                )
+                .map_err(anyhow::Error::msg)?,
+            );
+        }
         Action::CombatReplay {
             scripts,
             script,
@@ -1146,7 +1202,7 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Action::InputProbe {
+        Action::InputProbe(InputProbeArgs {
             hwnd,
             action,
             key,
@@ -1161,7 +1217,7 @@ async fn main() -> Result<()> {
             mode,
             capture: method,
             allow_input,
-        } => {
+        }) => {
             ensure!(
                 allow_input,
                 "输入探针会操作游戏，必须显式指定 --allow-input"

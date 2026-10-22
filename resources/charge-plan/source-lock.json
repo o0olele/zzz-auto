@@ -1,0 +1,22 @@
+[
+  {
+    "path": "assets/game_data/compendium_data.yml",
+    "sha256": "c806b626b96f5d019dbfdbd4910a2315721523873c5087d7a005208392e0ea7e"
+  },
+  {
+    "path": "src/zzz_od/application/charge_plan/charge_plan_config.py",
+    "sha256": "bac916596e5a7e493ecaae47957a6703df3e9c98bd64aee65ac2eb0180e57c12"
+  },
+  {
+    "path": "src/zzz_od/application/charge_plan/charge_plan_app.py",
+    "sha256": "c60cd7da5897c73f3891181608bc1cbacf534d06be084a253d92944c3cc69203"
+  },
+  {
+    "path": "src/one_dragon/base/operation/application_run_record.py",
+    "sha256": "aff03a82777e5532510f19c7ad3ec4db771c082e66d5b71ef83e80e0cfc4380a"
+  },
+  {
+    "path": "src/one_dragon/utils/os_utils.py",
+    "sha256": "45fdc81ea7ce6f13e5ab57de4845467d28955b27ed59225f5b99b7529cc66a5e"
+  }
+]

@@ -290,6 +290,29 @@ fn main() -> Result<()> {
                 od_core::suibian_temple::LegacyPawnshopConfig::decl(),
                 od_core::suibian_temple::PawnshopOmnicoinGoods::decl(),
                 od_core::suibian_temple::PawnshopCrestGoods::decl(),
+                format!(
+                    "const chargePlanDefaults = {} as ChargePlanConfig;",
+                    serde_json::to_string(&od_core::charge_plan::ChargePlanConfig::default())?
+                ),
+                format!(
+                    "const chargePlanCatalog = {} as Array<ChargeCategory>;",
+                    serde_json::to_string(od_core::charge_plan::catalog())?
+                ),
+                format!(
+                    "const chargePlanLevels = {} as const;",
+                    serde_json::to_string(&od_core::charge_plan::LEVELS)?
+                ),
+                od_core::charge_plan::RestoreCharge::decl(),
+                od_core::charge_plan::ChargePlanItem::decl(),
+                od_core::charge_plan::ChargePlanConfig::decl(),
+                od_core::charge_plan::ChargeResources::decl(),
+                od_core::charge_plan::ChargeDecision::decl(),
+                od_core::charge_plan::ChargePreviewItem::decl(),
+                od_core::charge_plan::ChargePlanPreview::decl(),
+                od_core::charge_plan::ChargeGroupPreview::decl(),
+                od_core::charge_plan::ChargeCategory::decl(),
+                od_core::charge_plan::ChargeMission::decl(),
+                od_core::charge_plan::ChargeMissionName::decl(),
                 od_core::intel_board::IntelBoardConfig::decl(),
                 od_core::intel_board::IntelHistory::decl(),
                 od_core::intel_board::IntelWeek::decl(),

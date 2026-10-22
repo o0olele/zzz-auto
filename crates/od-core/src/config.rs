@@ -75,6 +75,9 @@ pub struct GroupApp {
 #[serde(deny_unknown_fields)]
 pub struct AppGroup {
     #[serde(default)]
+    #[ts(as = "Option<crate::charge_plan::ChargePlanConfig>", optional)]
+    pub charge_plan: Box<crate::charge_plan::ChargePlanConfig>,
+    #[serde(default)]
     #[ts(as = "Option<crate::suibian_temple::SuibianTempleConfig>", optional)]
     pub suibian_temple: crate::suibian_temple::SuibianTempleConfig,
     #[serde(default)]
@@ -163,6 +166,11 @@ pub struct AccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConfigChange {
+    SaveChargePlan {
+        instance_id: u32,
+        group_id: String,
+        settings: Box<crate::charge_plan::ChargePlanConfig>,
+    },
     SaveSuibianTemple {
         instance_id: u32,
         group_id: String,
@@ -302,6 +310,7 @@ pub fn default_group() -> AppGroup {
     let mut apps = crate::applications().expect("内置应用登记无效");
     apps.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
     AppGroup {
+        charge_plan: Default::default(),
         suibian_temple: Default::default(),
         intel_board: Default::default(),
         id: "one_dragon".into(),
@@ -391,6 +400,7 @@ impl AccountConfig {
             for group in &instance.groups {
                 group.intel_board.validate().map_err(invalid)?;
                 group.suibian_temple.validate().map_err(invalid)?;
+                group.charge_plan.validate().map_err(invalid)?;
                 group.coffee.validate().map_err(invalid)?;
                 group.daily.validate().map_err(invalid)?;
                 group.random_play.validate().map_err(invalid)?;
@@ -419,6 +429,23 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::SaveChargePlan {
+                instance_id,
+                group_id,
+                settings,
+            } => {
+                settings.validate().map_err(invalid)?;
+                let group = self
+                    .instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|g| g.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?;
+                if group.charge_plan.last_daily_reset_day != settings.last_daily_reset_day {
+                    return Err(invalid("每日重置日期是只读运行字段，不能由设置修改"));
+                }
+                group.charge_plan = settings;
+            }
             ConfigChange::SaveSuibianTemple {
                 instance_id,
                 group_id,

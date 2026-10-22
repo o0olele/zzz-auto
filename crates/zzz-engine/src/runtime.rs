@@ -486,6 +486,26 @@ impl Engine {
 
     async fn execute_inner(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
+            Command::PreviewChargePlan {
+                instance_id,
+                group_id,
+                revision,
+                resources,
+                double_reward_left,
+            } => {
+                let config = self.config.read().map_err(config_error)?;
+                od_core::charge_plan::preview_group(
+                    &config,
+                    instance_id,
+                    &group_id,
+                    revision,
+                    Utc::now(),
+                    resources,
+                    double_reward_left,
+                )
+                .map(Payload::ChargePlanPreview)
+                .map_err(|e| ApiError::new("invalid_charge_plan", e))
+            }
             Command::LaunchGame {
                 instance_id,
                 revision,

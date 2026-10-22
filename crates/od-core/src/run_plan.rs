@@ -114,6 +114,9 @@ pub struct PlannedApp {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GroupPlan {
     #[serde(default)]
+    #[ts(as = "Option<crate::charge_plan::ChargePlanConfig>", optional)]
+    pub charge_plan_config: Box<crate::charge_plan::ChargePlanConfig>,
+    #[serde(default)]
     #[ts(as = "Option<crate::suibian_temple::SuibianTempleConfig>", optional)]
     pub suibian_temple_config: crate::suibian_temple::SuibianTempleConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -377,6 +380,7 @@ fn plan_account_at(
     let executable = blockers.is_empty() && has_pending;
     let all_done = blockers.is_empty() && !has_pending;
     Ok(GroupPlan {
+        charge_plan_config: group.charge_plan.clone(),
         suibian_temple_config: group.suibian_temple.clone(),
         app_combat: None,
         intel_board_config: group.intel_board.clone(),

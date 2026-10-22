@@ -58,6 +58,10 @@ pub enum TemplePhase {
 #[serde(deny_unknown_fields)]
 pub struct TempleFlow {
     #[serde(default)]
+    pub transport_not_posted: u8,
+    #[serde(default = "initial_stage")]
+    pub entry_stage: String,
+    #[serde(default)]
     pub boo_box: Option<crate::suibian_boo_box::TempleBooBox>,
     #[serde(default)]
     pub good_goods: Option<crate::suibian_good_goods::TempleGoodGoods>,
@@ -83,6 +87,8 @@ impl TempleFlow {
     pub fn new(config: SuibianTempleConfig) -> Result<Self, &'static str> {
         config.validate()?;
         Ok(Self {
+            transport_not_posted: 0,
+            entry_stage: initial_stage(),
             boo_box: None,
             good_goods: None,
             sales: None,
@@ -102,6 +108,22 @@ impl TempleFlow {
     }
     pub fn validate(&self) -> Result<(), &'static str> {
         let ops = operations(&self.config)?;
+        if self.transport_not_posted > 64
+            || (self.entry_stage == "WaitArrival" && !self.transport_attempted)
+        {
+            return Err("随便观传送意图无效");
+        }
+        if !matches!(
+            self.entry_stage.as_str(),
+            "Inspect"
+                | "OpenMap"
+                | "SelectArea"
+                | "SelectPoint"
+                | "ConfirmTransport"
+                | "WaitArrival"
+        ) {
+            return Err("随便观入口阶段无效");
+        }
         let boo_expected = self.current == Some(TempleOperation::BooBox)
             || self.completed.contains(&TempleOperation::BooBox);
         if boo_expected != self.boo_box.is_some() {
@@ -232,6 +254,17 @@ impl TempleFlow {
     pub fn check_update(&self, next: &Self) -> Result<(), &'static str> {
         self.validate()?;
         next.validate()?;
+        let not_posted = next.transport_not_posted == self.transport_not_posted.saturating_add(1)
+            && self.transport_not_posted < 64
+            && self.phase == TemplePhase::Entering
+            && next.phase == self.phase
+            && self.entry_stage == "ConfirmTransport"
+            && next.entry_stage == "Inspect"
+            && self.transport_attempted
+            && !next.transport_attempted;
+        if self.transport_not_posted != next.transport_not_posted && !not_posted {
+            return Err("传送未投递回执与当前意图不符");
+        }
         match (&self.boo_box, &next.boo_box) {
             (Some(o), Some(n)) => o.check_update(n)?,
             (Some(_), None) => return Err("不能删除邦巢检查点"),
@@ -324,7 +357,7 @@ impl TempleFlow {
         if self.config != next.config
             || !next.completed.starts_with(&self.completed)
             || next.completed.len() > self.completed.len() + 1
-            || (self.transport_attempted && !next.transport_attempted)
+            || (self.transport_attempted && !next.transport_attempted && !not_posted)
             || (self.entry_verified && !next.entry_verified)
             || (self.returned_world && self != next)
         {
@@ -383,6 +416,69 @@ impl TempleFlow {
         self.check_update(&next)?;
         *self = next;
         Ok(())
+    }
+    pub fn stage(&self) -> String {
+        match self.phase {
+            TemplePhase::Entering => self.entry_stage.clone(),
+            TemplePhase::Ready => "Ready".into(),
+            TemplePhase::Child => format!("{:?}", self.current.unwrap()),
+            TemplePhase::Returning => "Return".into(),
+            TemplePhase::Done => "Done".into(),
+        }
+    }
+    pub fn observe_navigation(&mut self, node: &str) -> Result<(), &'static str> {
+        let node = node.strip_prefix("Temple.").ok_or("不是随便观导航节点")?;
+        if self.phase == TemplePhase::Returning && node == "World" {
+            return self.finish_world(true);
+        }
+        if self.phase != TemplePhase::Entering {
+            return Err("随便观不在入口阶段");
+        }
+        if node == "Entry" {
+            return self.observe_entry(true);
+        }
+        self.edit(|s| {
+            s.entry_stage = match (s.entry_stage.as_str(), node) {
+                ("Inspect", "World") if !s.transport_attempted => "OpenMap",
+                ("Inspect" | "OpenMap", "MapOpened") if !s.transport_attempted => "SelectArea",
+                ("Inspect" | "SelectArea", "AreaSelected") if !s.transport_attempted => {
+                    "SelectPoint"
+                }
+                ("Inspect" | "SelectPoint", "PointSelected") if !s.transport_attempted => {
+                    "ConfirmTransport"
+                }
+                ("ConfirmTransport", "Transported") if s.transport_attempted => "WaitArrival",
+                _ => return Err("随便观导航未到达允许的后态"),
+            }
+            .into();
+            Ok(())
+        })
+    }
+    pub fn resume_navigation(&mut self) {
+        if self.phase == TemplePhase::Entering {
+            self.entry_stage = if self.transport_attempted {
+                "WaitArrival"
+            } else {
+                "Inspect"
+            }
+            .into();
+        }
+    }
+    /// 仅用于保存后尚未调用 Tasker，或 SDK 明确返回 task_id=None 的情况。
+    pub fn transport_not_sent(&mut self) -> Result<(), &'static str> {
+        self.edit(|s| {
+            if s.phase != TemplePhase::Entering
+                || s.entry_stage != "ConfirmTransport"
+                || !s.transport_attempted
+                || s.transport_not_posted >= 64
+            {
+                return Err("传送没有当前未投递意图");
+            }
+            s.transport_not_posted += 1;
+            s.transport_attempted = false;
+            s.entry_stage = "Inspect".into();
+            Ok(())
+        })
     }
     pub fn mark_transport(&mut self) -> Result<(), &'static str> {
         self.edit(|s| {
@@ -528,4 +624,8 @@ fn adventure_mode(op: TempleOperation) -> Option<crate::suibian_adventure::Adven
         TempleOperation::AdventureDispatchOnly => Some(M::DispatchOnly),
         _ => None,
     }
+}
+
+fn initial_stage() -> String {
+    "Inspect".into()
 }

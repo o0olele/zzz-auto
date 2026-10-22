@@ -42,6 +42,7 @@ pub mod runtime_resources;
 pub mod screen_sample_library;
 pub mod screen_samples;
 pub mod shortcuts;
+pub mod suibian_entry_pipeline;
 pub mod suibian_temple;
 pub mod suibian_temple_auto;
 pub mod suibian_temple_flow;
@@ -450,6 +451,13 @@ impl RunSlot {
         if plan
             .items
             .iter()
+            .any(|i| i.app_id == "suibian_temple" && i.decision == run_plan::PlanDecision::Run)
+        {
+            plan.suibian_temple_config.validate()?;
+        }
+        if plan
+            .items
+            .iter()
             .any(|i| i.app_id == "intel_board" && i.decision == run_plan::PlanDecision::Run)
         {
             plan.app_combat
@@ -496,6 +504,11 @@ impl RunSlot {
             }
             Some(app) if basic_daily::APP_IDS.contains(&app) => {
                 let mut progress = basic_daily::DailyProgress::new(app, plan.daily_config)?;
+                if app == "suibian_temple" {
+                    progress.temple = Some(Box::new(suibian_temple_flow::TempleFlow::new(
+                        plan.suibian_temple_config.clone(),
+                    )?));
+                }
                 if app == "intel_board" {
                     let combat = plan.app_combat.clone().ok_or("情报板缺少冻结战斗脚本")?;
                     combat.validate()?;
@@ -847,6 +860,19 @@ impl RunSlot {
             .iter_mut()
             .find(|p| p.app_id == progress.app_id)
             .ok_or("日常进度缺失")?;
+        match (&previous.temple, &progress.temple) {
+            (Some(before), Some(after)) if progress.app_id == "suibian_temple" => {
+                before.check_update(after)?;
+                if progress.stage != after.stage() {
+                    return Err("随便观外层阶段不一致");
+                }
+                if progress.active_ms < previous.active_ms {
+                    return Err("随便观累计活动时间不能减少");
+                }
+            }
+            (None, None) if progress.app_id != "suibian_temple" => {}
+            _ => return Err("随便观检查点不能添加或删除"),
+        }
         match (&previous.intel_board, &progress.intel_board) {
             (Some(before), Some(after)) => before.check_update(after)?,
             (None, None) => {}

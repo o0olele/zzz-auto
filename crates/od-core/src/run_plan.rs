@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const TRIAL_APP_IDS: [&str; 13] = [
+pub const TRIAL_APP_IDS: [&str; 14] = [
     "email",
     "coffee",
     "engagement_reward",
@@ -22,6 +22,7 @@ pub const TRIAL_APP_IDS: [&str; 13] = [
     "random_play",
     "predefined_team_checker",
     "intel_board",
+    "suibian_temple",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

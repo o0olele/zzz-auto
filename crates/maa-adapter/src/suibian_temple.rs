@@ -20,7 +20,7 @@ pub fn validate_suibian_temple_bundle(root: &Path) -> Result<PathBuf> {
     );
     let manifest: Value = serde_json::from_slice(&std::fs::read(&manifest_path)?)?;
     ensure!(
-        matches!(manifest["schema_version"].as_u64(), Some(1..=7))
+        matches!(manifest["schema_version"].as_u64(), Some(1..=8))
             && manifest["sdk_version"] == crate::SDK_VERSION
             && manifest["base_size"] == json!([1920, 1080])
             && manifest["accepted"] == false
@@ -44,7 +44,7 @@ pub fn validate_suibian_temple_bundle(root: &Path) -> Result<PathBuf> {
                         "sales",
                         "good_goods"
                     ])
-                } else {
+                } else if manifest["schema_version"] == 7 {
                     json!([
                         "auto_manage",
                         "adventure",
@@ -53,6 +53,17 @@ pub fn validate_suibian_temple_bundle(root: &Path) -> Result<PathBuf> {
                         "sales",
                         "good_goods",
                         "boo_box"
+                    ])
+                } else {
+                    json!([
+                        "auto_manage",
+                        "adventure",
+                        "craft",
+                        "yum_cha_sin",
+                        "sales",
+                        "good_goods",
+                        "boo_box",
+                        "full_run"
                     ])
                 }
             && manifest["sources"]
@@ -125,13 +136,26 @@ pub fn validate_suibian_temple_bundle(root: &Path) -> Result<PathBuf> {
                                     ))?,
                                 "邦巢来源版本不匹配"
                             );
-                            od_core::suibian_boo_box_pipeline::pipeline()
+                            if manifest["schema_version"] == 7 {
+                                od_core::suibian_boo_box_pipeline::pipeline()
+                            } else {
+                                od_core::suibian_entry_pipeline::pipeline()
+                            }
                         }
                     }
                 }
             }
         }
     };
+    if manifest["schema_version"] == 8 {
+        ensure!(
+            manifest["entry_sources"]
+                == serde_json::from_str::<Value>(include_str!(
+                    "../../../resources/suibian-temple/entry-source-lock.json"
+                ))?,
+            "随便观入口来源不匹配"
+        );
+    }
     let lock: Value = serde_json::from_str(include_str!("../../../models.lock.json"))?;
     let ocr = lock["models"]
         .as_array()
@@ -149,6 +173,11 @@ pub fn validate_suibian_temple_bundle(root: &Path) -> Result<PathBuf> {
     if manifest["schema_version"].as_u64().is_some_and(|v| v >= 2) {
         for (name, bytes) in od_core::suibian_adventure_pipeline::templates() {
             pinned.insert(name.into(), bytes.to_vec());
+        }
+    }
+    if manifest["schema_version"] == 8 {
+        for (name, bytes) in od_core::suibian_entry_pipeline::templates() {
+            pinned.insert(format!("image/suibian-temple/{name}.png"), bytes.to_vec());
         }
     }
     let mut allowed: BTreeSet<String> = pinned.keys().cloned().collect();
@@ -285,6 +314,69 @@ impl crate::NativeSession {
             &progress.entry(),
             &crate::PipelineInputPlan {
                 keys: BTreeSet::new(),
+                contacts: [0].into(),
+            },
+            cancel,
+            timeout,
+            "{}",
+            true,
+        )
+    }
+}
+
+/// 完整入口要求最新的固定导航；旧子流程包仍可独立加载。
+pub fn validate_full_temple_bundle(root: &Path) -> Result<PathBuf> {
+    let root = validate_suibian_temple_bundle(root)?;
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(root.join("suibian-temple-manifest.json"))?)?;
+    ensure!(
+        manifest["schema_version"] == 8,
+        "完整随便观运行需要 schema 8 资源"
+    );
+    Ok(root)
+}
+impl crate::NativeSession {
+    pub fn temple_navigation_step(
+        &mut self,
+        stage: &str,
+        cancel: Arc<AtomicBool>,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<crate::PipelineExecution> {
+        ensure!(
+            matches!(
+                stage,
+                "Inspect"
+                    | "OpenMap"
+                    | "SelectArea"
+                    | "SelectPoint"
+                    | "ConfirmTransport"
+                    | "WaitArrival"
+                    | "Return"
+            ),
+            "随便观导航步骤未登记"
+        );
+        ensure!(
+            self.game_window.is_some() == game
+                && self.input_mode == Some(crate::InputMode::Foreground),
+            "随便观控制器模式不符"
+        );
+        validate_full_temple_bundle(
+            self.suibian_temple_bundle
+                .as_deref()
+                .unwrap_or(&self.resource_root),
+        )?;
+        if game {
+            self.prepare_input_target(
+                od_core::mail::MailConfig::recovery_inputs()[1],
+                &cancel,
+                &mut None,
+            )?;
+        }
+        self.run_pipeline_detailed(
+            &format!("Temple.{stage}"),
+            &crate::PipelineInputPlan {
+                keys: [27, 78].into(),
                 contacts: [0].into(),
             },
             cancel,

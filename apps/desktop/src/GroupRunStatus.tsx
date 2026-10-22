@@ -1,3 +1,4 @@
+import { SuibianTempleStatus } from './SuibianTempleSettings';
 import { RedemptionStatus } from './RedemptionSettings';
 import { IntelBoardStatus } from './IntelBoardSettings';
 import { RandomPlayStatus } from './RandomPlaySettings';
@@ -38,6 +39,7 @@ export function GroupRunStatus({ run, disabled, recordError, onCommand }: {
     {run.daily?.filter(item => item.random_play).map(item => <RandomPlayStatus key={item.app_id} progress={item.random_play!}/>)}
     {run.daily?.filter(item => item.team_check).map(item => <TeamCheckStatus key={item.app_id} progress={item.team_check!}/>)}
     {run.daily?.filter(item => item.intel_board).map(item => <IntelBoardStatus key={item.app_id} progress={item}/>)}
+    {run.daily?.filter(item => item.temple).map(item => <SuibianTempleStatus key={item.app_id} progress={item}/>)}
     <RunSteps group={run.group}/>
     <div className="button-row">
       <Button disabled={disabled || run.state !== 'running'} onClick={() => onCommand({ type: 'pause', params: { run_id: run.id } })}>{run.context?.standalone ? '暂停应用' : '暂停应用组'}</Button>

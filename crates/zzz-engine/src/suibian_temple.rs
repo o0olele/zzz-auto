@@ -74,6 +74,15 @@ impl HostingRun {
         &mut self,
         session: &mut NativeSession,
         game: bool,
+        publish: impl FnMut(HostingSnapshot) -> Result<()>,
+    ) -> Result<HostingEnd> {
+        self.execute_with_budget(session, game, Duration::MAX, publish)
+    }
+    pub fn execute_with_budget(
+        &mut self,
+        session: &mut NativeSession,
+        game: bool,
+        parent_remaining: Duration,
         mut publish: impl FnMut(HostingSnapshot) -> Result<()>,
     ) -> Result<HostingEnd> {
         ensure!(
@@ -97,7 +106,12 @@ impl HostingRun {
                     return Ok(HostingEnd::Completed);
                 }
                 let used = initial_ms.saturating_add(started.elapsed().as_millis() as u64);
-                let remaining = u64::from(self.timeout_ms).saturating_sub(used);
+                let remaining = u64::from(self.timeout_ms).saturating_sub(used).min(
+                    parent_remaining
+                        .saturating_sub(started.elapsed())
+                        .as_millis()
+                        .min(u64::MAX as u128) as u64,
+                );
                 if remaining == 0 {
                     return Ok(HostingEnd::TimedOut);
                 }
@@ -116,7 +130,8 @@ impl HostingRun {
                 // 保存可能耗时，重新扣减父预算；耗尽后不再投递。
                 let remaining = Duration::from_millis(u64::from(self.timeout_ms).saturating_sub(
                     initial_ms.saturating_add(started.elapsed().as_millis() as u64),
-                ));
+                ))
+                .min(parent_remaining.saturating_sub(started.elapsed()));
                 if remaining.is_zero() {
                     self.snapshot
                         .progress

@@ -1,0 +1,18 @@
+[
+  {
+    "path": "assets/game_data/screen_info/map.yml",
+    "sha256": "4cd93a99c45d50d3f66c4ebe33e2c05e23e3e76af4abd522da6ee68ae6e6408f"
+  },
+  {
+    "path": "assets/game_data/screen_info/menu.yml",
+    "sha256": "a0bb70becd7beb9e4a7b9faf6e666c5860f50d052bcae1f53a86c8e19fde1efc"
+  },
+  {
+    "path": "assets/game_data/screen_info/normal_world.yml",
+    "sha256": "b9b6be9ca171ea50bd02752ca5a9c32b30f7dfc151f3c2672e34e444f5b64950"
+  },
+  {
+    "path": "assets/game_data/screen_info/normal_world_basic.yml",
+    "sha256": "5aa6b43829a1387babe90591959b8dfa70abc7032959ecc1c0116bfbc0704f5f"
+  }
+]

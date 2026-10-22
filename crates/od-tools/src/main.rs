@@ -30,7 +30,7 @@ enum Tool {
         #[arg(long, default_value = "resources/generated/basic-daily")]
         output: PathBuf,
     },
-    /// 生成随便观托管、游历、制造、饮茶仙、售卖、好物铺与邦巢子流程包，完整应用仍在开发。
+    /// 生成完整随便观试运行资源，含固定传送、全部经营子流程与返回。
     SuibianTempleBundle {
         #[arg(long)]
         reference: PathBuf,

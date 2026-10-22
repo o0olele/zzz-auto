@@ -68,7 +68,7 @@ impl NativeSession {
         let m: Value =
             serde_json::from_slice(&std::fs::read(root.join("suibian-temple-manifest.json"))?)?;
         ensure!(
-            matches!(m["schema_version"].as_u64(), Some(3..=7)),
+            matches!(m["schema_version"].as_u64(), Some(3..=8)),
             "制造需要 schema 3 随便观资源"
         );
         Ok(())

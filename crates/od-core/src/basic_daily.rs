@@ -56,7 +56,20 @@ pub const SCHEMA_SIX_APP_IDS: [&str; 10] = [
     "random_play",
     "predefined_team_checker",
 ];
-pub const APP_IDS: [&str; 11] = RESOURCE_APP_IDS;
+pub const APP_IDS: [&str; 12] = [
+    "suibian_temple",
+    RESOURCE_APP_IDS[0],
+    RESOURCE_APP_IDS[1],
+    RESOURCE_APP_IDS[2],
+    RESOURCE_APP_IDS[3],
+    RESOURCE_APP_IDS[4],
+    RESOURCE_APP_IDS[5],
+    RESOURCE_APP_IDS[6],
+    RESOURCE_APP_IDS[7],
+    RESOURCE_APP_IDS[8],
+    RESOURCE_APP_IDS[9],
+    RESOURCE_APP_IDS[10],
+];
 /// schema 7 增加情报板，旧版本的文件与应用范围保持冻结。
 pub const RESOURCE_APP_IDS: [&str; 11] = [
     "engagement_reward",
@@ -104,6 +117,13 @@ impl DailyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct DailyProgress {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    // 前端只读取编排摘要；完整子流程证明由 Rust 保存和校验。
+    #[ts(
+        type = "{ phase: string, current: string | null, completed: Array<string>, config: SuibianTempleConfig, returned_world: boolean, inputs_released: boolean }"
+    )]
+    #[ts(optional)]
+    pub temple: Option<Box<crate::suibian_temple_flow::TempleFlow>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub intel_flow: Option<crate::intel_board_flow::IntelFlow>,
@@ -162,6 +182,13 @@ impl DailyProgress {
             return Err("日常应用未注册");
         }
         Ok(Self {
+            temple: if app_id == "suibian_temple" {
+                Some(Box::new(crate::suibian_temple_flow::TempleFlow::new(
+                    Default::default(),
+                )?))
+            } else {
+                None
+            },
             intel_flow: None,
             app_combat: None,
             intel_battle: None,
@@ -254,7 +281,11 @@ impl DailyProgress {
         self.inputs_released = false;
     }
     pub fn completed(&self) -> bool {
-        self.navigation_completed()
+        (self.app_id != "suibian_temple"
+            || self.temple.as_ref().is_some_and(|f| {
+                f.phase == crate::suibian_temple_flow::TemplePhase::Done && f.validate().is_ok()
+            }))
+            && self.navigation_completed()
             && self
                 .team_check
                 .as_ref()
@@ -262,6 +293,9 @@ impl DailyProgress {
             && self.stage == "Done"
     }
     pub fn timeout_ms(&self) -> u32 {
+        if let Some(temple) = &self.temple {
+            return temple.config.timeout_ms;
+        }
         if self.app_id == "intel_board" {
             return self
                 .app_combat

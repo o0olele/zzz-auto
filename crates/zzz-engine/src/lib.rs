@@ -13,6 +13,7 @@ pub mod runtime_feed;
 pub mod runtime_resources;
 pub mod transport;
 
+pub mod suibian_run;
 pub mod suibian_temple;
 
 pub mod suibian_adventure;

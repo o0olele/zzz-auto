@@ -133,7 +133,7 @@ impl NativeSession {
         let manifest: Value =
             serde_json::from_slice(&std::fs::read(root.join("suibian-temple-manifest.json"))?)?;
         ensure!(
-            matches!(manifest["schema_version"].as_u64(), Some(2..=7)),
+            matches!(manifest["schema_version"].as_u64(), Some(2..=8)),
             "游历需要 schema 2 随便观资源"
         );
         Ok(())

@@ -201,6 +201,13 @@ pub fn supports_protocol(schema: u32, protocol: u32) -> bool {
     (minimum..=od_protocol::PROTOCOL_VERSION).contains(&protocol)
 }
 
+fn safe_temple_path(name: &str) -> bool {
+    name.starts_with("generated/suibian-temple/")
+        && !name.contains([':', '\\'])
+        && Path::new(name)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
 fn safe_combat_path(name: &str) -> bool {
     name.starts_with("generated/combat/")
         && !name.contains([':', '\\'])
@@ -237,6 +244,9 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
                     && manifest.protocol_version >= 38
                     && (!intel_extension_path(&file.path) || manifest.protocol_version >= 41)
                     && daily_extension_path(&file.path))
+                || (manifest.schema_version >= 3
+                    && manifest.protocol_version >= 44
+                    && safe_temple_path(&file.path))
                 || (manifest.schema_version == 4 && safe_combat_path(&file.path)))
                 && paths.insert(file.path.as_str()),
             "资源文件未登记或重复"
@@ -259,6 +269,11 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
 }
 
 fn validate_semantics(root: &Path) -> Result<()> {
+    if root.join("generated/suibian-temple").try_exists()? {
+        maa_adapter::suibian_temple::validate_full_temple_bundle(
+            &root.join("generated/suibian-temple"),
+        )?;
+    }
     if root.join("generated/combat").try_exists()? {
         maa_adapter::combat_vision::CombatBundle::load(&root.join("generated/combat"))?;
     }
@@ -454,6 +469,23 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
         combat.sort();
         names.extend(combat);
     }
+    if source.join("generated/suibian-temple").try_exists()? {
+        let temple = source.join("generated/suibian-temple");
+        maa_adapter::suibian_temple::validate_full_temple_bundle(&temple)?;
+        for entry in walkdir::WalkDir::new(temple).min_depth(1) {
+            let entry = entry?;
+            check_path(entry.path())?;
+            if entry.file_type().is_file() {
+                names.push(
+                    entry
+                        .path()
+                        .strip_prefix(&source)?
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+    }
     for name in names {
         let path = source.join(&name);
         check_path(&path)?;
@@ -540,6 +572,7 @@ fn extract(
                     || COFFEE_FILES.contains(&entry.name())
                     || DAILY_FILES.contains(&entry.name())
                     || daily_extension_path(entry.name())
+                    || safe_temple_path(entry.name())
                     || safe_combat_path(entry.name()))
                 && names.insert(entry.name().to_owned()),
             "ZIP 包含多余、重复或非法条目"

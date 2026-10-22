@@ -18,6 +18,9 @@ set "ZZZ_AUTO_DIAGNOSTIC_EXIT=%ERRORLEVEL%"
 if not "%ZZZ_AUTO_DIAGNOSTIC_EXIT%"=="0" goto show_result
 "%~dp0zzz-auto-engine.exe" --root "%~dp0." combat-bundle-check --bundle "%~dp0resources\generated\combat" >> "%~dp0diagnostic.log" 2>&1
 set "ZZZ_AUTO_DIAGNOSTIC_EXIT=%ERRORLEVEL%"
+if not "%ZZZ_AUTO_DIAGNOSTIC_EXIT%"=="0" goto show_result
+"%~dp0zzz-auto-engine.exe" --root "%~dp0." suibian-temple-bundle-check --bundle "%~dp0resources\generated\suibian-temple" >> "%~dp0diagnostic.log" 2>&1
+set "ZZZ_AUTO_DIAGNOSTIC_EXIT=%ERRORLEVEL%"
 :show_result
 type "%~dp0diagnostic.log"
 echo.

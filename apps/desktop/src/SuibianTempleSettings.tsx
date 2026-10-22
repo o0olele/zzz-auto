@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, Select } from '@fluentui/react-components';
-import { suibianTempleDefaults, suibianDurationOptions, suibianMissionOptions, suibianPriceOptions, type SuibianTempleConfig, type LegacyPawnshopConfig } from './generated/protocol';
+import { suibianTempleDefaults, suibianDurationOptions, suibianMissionOptions, suibianPriceOptions, type SuibianTempleConfig, type LegacyPawnshopConfig, type DailyProgress } from './generated/protocol';
 
 const yes = (value: boolean) => value ? '开' : '关';
 const optionName = (options: readonly { value: string; label: string }[], value: string) => options.find(o => o.value === value)?.label ?? value;
@@ -27,7 +27,7 @@ export function SuibianTempleSettings({ settings = suibianTempleDefaults, disabl
   const toggle = (key: 'auto_manage_enabled' | 'yum_cha_sin' | 'yum_cha_sin_period_refresh' | 'good_goods_purchase_enabled' | 'boo_box_purchase_enabled', value: boolean) => setDraft(current => ({ ...current, [key]: value }));
   return <Card aria-label="应用组随便观设置">
     <div className="card-title"><h2>随便观</h2><Badge appearance="outline">按账号与应用组保存</Badge></div>
-    <p>按满级随便观的托管、游历、制造、售卖及可选购买保存设置。完整执行流程仍在开发，保存设置暂不开放运行。</p>
+    <p>按满级随便观的托管、游历、制造、售卖及可选购买保存设置。可从独立应用或一条龙试运行，完整游戏流程待实机验收。</p>
     <Checkbox label="随便观自动托管" checked={draft.auto_manage_enabled} disabled={disabled} onChange={(_, d) => toggle('auto_manage_enabled', d.checked === true)}/>
     <p>开启后停止托管领取收益并重新开始托管；关闭后采用手动经营设置。好物铺与邦巢按各自开关处理。</p>
     <Checkbox label="随便观饮茶仙" checked={draft.yum_cha_sin} disabled={disabled} onChange={(_, d) => toggle('yum_cha_sin', d.checked === true)}/>
@@ -49,4 +49,15 @@ export function SuibianTempleSettings({ settings = suibianTempleDefaults, disabl
     <details><summary>保留的旧德丰大押设置</summary><p>旧应用已停用此功能；仅保留旧配置，不执行兑换，也不自动转换为新商店。</p><LegacyPawnshopSummary settings={draft.legacy_pawnshop}/></details>
     <Button disabled={disabled || !validDrags || !validTimeout || !changed} onClick={() => onSave(candidate)}>保存随便观设置</Button>
   </Card>;
+}
+
+const operationNames: Record<string, string> = { auto_manage: '自动托管', adventure_claim_only: '游历收获', adventure_claim_and_dispatch: '游历收获与派遣', yum_cha_sin: '饮茶仙与补料', adventure_dispatch_only: '游历派遣', craft: '制造坊', sales: '售卖铺', good_goods: '好物铺', boo_box: '邦巢' };
+export function SuibianTempleStatus({ progress }: { progress: DailyProgress }) {
+  const flow = progress.temple;
+  if (!flow) return null;
+  const phaseNames: Record<string, string> = { entering: '前往随便观', ready: '子流程交接', child: '处理经营', returning: '返回大世界', done: '流程完成' };
+  return <section aria-label="随便观运行进度">
+    <p>随便观 · {flow.config.auto_manage_enabled ? '自动托管' : '手动经营'} · {phaseNames[flow.phase] ?? flow.phase}{flow.current ? ` · ${operationNames[flow.current] ?? flow.current}` : ''}</p>
+    <p>已完成：{flow.completed.map(op => operationNames[op] ?? op).join('、') || '暂无'} · {flow.returned_world ? '已返回大世界' : '等待返回大世界'} · {progress.inputs_released ? '输入已释放' : '等待输入收尾'}</p>
+  </section>;
 }

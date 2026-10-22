@@ -63,7 +63,10 @@ impl NativeSession {
         )?;
         let m: Value =
             serde_json::from_slice(&std::fs::read(root.join("suibian-temple-manifest.json"))?)?;
-        ensure!(m["schema_version"] == 7, "邦巢需要 schema 7 随便观资源");
+        ensure!(
+            matches!(m["schema_version"].as_u64(), Some(7..=8)),
+            "邦巢需要 schema 7 随便观资源"
+        );
         Ok(())
     }
     fn boo_box_sight(

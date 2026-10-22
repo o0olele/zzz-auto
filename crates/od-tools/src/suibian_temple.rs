@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::Path};
 
-/// 随便观子流程包，不宣称尚未接齐的完整应用已可运行。
+/// 完整随便观执行包；保留旧子流程包的固定定义。
 pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Value> {
     for path in [reference, models, output] {
         od_core::config::reject_links(path)?;
@@ -38,6 +38,9 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
     let boo_box_sources: Value = serde_json::from_str(include_str!(
         "../../../resources/suibian-temple/boo-box-source-lock.json"
     ))?;
+    let entry_sources: Value = serde_json::from_str(include_str!(
+        "../../../resources/suibian-temple/entry-source-lock.json"
+    ))?;
     for source in sources
         .as_array()
         .context("随便观来源清单无效")?
@@ -52,6 +55,7 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
                 .context("好物铺来源清单无效")?,
         )
         .chain(boo_box_sources.as_array().context("邦巢来源清单无效")?)
+        .chain(entry_sources.as_array().context("随便观入口来源清单无效")?)
     {
         let relative = source["path"].as_str().context("随便观来源路径无效")?;
         od_core::config::reject_links(&reference.join(relative))?;
@@ -65,7 +69,7 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
     let mut files = BTreeMap::<String, Vec<u8>>::new();
     files.insert(
         "pipeline/suibian-temple.json".into(),
-        serde_json::to_vec_pretty(&od_core::suibian_boo_box_pipeline::pipeline())?,
+        serde_json::to_vec_pretty(&od_core::suibian_entry_pipeline::pipeline())?,
     );
     let back = od_core::basic_daily::templates()
         .into_iter()
@@ -75,6 +79,9 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
     files.insert("image/suibian-temple/back.png".into(), back.to_vec());
     for (name, bytes) in od_core::suibian_adventure_pipeline::templates() {
         files.insert(name.into(), bytes.to_vec());
+    }
+    for (name, bytes) in od_core::suibian_entry_pipeline::templates() {
+        files.insert(format!("image/suibian-temple/{name}.png"), bytes.to_vec());
     }
     let lock = crate::models::locked_models()?;
     let ocr = lock
@@ -95,10 +102,10 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
             files.insert(destination.clone(), bytes);
         }
     }
-    let manifest = json!({"schema_version":7,"sdk_version":lock.sdk_version,"base_size":[1920,1080],
-        "accepted":false,"capabilities":["auto_manage","adventure","craft","yum_cha_sin","sales","good_goods","boo_box"],"sources":sources,"adventure_sources":adventure_sources,"craft_sources":craft_sources,"yum_sources":yum_sources,"sales_sources":sales_sources,"good_goods_sources":good_goods_sources,"boo_box_sources":boo_box_sources,"image_sources":serde_json::from_str::<Value>(include_str!("../../../resources/suibian-temple/adventure-image-sources.json"))?,
+    let manifest = json!({"schema_version":8,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"entry_sources":entry_sources,
+        "accepted":false,"capabilities":["auto_manage","adventure","craft","yum_cha_sin","sales","good_goods","boo_box","full_run"],"sources":sources,"adventure_sources":adventure_sources,"craft_sources":craft_sources,"yum_sources":yum_sources,"sales_sources":sales_sources,"good_goods_sources":good_goods_sources,"boo_box_sources":boo_box_sources,"image_sources":serde_json::from_str::<Value>(include_str!("../../../resources/suibian-temple/adventure-image-sources.json"))?,
         "files":files.iter().map(|(path,bytes)|json!({"path":path,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>(),
-        "limitations":["已迁移托管、游历、制造、饮茶仙、售卖、好物铺与邦巢子流程，完整应用仍在开发；不能作为完整应用启动","固定 1080p 前台键鼠，真实游戏验收单独记录"]});
+        "limitations":["托管及手动经营完整流程已接通试运行，实机验收保留","固定 1080p 前台键鼠，真实游戏验收单独记录"]});
     files.insert(
         "suibian-temple-manifest.json".into(),
         serde_json::to_vec_pretty(&manifest)?,

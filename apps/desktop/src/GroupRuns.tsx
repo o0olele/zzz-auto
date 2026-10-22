@@ -106,7 +106,7 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
         <p>启动 / 继续延时 {plan.mail_config.start_delay_ms} ms · 邮件超时 {plan.mail_config.timeout_ms} ms</p>
         {plan.items.some(item => item.app_id === 'coffee' && item.enabled) && <p>咖啡：{coffeeSummary(plan.coffee_config)} · 澄辉坪 → 汀曼咖啡</p>}
         {plan.items.some(item => item.app_id === 'intel_board' && item.enabled) && <IntelBoardPlan plan={plan}/>}
-        {plan.items.some(item => item.app_id === 'suibian_temple' && item.enabled) && <SuibianTempleSummary settings={plan.suibian_temple_config}/>}
+        {plan.items.some(item => item.app_id === 'suibian_temple' && item.enabled) && <><SuibianTempleSummary settings={plan.suibian_temple_config}/><p>澄辉坪 → 随便观 · 总活动时间包括全部经营子流程。已开启的购买将消耗玩法货币。</p></>}
         {plan.items.some(item => item.availability === 'daily_trial' && item.enabled) && <p>日常：{dailySummary(plan.daily_config)} · 刮刮卡：六分街 → 报刊亭；卦象：澄辉坪 → 阿朔；饼铺：布亚斯特城区 → 吼吼饼铺。三项共享每日领取次数。</p>}
         {plan.items.some(item => item.app_id === 'drive_disc_dismantle' && item.enabled) && <p>驱动盘拆解：{dismantleSummary(plan.dismantle_config)} · 所选驱动盘将被消耗。</p>}
         {plan.items.some(item => item.app_id === 'random_play' && item.enabled) && <p>录像店经营：{randomPlaySummary(plan.random_play_config)} · 按本次游戏日期轮换宣传员，已有营业则返回。</p>}

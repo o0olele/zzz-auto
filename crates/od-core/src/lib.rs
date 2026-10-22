@@ -34,6 +34,8 @@ pub mod predefined_teams;
 pub mod random_play;
 pub mod redemption;
 pub mod remaining_daily;
+pub mod restore_charge;
+pub mod restore_charge_pipeline;
 pub mod run_history;
 pub mod run_logs;
 pub mod run_notifications;

@@ -92,6 +92,18 @@ impl From<Button> for MouseButton {
 enum Action {
     /// 按保存计划和人工资源数估算下一项，不初始化 SDK 或写入配置。
     ChargePlanPreview(ChargePlanPreviewArgs),
+    /// 校验副本内恢复电量共用资源，不加载 SDK。
+    RestoreChargeBundleCheck {
+        #[arg(long, default_value = "resources/generated/restore-charge")]
+        bundle: PathBuf,
+    },
+    /// 检查固定恢复弹窗截图，不连接游戏或写入运行记录。
+    RestoreChargeInspect {
+        #[arg(long, default_value = "resources/generated/restore-charge")]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+    },
     /// 使用当前账号保存的战斗设置，Ctrl+C 请求停止与输入收尾。
     Combat {
         #[arg(long)]
@@ -535,6 +547,8 @@ async fn main() -> Result<()> {
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
                 | Action::ChargePlanPreview(_)
+                | Action::RestoreChargeBundleCheck { .. }
+                | Action::RestoreChargeInspect { .. }
         )
     {
         paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
@@ -953,6 +967,15 @@ async fn main() -> Result<()> {
         Action::EngagementRewardInspect { ref bundle, .. } => {
             maa_adapter::validate_engagement_reward_bundle(bundle)?;
         }
+        Action::RestoreChargeBundleCheck { ref bundle } => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,
+                "bundle":maa_adapter::restore_charge::validate_restore_charge_bundle(bundle)?}),
+            );
+        }
+        Action::RestoreChargeInspect { ref bundle, .. } => {
+            maa_adapter::restore_charge::validate_restore_charge_bundle(bundle)?;
+        }
         Action::SuibianTempleBundleCheck { ref bundle } => {
             let bundle = maa_adapter::suibian_temple::validate_suibian_temple_bundle(bundle)?;
             let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(
@@ -1043,6 +1066,18 @@ async fn main() -> Result<()> {
         Action::EngagementRewardInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_engagement_reward_fixture(&image)?)
+        }
+        Action::RestoreChargeInspect { bundle, image } => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            let prepared = maa_adapter::RecognitionImage::load(&image)?;
+            let observation = native.inspect_restore_charge(
+                &prepared,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+            )
         }
         Action::CoffeeInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;

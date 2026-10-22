@@ -26,6 +26,7 @@ pub mod navigation;
 pub mod navigation_vision;
 pub mod predefined_teams;
 mod random_play;
+pub mod restore_charge;
 pub mod team_selection;
 pub use coffee::{CoffeeObservation, validate_coffee_bundle};
 pub use mail_bundle::validate_mail_bundle;
@@ -139,6 +140,7 @@ pub struct NativeSession {
     coffee_bundle: Option<PathBuf>,
     daily_bundle: Option<PathBuf>,
     suibian_temple_bundle: Option<PathBuf>,
+    restore_charge_bundle: Option<PathBuf>,
     combat_bundle: Option<PathBuf>,
     detector_bundle: Option<PathBuf>,
     inference_device: InferenceDevice,
@@ -284,6 +286,7 @@ impl NativeSession {
             coffee_bundle: None,
             daily_bundle: None,
             suibian_temple_bundle: None,
+            restore_charge_bundle: None,
             combat_bundle: None,
             detector_bundle: None,
             inference_device: device,

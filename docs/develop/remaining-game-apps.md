@@ -129,6 +129,10 @@ target/debug/zzz-engine.exe --data E:/Code/zzz-auto/data charge-plan-preview --i
 cargo test --locked --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/validation --test charge_plan -- --test-threads=1
 ```
 
+### 副本内电量恢复
+
+配置与估算之后，已实现独立的[电量恢复共用子流程](restore-charge.md)，提供来源选择、快捷使用、真实消费及奖励确认、父副本返回证明和暂停停止。独立 schema 1 资源与只读 CLI 可核对已有三张恢复留档，现有日常和随便观执行包保持冻结。具体副本须提供同帧返回画面识别并接入父检查点；体力应用仍未开放执行，实际领取、战后无奖励及各副本流程验收继续保留。
+
 ## 随便观完整运行入口
 
 本轮接通独立运行和应用组入口。按冻结设置从大世界开图，经澄辉坪的随便观传送点直达内部，也接受已经位于随便观入口的起点。传送前保存意图；已投递后暂停只等待入口，不再传送。未知页面不点击通用确认。托管模式完成停止、收益与重新开始；手动模式依序执行游历、可选饮茶仙及补料、再次派遣、制造与售卖，最后按开关进入好物铺和邦巢。德丰大押保持旧版停用行为。

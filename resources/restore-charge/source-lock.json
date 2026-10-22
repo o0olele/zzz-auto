@@ -1,0 +1,10 @@
+[
+  {
+    "path": "src/zzz_od/operation/restore_charge.py",
+    "sha256": "899d9bf56df3f7d1dd8c0957e73f67821df0df9e761d0b55034240449625889e"
+  },
+  {
+    "path": "assets/game_data/screen_info/restore_charge.yml",
+    "sha256": "49be4bab898be8e3f35b2c9a5e37f63d0b717d8441628558ebbe28e821e262ac"
+  }
+]

@@ -11,6 +11,7 @@ pub mod mail;
 pub mod map_transport;
 pub mod models;
 pub mod resources;
+pub mod restore_charge;
 
 use anyhow::{Context, Result};
 use std::path::Path;

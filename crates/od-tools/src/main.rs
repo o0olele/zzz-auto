@@ -12,6 +12,15 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// 生成副本内恢复电量共用资源，不开放体力应用执行。
+    RestoreChargeBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/restore-charge")]
+        output: PathBuf,
+    },
     /// 转换战斗角色资料、模板、脚本与声音模板，不执行 Python。
     CombatBundle {
         #[arg(long)]
@@ -155,6 +164,15 @@ fn main() -> Result<()> {
             output,
         } => {
             let manifest = od_tools::suibian_temple::build_bundle(&reference, &models, &output)?;
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
+            Ok(())
+        }
+        Tool::RestoreChargeBundle {
+            reference,
+            models,
+            output,
+        } => {
+            let manifest = od_tools::restore_charge::build_bundle(&reference, &models, &output)?;
             println!("{}", serde_json::to_string_pretty(&manifest)?);
             Ok(())
         }

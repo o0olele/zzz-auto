@@ -7,6 +7,7 @@ pub mod mail;
 pub mod map_transport;
 pub mod model_resources;
 pub mod recognition;
+pub mod restore_charge;
 pub mod runtime;
 pub mod runtime_download;
 pub mod runtime_feed;

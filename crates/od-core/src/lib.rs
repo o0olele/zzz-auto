@@ -45,6 +45,8 @@ pub mod runtime_resources;
 pub mod screen_sample_library;
 pub mod screen_samples;
 pub mod shortcuts;
+pub mod simulation_cards;
+pub mod simulation_pipeline;
 pub mod suibian_entry_pipeline;
 pub mod suibian_temple;
 pub mod suibian_temple_auto;

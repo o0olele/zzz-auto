@@ -12,6 +12,15 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// 生成实战模拟室识别与卡片准备资源，不开放体力应用执行。
+    SimulationBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/simulation")]
+        output: PathBuf,
+    },
     /// 生成副本内恢复电量共用资源，不开放体力应用执行。
     RestoreChargeBundle {
         #[arg(long)]
@@ -140,6 +149,15 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::SimulationBundle {
+            reference,
+            models,
+            output,
+        } => {
+            let manifest = od_tools::simulation::build_bundle(&reference, &models, &output)?;
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
+            Ok(())
+        }
         Tool::CombatBundle {
             reference,
             models,

@@ -12,6 +12,7 @@ pub mod map_transport;
 pub mod models;
 pub mod resources;
 pub mod restore_charge;
+pub mod simulation;
 
 use anyhow::{Context, Result};
 use std::path::Path;

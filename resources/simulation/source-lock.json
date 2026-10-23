@@ -1,0 +1,18 @@
+[
+  {
+    "path": "src/zzz_od/operation/compendium/combat_simulation.py",
+    "sha256": "3becd49b870b4d53e41feb6181630370d127524b27a6bfa4e4a3994918286207"
+  },
+  {
+    "path": "assets/game_data/screen_info/combat_simulation.yml",
+    "sha256": "b5739b698c3034f9c4d754a415317693236aa356eb8bba3c0d3aa83f7f61a611"
+  },
+  {
+    "path": "assets/game_data/screen_info/battle.yml",
+    "sha256": "83ac6836cc40f46cfab33411ee128681f8b16f5ffe2d6869424d617c2cce2c06"
+  },
+  {
+    "path": "docs/game/screens/实战模拟室.md",
+    "sha256": "f077ede1105202fcc0f07d4f390ec1a9b6418e94f1b73368ff5caed5f1e77553"
+  }
+]

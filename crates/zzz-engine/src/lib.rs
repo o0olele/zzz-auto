@@ -12,6 +12,7 @@ pub mod runtime;
 pub mod runtime_download;
 pub mod runtime_feed;
 pub mod runtime_resources;
+pub mod simulation_cards;
 pub mod transport;
 
 pub mod suibian_run;

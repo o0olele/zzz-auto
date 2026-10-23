@@ -90,6 +90,18 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    /// 校验实战模拟室独立识别与卡片资源，不加载 SDK。
+    SimulationBundleCheck {
+        #[arg(long, default_value = "resources/generated/simulation")]
+        bundle: PathBuf,
+    },
+    /// 固定截图只读检查，不连接游戏、调整卡片或写入次数。
+    SimulationInspect {
+        #[arg(long, default_value = "resources/generated/simulation")]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+    },
     /// 按保存计划和人工资源数估算下一项，不初始化 SDK 或写入配置。
     ChargePlanPreview(ChargePlanPreviewArgs),
     /// 校验副本内恢复电量共用资源，不加载 SDK。
@@ -549,6 +561,8 @@ async fn main() -> Result<()> {
                 | Action::ChargePlanPreview(_)
                 | Action::RestoreChargeBundleCheck { .. }
                 | Action::RestoreChargeInspect { .. }
+                | Action::SimulationBundleCheck { .. }
+                | Action::SimulationInspect { .. }
         )
     {
         paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
@@ -973,6 +987,15 @@ async fn main() -> Result<()> {
                 "bundle":maa_adapter::restore_charge::validate_restore_charge_bundle(bundle)?}),
             );
         }
+        Action::SimulationBundleCheck { ref bundle } => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,
+                "bundle":maa_adapter::simulation::validate_simulation_bundle(bundle)?}),
+            );
+        }
+        Action::SimulationInspect { ref bundle, .. } => {
+            maa_adapter::simulation::validate_simulation_bundle(bundle)?;
+        }
         Action::RestoreChargeInspect { ref bundle, .. } => {
             maa_adapter::restore_charge::validate_restore_charge_bundle(bundle)?;
         }
@@ -1066,6 +1089,17 @@ async fn main() -> Result<()> {
         Action::EngagementRewardInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_engagement_reward_fixture(&image)?)
+        }
+        Action::SimulationInspect { bundle, image } => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_simulation(
+                &maa_adapter::RecognitionImage::load(&image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+            )
         }
         Action::RestoreChargeInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;

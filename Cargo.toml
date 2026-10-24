@@ -37,3 +37,7 @@ maa-adapter = { path = "crates/maa-adapter" }
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# 调试运行也保留完整资源哈希校验，优化散列计算避免消耗交互流程的时间预算。
+[profile.dev.package.sha2]
+opt-level = 3

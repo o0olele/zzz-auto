@@ -9,7 +9,7 @@ use od_core::suibian_craft::{
     CraftAction as A, CraftBangboo, CraftCard, CraftGood, CraftSelection, CraftSlot,
     CraftView as V, SlotState, TempleCraft, goods_key,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
     sync::atomic::{AtomicBool, Ordering},
@@ -58,6 +58,83 @@ fn exact_one(
     values.dedup();
     (values.len() == 1).then(|| values[0].clone())
 }
+fn craft_words(r: &Reader<'_>) -> Result<Vec<Word>> {
+    let mut texts = words(&r.read("Craft.Area.Text", Some([110, 850, 1670, 130]))?)?;
+    let picker = has(&texts, "确认派驻", [1300, 860, 1780, 980])
+        && has(&texts, "派驻邦布", [110, 850, 500, 965]);
+    if !picker {
+        return words(&r.read("Craft.Area.Text", None)?);
+    }
+    let modal_roi = [450, 250, 1000, 650];
+    let modal = words(&r.read("Craft.Area.Text", Some(modal_roi))?)?;
+    texts.retain(|word| !word.inside([450, 250, 1450, 900]));
+    texts.extend(modal);
+    // 先交给原有弹窗判定，避免后续卡片 / 标题边缘裁切掉覆盖其上的确认文字。
+    if point(&texts, "确认", [550, 400, 1400, 950]).is_some()
+        || has(&texts, "当前拥有", [600, 320, 1080, 385])
+    {
+        return Ok(texts);
+    }
+    // 完整覆盖八张卡片和原有弹窗判断区，排除右侧无关的天赋、货品和说明文字。
+    // 重叠区域采用本次区域的完整识别结果，避免同一“确认”或电量被重复计数。
+    for roi @ [x, y, w, h] in [
+        [133, 182, 1035, 68],
+        [133, 250, 502, 585],
+        [133, 526, 1035, 65],
+        [1260, 470, 530, 80],
+    ] {
+        let read = words(&r.read("Craft.Area.Text", Some(roi))?)?;
+        texts.retain(|word| !word.inside([x, y, x + w, y + h]));
+        texts.extend(read);
+    }
+    Ok(texts)
+}
+fn card_energy(
+    r: &Reader<'_>,
+    inside: &[&Word],
+    [x, y, w, h]: [i32; 4],
+) -> Result<Option<(u32, u32)>> {
+    let found: Vec<_> = inside.iter().filter_map(|v| pair(&v.text, '/')).collect();
+    if !found.is_empty() {
+        return Ok((found.len() == 1).then(|| found[0]));
+    }
+    // 局部检测可能将“1040/1040”拆成两框。回到同一帧的数字框做 Maa 单行识别，
+    // 不拼接文字或推测缺失数字；多个完整读数及没有斜杠的未知内容保持不可读。
+    let pieces: Vec<_> = inside
+        .iter()
+        .filter(|v| {
+            v.center()[1] < y + 65
+                && !v.text.is_empty()
+                && v.text
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || b == b'/' || b == b',')
+        })
+        .collect();
+    if pieces.is_empty() || pieces.len() > 4 || !pieces.iter().any(|v| v.text.contains('/')) {
+        return Ok(None);
+    }
+    let left = (pieces.iter().map(|v| v.rect[0]).min().unwrap() - 3).max(x);
+    let top = (pieces.iter().map(|v| v.rect[1]).min().unwrap() - 3).max(y);
+    let right = (pieces.iter().map(|v| v.rect[0] + v.rect[2]).max().unwrap() + 3).min(x + w);
+    let bottom = (pieces.iter().map(|v| v.rect[1] + v.rect[3]).max().unwrap() + 3).min(y + h);
+    let mut pipeline = r.pipeline.clone();
+    pipeline["Craft.Area.Text"]["only_rec"] = json!(true);
+    let line = Reader {
+        pipeline,
+        session: r.session,
+        frame: r.frame,
+        cancel: r.cancel,
+        started: r.started,
+        timeout: r.timeout,
+    };
+    let values = words(&line.read(
+        "Craft.Area.Text",
+        Some([left, top, right - left, bottom - top]),
+    )?)?;
+    Ok((values.len() == 1)
+        .then(|| pair(&values[0].text, '/'))
+        .flatten())
+}
 impl NativeSession {
     pub fn require_suibian_craft(&self) -> Result<()> {
         let root = super::suibian_temple::validate_suibian_temple_bundle(
@@ -91,7 +168,7 @@ impl NativeSession {
             pipeline: od_core::suibian_craft_pipeline::pipeline(),
         };
         let result = (|| -> Result<Sight> {
-            let t = words(&r.read("Craft.Area.Text", None)?)?;
+            let t = craft_words(&r)?;
             let mut points = BTreeMap::new();
             if has(&t, "当前拥有", [600, 320, 1080, 385])
                 && has(&t, "经营-制造", [600, 510, 1300, 610])
@@ -159,15 +236,16 @@ impl NativeSession {
                 for (i, rect @ [x, y, w, h]) in BANGBOOS.into_iter().enumerate() {
                     let area = [x, y, x + w, y + h];
                     let inside: Vec<_> = t.iter().filter(|v| v.inside(area)).collect();
-                    let energy: Vec<_> = inside.iter().filter_map(|v| pair(&v.text, '/')).collect();
+                    let energy = card_energy(&r, &inside, rect)?;
                     cards[i] = if inside
                         .iter()
                         .any(|v| ["制造中", "游历中", "售卖中"].iter().any(|s| v.text == *s))
                     {
                         CraftCard::Busy
-                    } else if energy.len() == 1 && inside.iter().any(|v| v.text.contains("经营"))
+                    } else if let Some((current, total)) = energy
+                        && inside.iter().any(|v| v.text.contains("经营"))
                     {
-                        if energy[0].0 > 0 && energy[0].0 <= energy[0].1 {
+                        if current > 0 && current <= total {
                             CraftCard::Available
                         } else {
                             CraftCard::Exhausted

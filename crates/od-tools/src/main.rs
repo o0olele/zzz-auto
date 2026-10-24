@@ -12,6 +12,15 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// 生成实战模拟室结算领奖资源，不开放体力应用执行。
+    SimulationSettlementBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/simulation-settlement")]
+        output: PathBuf,
+    },
     /// 生成实战模拟室类型与关卡选择投递资源，不提供选中证明。
     SimulationMissionBundle {
         #[arg(long)]
@@ -167,6 +176,16 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::SimulationSettlementBundle {
+            reference,
+            models,
+            output,
+        } => {
+            let manifest =
+                od_tools::simulation_settlement::build_bundle(&reference, &models, &output)?;
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
+            Ok(())
+        }
         Tool::SimulationMissionBundle {
             reference,
             models,

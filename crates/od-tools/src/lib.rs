@@ -15,6 +15,7 @@ pub mod resources;
 pub mod restore_charge;
 pub mod simulation;
 pub mod simulation_mission;
+pub mod simulation_settlement;
 
 use anyhow::{Context, Result};
 use std::path::Path;

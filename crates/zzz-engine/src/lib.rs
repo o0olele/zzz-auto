@@ -15,6 +15,8 @@ pub mod runtime_feed;
 pub mod runtime_resources;
 pub mod simulation_cards;
 pub mod simulation_mission;
+pub mod simulation_preparation;
+pub mod simulation_settlement;
 pub mod transport;
 
 pub mod suibian_run;

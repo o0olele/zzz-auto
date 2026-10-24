@@ -18,6 +18,7 @@ use std::{
 pub(crate) struct Sight {
     pub(crate) view: V,
     save: Option<[i32; 2]>,
+    next: Option<[i32; 2]>,
 }
 fn number(reader: &Reader<'_>, name: &str) -> Result<Option<u32>> {
     let words = words(&reader.read(name, None)?)?;
@@ -78,6 +79,7 @@ impl NativeSession {
             let mut sight = Sight {
                 view: V::Unknown,
                 save: None,
+                next: None,
             };
             // 实战模拟室专有的“前往 + 确认”领奖版式。恢复和普通弹窗均阻止背景输入。
             let reward = point(&modal, "获得", [919, 395, 999, 451]).is_some()
@@ -100,19 +102,18 @@ impl NativeSession {
                 sight.view = V::Cards;
                 return Ok(sight);
             }
-            let next = point(
+            sight.next = point(
                 &words(&r.read("Simulation.Area.Next", None)?)?,
                 "下一步",
                 [1590, 1000, 1850, 1055],
-            )
-            .is_some();
+            );
             let level = point(
                 &words(&r.read("Simulation.Area.Level", None)?)?,
                 "挑战等级",
                 [1454, 26, 1586, 80],
             )
             .is_some();
-            if next && level {
+            if sight.next.is_some() && level {
                 if let (Some(current_charge), Some(required_charge)) = (
                     number(&r, "Simulation.Area.Current")?,
                     number(&r, "Simulation.Area.Required")?,
@@ -302,6 +303,101 @@ impl NativeSession {
         })();
         let release = self.release_inputs();
         result.and_then(|v| release.map(|_| v))
+    }
+
+    /// 只为实际不足的冻结电量打开恢复弹窗，不点击出战或再来一次。
+    pub fn act_simulation_restore_open(
+        &mut self,
+        flow: &od_core::simulation_preparation::PreparationFlow,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<CardsInputEnd> {
+        let started = Instant::now();
+        let result = (|| -> Result<CardsInputEnd> {
+            flow.validate().map_err(anyhow::Error::msg)?;
+            ensure!(
+                self.game_window.is_some() == game
+                    && self.input_mode == Some(crate::InputMode::Foreground),
+                "模拟室准备控制器模式不匹配"
+            );
+            self.require_simulation()?;
+            self.require_restore_charge()?;
+            if cancel.load(Ordering::Acquire) {
+                return Ok(CardsInputEnd::NotPosted);
+            }
+            if started.elapsed() >= timeout {
+                return Ok(CardsInputEnd::TimedOut);
+            }
+            if game {
+                self.prepare_input_target(
+                    od_core::mail::MailConfig::recovery_inputs()[1],
+                    cancel,
+                    &mut None,
+                )?;
+            }
+            let Some(frame) = self.navigation_frame(cancel)? else {
+                return Ok(CardsInputEnd::NotPosted);
+            };
+            let sight = self.simulation_sight(
+                &frame.image,
+                cancel,
+                timeout.saturating_sub(started.elapsed()),
+            );
+            if cancel.load(Ordering::Acquire) {
+                return Ok(CardsInputEnd::NotPosted);
+            }
+            if started.elapsed() >= timeout {
+                return Ok(CardsInputEnd::TimedOut);
+            }
+            let Some(sight) = sight? else {
+                return Ok(CardsInputEnd::NotPosted);
+            };
+            let V::Challenge {
+                current_charge,
+                required_charge,
+            } = sight.view
+            else {
+                return Ok(CardsInputEnd::Changed);
+            };
+            if frame.age() > Duration::from_millis(1500)
+                || !flow.allows_open(CardsCharge {
+                    current_charge,
+                    required_charge,
+                })
+            {
+                return Ok(CardsInputEnd::Changed);
+            }
+            let Some([x, y]) = sight.next else {
+                return Ok(CardsInputEnd::Changed);
+            };
+            let input = od_core::InputProbeAction::MouseButton {
+                button: od_core::MouseButton::Left,
+                x,
+                y,
+            };
+            if !self.combat_input(input, true, cancel)? {
+                return Ok(CardsInputEnd::NotPosted);
+            }
+            let held = Instant::now();
+            while held.elapsed() < Duration::from_millis(70)
+                && !cancel.load(Ordering::Acquire)
+                && started.elapsed() < timeout
+            {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            self.combat_input(input, false, &AtomicBool::new(false))?;
+            let wait = Instant::now();
+            while wait.elapsed() < Duration::from_millis(500)
+                && !cancel.load(Ordering::Acquire)
+                && started.elapsed() < timeout
+            {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Ok(CardsInputEnd::Posted)
+        })();
+        let release = self.release_inputs();
+        result.and_then(|end| release.map(|_| end))
     }
 }
 

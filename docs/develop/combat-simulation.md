@@ -25,4 +25,6 @@ cargo test --locked --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --
 
 `simulation-bundle-check` 在 SDK 加载及运行资源选择前执行；`simulation-inspect` 固定采用 CPU，只读命令保持 `accepted=false`、`input_sent=false`。普通战斗结算只报告版式，不能代替战斗进入及连续新帧结算证明。开发验证的 GDI 数字使用适合原区域的字号，不从小数或残缺数字推测电量；不放宽真实识别的数字解析或置信度。
 
+[卡片与电量恢复串联](simulation-preparation.md)已提供共用父控制器、冻结缺口和返回详情复验的内部接口。[结算与领奖收尾](simulation-settlement.md)须接续同一父任务的已确认战斗结束结果和输入释放。这些接口不写计划次数；关卡选中证明、选队及战斗的完整串联仍待接入。等级切换缺少可核对画面，不能从“挑战等级”标题推断当前等级。
+
 2026 年 10 月 23 日新增用例、构建结果及相邻制造回归的三项未通过情况见[开发验证记录](../migration/acceptance.md#2026-年-10-月-23-日-m5-实战模拟室识别与卡片准备)。这些结果不作为真实游戏或性能验收。

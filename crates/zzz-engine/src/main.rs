@@ -469,6 +469,10 @@ struct InputProbeArgs {
 
 #[derive(Subcommand)]
 enum ResourceDiagnostics {
+    /// 校验模拟室结算资源，不加载 SDK。
+    SimulationSettlementBundleCheck(SettlementBundleArgs),
+    /// 固定图只读检查结算和奖励，不提供本次完成证明。
+    SimulationSettlementInspect(SettlementInspectArgs),
     /// 校验模拟室关卡选择资源，不加载 SDK。
     SimulationMissionBundleCheck(MissionBundleArgs),
     /// 固定图只读检查关卡列表，不执行选择或证明选中。
@@ -504,6 +508,18 @@ enum ResourceDiagnostics {
 }
 
 // 子命令参数单独派生，限制大型枚举的 Clap 调试版解析栈占用。
+#[derive(clap::Args)]
+struct SettlementBundleArgs {
+    #[arg(long, default_value = "resources/generated/simulation-settlement")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct SettlementInspectArgs {
+    #[arg(long, default_value = "resources/generated/simulation-settlement")]
+    bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+}
 #[derive(clap::Args)]
 struct CompendiumBundleArgs {
     #[arg(long, default_value = "resources/generated/compendium")]
@@ -1033,6 +1049,19 @@ async fn main() -> Result<()> {
         Action::EngagementRewardInspect { ref bundle, .. } => {
             maa_adapter::validate_engagement_reward_bundle(bundle)?;
         }
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationSettlementBundleCheck(
+            SettlementBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"completion_verified":false,
+                "bundle":maa_adapter::simulation_settlement::validate_simulation_settlement_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationSettlementInspect(
+            SettlementInspectArgs { ref bundle, .. },
+        )) => {
+            maa_adapter::simulation_settlement::validate_simulation_settlement_bundle(bundle)?;
+        }
         Action::ResourceDiagnostics(ResourceDiagnostics::SimulationMissionBundleCheck(
             MissionBundleArgs { ref bundle },
         )) => {
@@ -1196,6 +1225,19 @@ async fn main() -> Result<()> {
         Action::EngagementRewardInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_engagement_reward_fixture(&image)?)
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationSettlementInspect(
+            SettlementInspectArgs { bundle, image },
+        )) => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_simulation_settlement(
+                &maa_adapter::RecognitionImage::load(&image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"completion_verified":false,"observation":observation}),
+            )
         }
         Action::ResourceDiagnostics(ResourceDiagnostics::SimulationMissionInspect(
             MissionInspectArgs {

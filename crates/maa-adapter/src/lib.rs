@@ -30,6 +30,7 @@ mod random_play;
 pub mod restore_charge;
 pub mod simulation;
 pub mod simulation_mission;
+pub mod simulation_settlement;
 pub mod team_selection;
 pub use coffee::{CoffeeObservation, validate_coffee_bundle};
 pub use mail_bundle::validate_mail_bundle;
@@ -146,6 +147,7 @@ pub struct NativeSession {
     restore_charge_bundle: Option<PathBuf>,
     simulation_bundle: Option<PathBuf>,
     simulation_mission_bundle: Option<PathBuf>,
+    simulation_settlement_bundle: Option<PathBuf>,
     compendium_bundle: Option<PathBuf>,
     combat_bundle: Option<PathBuf>,
     detector_bundle: Option<PathBuf>,
@@ -295,6 +297,7 @@ impl NativeSession {
             restore_charge_bundle: None,
             simulation_bundle: None,
             simulation_mission_bundle: None,
+            simulation_settlement_bundle: None,
             compendium_bundle: None,
             combat_bundle: None,
             detector_bundle: None,

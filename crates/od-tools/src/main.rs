@@ -12,6 +12,24 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// 生成实战模拟室类型与关卡选择投递资源，不提供选中证明。
+    SimulationMissionBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/simulation-mission")]
+        output: PathBuf,
+    },
+    /// 生成快捷手册到实战模拟室的传送资源，不开放体力应用执行。
+    CompendiumBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/compendium")]
+        output: PathBuf,
+    },
     /// 生成实战模拟室识别与卡片准备资源，不开放体力应用执行。
     SimulationBundle {
         #[arg(long)]
@@ -149,6 +167,25 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::SimulationMissionBundle {
+            reference,
+            models,
+            output,
+        } => {
+            let manifest =
+                od_tools::simulation_mission::build_bundle(&reference, &models, &output)?;
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
+            Ok(())
+        }
+        Tool::CompendiumBundle {
+            reference,
+            models,
+            output,
+        } => {
+            let manifest = od_tools::compendium::build_bundle(&reference, &models, &output)?;
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
+            Ok(())
+        }
         Tool::SimulationBundle {
             reference,
             models,

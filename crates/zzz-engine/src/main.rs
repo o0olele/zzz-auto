@@ -90,32 +90,10 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
-    /// 校验实战模拟室独立识别与卡片资源，不加载 SDK。
-    SimulationBundleCheck {
-        #[arg(long, default_value = "resources/generated/simulation")]
-        bundle: PathBuf,
-    },
-    /// 固定截图只读检查，不连接游戏、调整卡片或写入次数。
-    SimulationInspect {
-        #[arg(long, default_value = "resources/generated/simulation")]
-        bundle: PathBuf,
-        #[arg(long)]
-        image: PathBuf,
-    },
+    #[command(flatten)]
+    ResourceDiagnostics(ResourceDiagnostics),
     /// 按保存计划和人工资源数估算下一项，不初始化 SDK 或写入配置。
     ChargePlanPreview(ChargePlanPreviewArgs),
-    /// 校验副本内恢复电量共用资源，不加载 SDK。
-    RestoreChargeBundleCheck {
-        #[arg(long, default_value = "resources/generated/restore-charge")]
-        bundle: PathBuf,
-    },
-    /// 检查固定恢复弹窗截图，不连接游戏或写入运行记录。
-    RestoreChargeInspect {
-        #[arg(long, default_value = "resources/generated/restore-charge")]
-        bundle: PathBuf,
-        #[arg(long)]
-        image: PathBuf,
-    },
     /// 使用当前账号保存的战斗设置，Ctrl+C 请求停止与输入收尾。
     Combat {
         #[arg(long)]
@@ -489,6 +467,74 @@ struct InputProbeArgs {
     allow_input: bool,
 }
 
+#[derive(Subcommand)]
+enum ResourceDiagnostics {
+    /// 校验模拟室关卡选择资源，不加载 SDK。
+    SimulationMissionBundleCheck(MissionBundleArgs),
+    /// 固定图只读检查关卡列表，不执行选择或证明选中。
+    SimulationMissionInspect(MissionInspectArgs),
+    /// 校验快捷手册传送资源，不加载 SDK。
+    CompendiumBundleCheck(CompendiumBundleArgs),
+    /// 固定图只读检查快捷手册或模拟室入口，不输入或记录完成次数。
+    CompendiumInspect(CompendiumInspectArgs),
+    /// 校验实战模拟室独立识别与卡片资源，不加载 SDK。
+    SimulationBundleCheck {
+        #[arg(long, default_value = "resources/generated/simulation")]
+        bundle: PathBuf,
+    },
+    /// 固定截图只读检查，不连接游戏、调整卡片或写入次数。
+    SimulationInspect {
+        #[arg(long, default_value = "resources/generated/simulation")]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+    },
+    /// 校验副本内恢复电量共用资源，不加载 SDK。
+    RestoreChargeBundleCheck {
+        #[arg(long, default_value = "resources/generated/restore-charge")]
+        bundle: PathBuf,
+    },
+    /// 检查固定恢复弹窗截图，不连接游戏或写入运行记录。
+    RestoreChargeInspect {
+        #[arg(long, default_value = "resources/generated/restore-charge")]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+    },
+}
+
+// 子命令参数单独派生，限制大型枚举的 Clap 调试版解析栈占用。
+#[derive(clap::Args)]
+struct CompendiumBundleArgs {
+    #[arg(long, default_value = "resources/generated/compendium")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct MissionBundleArgs {
+    #[arg(long, default_value = "resources/generated/simulation-mission")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct MissionInspectArgs {
+    #[arg(long, default_value = "resources/generated/simulation-mission")]
+    bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+    #[arg(long, default_value = "基础材料")]
+    mission_type: String,
+    #[arg(long, default_value = "调查专项")]
+    mission_name: String,
+}
+#[derive(clap::Args)]
+struct CompendiumInspectArgs {
+    #[arg(long, default_value = "resources/generated/compendium")]
+    bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+    #[arg(long, default_value = "基础材料")]
+    mission_type: String,
+}
+
 #[derive(clap::Args)]
 struct ChargePlanPreviewArgs {
     #[arg(long)]
@@ -559,10 +605,16 @@ async fn main() -> Result<()> {
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
                 | Action::ChargePlanPreview(_)
-                | Action::RestoreChargeBundleCheck { .. }
-                | Action::RestoreChargeInspect { .. }
-                | Action::SimulationBundleCheck { .. }
-                | Action::SimulationInspect { .. }
+                | Action::ResourceDiagnostics(ResourceDiagnostics::RestoreChargeBundleCheck { .. })
+                | Action::ResourceDiagnostics(ResourceDiagnostics::RestoreChargeInspect { .. })
+                | Action::ResourceDiagnostics(ResourceDiagnostics::SimulationBundleCheck { .. })
+                | Action::ResourceDiagnostics(ResourceDiagnostics::SimulationInspect { .. })
+                | Action::ResourceDiagnostics(ResourceDiagnostics::CompendiumBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::CompendiumInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::SimulationMissionBundleCheck(
+                    ..
+                ))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::SimulationMissionInspect(..))
         )
     {
         paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
@@ -981,22 +1033,77 @@ async fn main() -> Result<()> {
         Action::EngagementRewardInspect { ref bundle, .. } => {
             maa_adapter::validate_engagement_reward_bundle(bundle)?;
         }
-        Action::RestoreChargeBundleCheck { ref bundle } => {
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationMissionBundleCheck(
+            MissionBundleArgs { ref bundle },
+        )) => {
             return print(
-                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,
-                "bundle":maa_adapter::restore_charge::validate_restore_charge_bundle(bundle)?}),
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"selection_verified":false,
+                "bundle":maa_adapter::simulation_mission::validate_simulation_mission_bundle(bundle)?}),
             );
         }
-        Action::SimulationBundleCheck { ref bundle } => {
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationMissionInspect(
+            MissionInspectArgs {
+                ref bundle,
+                ref mission_type,
+                ref mission_name,
+                ..
+            },
+        )) => {
+            od_core::simulation_mission::MissionRequest {
+                mission_type: mission_type.clone(),
+                mission_name: mission_name.clone(),
+                timeout_ms: 30_000,
+            }
+            .validate()
+            .map_err(anyhow::Error::msg)?;
+            maa_adapter::simulation_mission::validate_simulation_mission_bundle(bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::RestoreChargeBundleCheck {
+            ref bundle,
+        }) => {
             return print(
                 serde_json::json!({"valid":true,"accepted":false,"input_sent":false,
-                "bundle":maa_adapter::simulation::validate_simulation_bundle(bundle)?}),
+            "bundle":maa_adapter::restore_charge::validate_restore_charge_bundle(bundle)?}),
             );
         }
-        Action::SimulationInspect { ref bundle, .. } => {
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationBundleCheck { ref bundle }) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,
+            "bundle":maa_adapter::simulation::validate_simulation_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::CompendiumBundleCheck(
+            CompendiumBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,
+            "bundle":maa_adapter::compendium::validate_compendium_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::CompendiumInspect(
+            CompendiumInspectArgs {
+                ref bundle,
+                ref mission_type,
+                ..
+            },
+        )) => {
+            od_core::compendium::TransportRequest {
+                mission_type: mission_type.clone(),
+                timeout_ms: 30_000,
+            }
+            .validate()
+            .map_err(anyhow::Error::msg)?;
+            maa_adapter::compendium::validate_compendium_bundle(bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationInspect {
+            ref bundle, ..
+        }) => {
             maa_adapter::simulation::validate_simulation_bundle(bundle)?;
         }
-        Action::RestoreChargeInspect { ref bundle, .. } => {
+        Action::ResourceDiagnostics(ResourceDiagnostics::RestoreChargeInspect {
+            ref bundle,
+            ..
+        }) => {
             maa_adapter::restore_charge::validate_restore_charge_bundle(bundle)?;
         }
         Action::SuibianTempleBundleCheck { ref bundle } => {
@@ -1090,7 +1197,30 @@ async fn main() -> Result<()> {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_engagement_reward_fixture(&image)?)
         }
-        Action::SimulationInspect { bundle, image } => {
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationMissionInspect(
+            MissionInspectArgs {
+                bundle,
+                image,
+                mission_type,
+                mission_name,
+            },
+        )) => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_simulation_mission(
+                &maa_adapter::RecognitionImage::load(&image)?,
+                &od_core::simulation_mission::MissionRequest {
+                    mission_type,
+                    mission_name,
+                    timeout_ms: 30_000,
+                },
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"selection_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationInspect { bundle, image }) => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             let observation = native.inspect_simulation(
                 &maa_adapter::RecognitionImage::load(&image)?,
@@ -1101,7 +1231,31 @@ async fn main() -> Result<()> {
                 serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
             )
         }
-        Action::RestoreChargeInspect { bundle, image } => {
+        Action::ResourceDiagnostics(ResourceDiagnostics::CompendiumInspect(
+            CompendiumInspectArgs {
+                bundle,
+                image,
+                mission_type,
+            },
+        )) => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_compendium(
+                &maa_adapter::RecognitionImage::load(&image)?,
+                &od_core::compendium::TransportRequest {
+                    mission_type,
+                    timeout_ms: 30_000,
+                },
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::RestoreChargeInspect {
+            bundle,
+            image,
+        }) => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             let prepared = maa_adapter::RecognitionImage::load(&image)?;
             let observation = native.inspect_restore_charge(

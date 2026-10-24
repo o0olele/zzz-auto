@@ -3,6 +3,7 @@ pub mod coffee;
 pub mod coffee_run;
 pub mod combat;
 pub mod combat_source;
+pub mod compendium;
 pub mod config_import;
 pub mod engagement_reward;
 pub mod flash_model;
@@ -13,6 +14,7 @@ pub mod models;
 pub mod resources;
 pub mod restore_charge;
 pub mod simulation;
+pub mod simulation_mission;
 
 use anyhow::{Context, Result};
 use std::path::Path;

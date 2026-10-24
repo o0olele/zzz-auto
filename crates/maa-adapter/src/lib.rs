@@ -19,6 +19,7 @@ mod handoff;
 mod inference;
 mod input;
 pub use handoff::{GameSessionConfig, SessionHandoff};
+pub mod compendium;
 pub mod intel_board;
 mod mail_bundle;
 mod map_transport;
@@ -28,6 +29,7 @@ pub mod predefined_teams;
 mod random_play;
 pub mod restore_charge;
 pub mod simulation;
+pub mod simulation_mission;
 pub mod team_selection;
 pub use coffee::{CoffeeObservation, validate_coffee_bundle};
 pub use mail_bundle::validate_mail_bundle;
@@ -143,6 +145,8 @@ pub struct NativeSession {
     suibian_temple_bundle: Option<PathBuf>,
     restore_charge_bundle: Option<PathBuf>,
     simulation_bundle: Option<PathBuf>,
+    simulation_mission_bundle: Option<PathBuf>,
+    compendium_bundle: Option<PathBuf>,
     combat_bundle: Option<PathBuf>,
     detector_bundle: Option<PathBuf>,
     inference_device: InferenceDevice,
@@ -290,6 +294,8 @@ impl NativeSession {
             suibian_temple_bundle: None,
             restore_charge_bundle: None,
             simulation_bundle: None,
+            simulation_mission_bundle: None,
+            compendium_bundle: None,
             combat_bundle: None,
             detector_bundle: None,
             inference_device: device,

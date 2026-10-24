@@ -15,8 +15,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-struct Sight {
-    view: V,
+pub(crate) struct Sight {
+    pub(crate) view: V,
     save: Option<[i32; 2]>,
 }
 fn number(reader: &Reader<'_>, name: &str) -> Result<Option<u32>> {
@@ -55,7 +55,7 @@ impl NativeSession {
         )?;
         Ok(())
     }
-    fn simulation_sight(
+    pub(crate) fn simulation_sight(
         &self,
         frame: &RecognitionImage,
         cancel: &AtomicBool,

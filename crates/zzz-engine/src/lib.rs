@@ -1,6 +1,7 @@
 pub mod basic_daily;
 pub mod coffee;
 pub mod combat;
+pub mod compendium;
 pub mod intel_board;
 pub mod legacy_comparison;
 pub mod mail;
@@ -13,6 +14,7 @@ pub mod runtime_download;
 pub mod runtime_feed;
 pub mod runtime_resources;
 pub mod simulation_cards;
+pub mod simulation_mission;
 pub mod transport;
 
 pub mod suibian_run;

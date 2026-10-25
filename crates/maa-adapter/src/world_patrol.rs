@@ -121,6 +121,9 @@ pub struct PatrolSight {
     captured: Instant,
 }
 impl PatrolSight {
+    pub fn age(&self) -> Duration {
+        self.captured.elapsed()
+    }
     pub fn point(&self, text: &str, rect: [i32; 4]) -> Option<[i32; 2]> {
         point(&self.texts, text, rect)
     }
@@ -454,6 +457,12 @@ pub fn validate_bundle(root: &Path) -> Result<PathBuf> {
     Ok(root)
 }
 impl NativeSession {
+    pub fn reset_patrol_steering(&mut self) {
+        self.patrol_steering.invalidate();
+    }
+    pub fn patrol_is_walking(&self) -> bool {
+        self.held_keys.contains(&87)
+    }
     pub fn load_world_patrol_bundle(&mut self, root: &Path) -> Result<()> {
         self.release_inputs()?;
         let root = validate_bundle(root)?;
@@ -466,7 +475,7 @@ impl NativeSession {
         );
         Ok(())
     }
-    fn patrol_match(
+    pub(crate) fn patrol_match(
         &self,
         image: &RecognitionImage,
         template: &str,
@@ -480,10 +489,49 @@ impl NativeSession {
         frame: &crate::combat_vision::CombatFrame,
     ) -> Result<bool> {
         let bgr = frame.image.buffer.raw_data().context("缺少战斗画面像素")?;
-        Ok(navigation_vision::player_found(&crop(
-            bgr,
-            navigation_vision::STATIC_MAP_RECT,
-        )?))
+        let matched =
+            self.patrol_match(&frame.image, "normal_world/map", [1696, 319, 162, 150], 0.5)?;
+        let mini = if matched["hit"] == true {
+            let [x, y, _, _]: [i32; 4] =
+                serde_json::from_value(matched["detail"]["best"]["box"].clone())?;
+            crop(bgr, [x - 169, y - 151, 210, 210])
+                .ok()
+                .is_some_and(|rgb| navigation_vision::player_found(&rgb))
+        } else {
+            false
+        };
+        // 动态模板命中并不代表裁出的区域确有玩家箭头；失败时仍须回退。
+        let mini = mini
+            || navigation_vision::player_found(&crop(bgr, navigation_vision::STATIC_MAP_RECT)?);
+        // 探索菜单和地图按钮同时可见也能证明已回到探索；玩家箭头在
+        // 战斗结束动画中可能暂时缺失，不能因此继续困在战斗阶段。
+        let exploring = (mini || matched["hit"] == true)
+            && (self.patrol_match(
+                &frame.image,
+                "normal_world_investigation/function_menu",
+                [1755, 20, 150, 145],
+                0.8,
+            )?["hit"]
+                == true
+                || self.patrol_match(
+                    &frame.image,
+                    "normal_world/function_menu",
+                    [1755, 20, 150, 145],
+                    0.8,
+                )?["hit"]
+                    == true);
+        Ok(exploring)
+    }
+    pub fn patrol_battle_ready(
+        &self,
+        recognizer: &mut crate::combat_vision::CombatRecognizer,
+        cancel: &AtomicBool,
+    ) -> Result<bool> {
+        let Some(mut frame) = self.combat_frame(cancel)? else {
+            return Ok(false);
+        };
+        let ready = recognizer.align_patrol_frame(self, &mut frame, cancel)?;
+        Ok(ready && frame.age_ms() <= 1000 && !cancel.load(Ordering::Acquire))
     }
     pub fn read_world_patrol(
         &self,
@@ -731,7 +779,7 @@ impl NativeSession {
             _ => Ok(PatrolFilterStep::Waiting),
         }
     }
-    /// 新鲜、无歧义的定位和朝向才允许步行；返回后始终松开输入。
+    /// 连续有效帧之间保留 W，小幅纠偏时继续前进；不可靠、急转或取消时松键。
     pub fn patrol_move_step(
         &mut self,
         sight: &PatrolSight,
@@ -745,34 +793,59 @@ impl NativeSession {
             {
                 return Ok(PatrolMoveStep::Waiting);
             }
+            ensure!(!self.tasker.running(), "锄大地步行前须等待 Pipeline 收尾");
+            if let Some(window) = &self.game_window {
+                od_platform::check_keyboard_target(window, true)?;
+            }
             let Some((position, heading)) = sight.position.zip(sight.heading) else {
                 return Ok(PatrolMoveStep::Waiting);
             };
             if !heading.is_finite() || position.distance(target) < 10.0 {
                 return Ok(PatrolMoveStep::Waiting);
             }
-            let delta = od_core::navigation::angle_delta(heading, position.heading(target));
-            if delta.abs() > 2.0 {
-                self.combat_turn((delta.clamp(-45.0, 45.0) * -5.5).round() as i32, cancel)?;
+            let steering = self
+                .patrol_steering
+                .observe(heading, position.heading(target), position.distance(target))
+                .map_err(anyhow::Error::msg)?;
+            if !steering.forward {
+                self.release_inputs()?;
             }
-            if delta.abs() < 60.0 {
-                self.combat_input(InputProbeAction::Key { key: 87 }, true, cancel)?;
-                let hold = Instant::now();
-                while hold.elapsed() < Duration::from_millis(150) && !cancel.load(Ordering::Acquire)
-                {
-                    std::thread::sleep(Duration::from_millis(5));
+            if let Some(dx) = steering.dx {
+                self.combat_turn(dx, cancel)?;
+            }
+            if steering.forward {
+                if !self.held_keys.contains(&87) {
+                    self.combat_input(InputProbeAction::Key { key: 87 }, true, cancel)?;
                 }
                 Ok(PatrolMoveStep::Walked)
             } else {
                 Ok(PatrolMoveStep::Turned)
             }
         })();
-        let release = self.release_inputs();
         match result {
-            Ok(step) => release.map(|()| step),
+            Ok(PatrolMoveStep::Walked) if !cancel.load(Ordering::Acquire) => {
+                Ok(PatrolMoveStep::Walked)
+            }
+            Ok(step) => {
+                if step != PatrolMoveStep::Turned || cancel.load(Ordering::Acquire) {
+                    self.reset_patrol_steering();
+                }
+                self.release_inputs().map(|()| {
+                    if cancel.load(Ordering::Acquire) {
+                        PatrolMoveStep::Waiting
+                    } else {
+                        step
+                    }
+                })
+            }
             Err(error) => {
-                release?;
-                Err(error)
+                self.reset_patrol_steering();
+                match self.release_inputs() {
+                    Ok(()) => Err(error),
+                    Err(cleanup) => {
+                        Err(anyhow::anyhow!("{error:#}；移动输入收尾失败：{cleanup:#}"))
+                    }
+                }
             }
         }
     }
@@ -919,7 +992,7 @@ impl NativeSession {
     }
     pub fn patrol_key(&mut self, key: i32, cancel: &AtomicBool) -> Result<()> {
         ensure!(
-            [27, 78, 87, 65, 83, 68, 32, 9].contains(&key),
+            [27, 70, 78, 87, 65, 83, 68, 32, 9].contains(&key),
             "锄大地按键无效"
         );
         let result = (|| {

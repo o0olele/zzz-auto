@@ -164,6 +164,7 @@ pub fn extract(reference: &Path, output: &Path) -> Result<Value> {
     templates.extend([
         "normal_world/map".into(),
         "normal_world/function_menu".into(),
+        "normal_world_investigation/function_menu".into(),
         "normal_world/preset_config".into(),
         "normal_world_investigation/btn_area_info_close".into(),
         "map/3d_map_tp_icon_1".into(),

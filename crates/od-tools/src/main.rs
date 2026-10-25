@@ -396,6 +396,8 @@ fn main() -> Result<()> {
         }
         Tool::Types { output } => {
             let declarations = [
+                od_core::map_exploration::ExplorationTarget::decl(),
+                od_core::map_exploration::ExplorationProgress::decl(),
                 od_core::world_patrol::WorldPatrolConfig::decl(),
                 od_core::world_patrol::PatrolRetryAction::decl(),
                 od_core::world_patrol::PatrolProgress::decl(),

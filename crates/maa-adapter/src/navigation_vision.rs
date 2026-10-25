@@ -97,7 +97,8 @@ pub(crate) fn player_mask(rgb: &RgbImage) -> GrayImage {
             cy += f64::from((a.y + b.y) * cross);
             perimeter += f64::from(a.x - b.x).hypot(f64::from(a.y - b.y));
         }
-        if !(60.0..=70.0).contains(&perimeter) || !(480..=600).contains(&area.abs()) {
+        // 旋转和抗锯齿会让边缘像素略有变化；仍同时约束周长与中心位置。
+        if !(60.0..=70.0).contains(&perimeter) || !(460..=620).contains(&area.abs()) {
             continue;
         }
         // 防止静态兜底框偏移后把其他橙色图标当作位于中心的玩家。

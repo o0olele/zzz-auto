@@ -41,3 +41,7 @@ strip = true
 # 调试运行也保留完整资源哈希校验，优化散列计算避免消耗交互流程的时间预算。
 [profile.dev.package.sha2]
 opt-level = 3
+
+# 地图图标的位图匹配在逐帧运行，开发构建也须在截图有效期内结束。
+[profile.dev.package.maa-adapter]
+opt-level = 2

@@ -44,6 +44,7 @@ impl NativeSession {
         );
         ensure!(
             !self.tasker.running()
+                && !self.recognition_tasker.running()
                 && !self.input_cleanup_pending
                 && !self.pipeline_controller_pending
                 && self.held_keys.is_empty()

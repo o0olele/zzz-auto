@@ -1,0 +1,103 @@
+{
+  "base_size": [
+    1920,
+    1080
+  ],
+  "source": "用户提供的 2026-10-25 截图",
+  "files": [
+    {
+      "path": "observation-selected.png",
+      "source": "绝区零 2026_10_25 15_20_00.png",
+      "rect": [
+        466,
+        255,
+        54,
+        34
+      ],
+      "sha256": "f56ea8c0e8aa6f7cff2b2c7eab9e24bc79beccc15eba1e85e34043511733d788"
+    },
+    {
+      "path": "observation.png",
+      "source": "codex-clipboard-0175759e-f9a9-4ef3-979f-643e9fe23b7d.png",
+      "rect": [
+        200,
+        90,
+        34,
+        24
+      ],
+      "sha256": "d8bfaf179c208c34cf6f84e0cd474413c7ac18c5f52814d7b99a8c087b03109a",
+      "mask": "排除右下角锁图标"
+    },
+    {
+      "path": "cargo.png",
+      "source": "用户确认的 09/17 小卡格车计数图标；2026-10-25 原生截图",
+      "rect": [
+        1410,
+        268,
+        35,
+        37
+      ],
+      "sha256": "79c9d502805b27a3d7bcb4e9a01c2b0bd32b79176f7a70389315d043768d1aec",
+      "mask": "黄色车体及向外 2 像素轮廓；排除面板背景"
+    },
+    {
+      "path": "observation-minimum.png",
+      "source": "2026-10-25 当前游戏最小缩放只读截图",
+      "rect": [
+        812,
+        425,
+        57,
+        40
+      ],
+      "sha256": "1f1aa49d8bea59faa2f335b8c62af892c0a91622fdd5c455cfc697ec89dc472b"
+    },
+    {
+      "path": "cargo-minimum.png",
+      "source": "用户确认的 09/17 小卡格车计数图标；2026-10-25 原生截图",
+      "rect": [
+        1410,
+        268,
+        35,
+        37
+      ],
+      "sha256": "79c9d502805b27a3d7bcb4e9a01c2b0bd32b79176f7a70389315d043768d1aec",
+      "mask": "黄色车体及向外 2 像素轮廓；排除面板背景"
+    },
+    {
+      "path": "observation-mini.png",
+      "source": "2026-10-25 当前游戏战斗结束后小地图截图 post-battle-world.png",
+      "rect": [
+        1542,
+        260,
+        34,
+        24
+      ],
+      "sha256": "12f6f94e0079aafde81bf1f4e4448d0a3dba15a0c767442b686a7aadffb52cc3",
+      "mask": "眼形内部的亮色主体与深色轮廓；排除锁图标和背景"
+    },
+    {
+      "path": "interaction-f-key.png",
+      "source": "2026-10-25 人物朝向观测奇点后右下角 F 交互提示截图",
+      "rect": [
+        1438,
+        1014,
+        38,
+        38
+      ],
+      "sha256": "ba01cfeaf4a1f68dbd999ba361ef100f12fdfae43aaab286a1fe32c2c96679c8",
+      "mask": "F 按键圆帽内白色字形和黑色背景"
+    },
+    {
+      "path": "observation-world-marker.png",
+      "source": "2026-10-25 绿线异常当前游戏截图 minimap-ambiguous-route.png",
+      "rect": [
+        467,
+        428,
+        40,
+        40
+      ],
+      "sha256": "d0ec8da86b019328d1b0f8f0f87fb500e6e2421ef072e3231d67bc842b905a6f",
+      "mask": "世界观测奇点标记的同心环；排除距离文字和背景"
+    }
+  ]
+}

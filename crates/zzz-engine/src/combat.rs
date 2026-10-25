@@ -443,7 +443,7 @@ impl CombatRun {
             if now >= next_frame && !release_due {
                 let recognition_started = Instant::now();
                 let frame_at = now;
-                let Some(frame) = native.combat_frame(&cancel)? else {
+                let Some(mut frame) = native.combat_frame(&cancel)? else {
                     return Ok(None);
                 };
                 self.progress.frames += 1;
@@ -466,6 +466,7 @@ impl CombatRun {
                         continue;
                     }
                     patrol_visible_frames = 0;
+                    recognizer.align_patrol_frame(native, &mut frame, &cancel)?;
                 }
                 let mut intervals = self.intervals()?;
                 intervals.insert("flash_enabled".into(), f64::from(flash_enabled));

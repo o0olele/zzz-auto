@@ -20,8 +20,10 @@ mod inference;
 mod input;
 pub use handoff::{GameSessionConfig, SessionHandoff};
 pub mod compendium;
+mod exploration_navigation;
 pub mod intel_board;
 mod mail_bundle;
+pub mod map_exploration;
 mod map_transport;
 pub mod navigation;
 pub mod navigation_vision;
@@ -139,6 +141,7 @@ pub struct ProbeResult {
 pub struct NativeSession {
     pipeline_subscriptions: Vec<events::PipelineSubscription>,
     tasker: Tasker,
+    recognition_tasker: Tasker,
     raw_flash: Mutex<Option<raw_inference::RawClassifier>>,
     raw_detectors: Mutex<BTreeMap<String, yolo::RawDetector>>,
     inference_gate: Mutex<()>,
@@ -158,11 +161,13 @@ pub struct NativeSession {
     inference_device: InferenceDevice,
     raw_cpu_threads: usize,
     controller: fixture::NativeController,
+    _recognition_controller: fixture::NativeController,
     _resource: Resource,
     input_mode: Option<InputMode>,
     game_window: Option<WindowInfo>,
     capture_method: Option<CaptureMethod>,
     held_keys: BTreeSet<i32>,
+    patrol_steering: od_core::world_patrol::PatrolSteering,
     held_contacts: BTreeSet<i32>,
     input_cleanup_pending: bool,
     pipeline_controller_pending: bool,
@@ -286,10 +291,34 @@ impl NativeSession {
             "绑定 Maa 控制器失败"
         );
         ensure!(tasker.inited(), "Maa Tasker 初始化失败");
+        // PostRecognition 也会在任务结束时 inactive。绑定真实 Win32 控制器
+        // 会让每个头像匹配都等待窗口/输入恢复，一帧累积超过战斗有效期。
+        // 共享已校验资源，仅给只读识别绑定不具备输入能力的控制器。
+        let recognition_controller =
+            fixture::NativeController::from_callback(fixture::RecognitionController)?;
+        ensure!(
+            recognition_controller
+                .wait(recognition_controller.post_connection()?)
+                .is_success(),
+            "只读识别控制器连接失败"
+        );
+        let recognition_tasker = Tasker::new()?;
+        recognition_tasker.bind_resource(&resource)?;
+        ensure!(
+            unsafe {
+                maa_framework::sys::MaaTaskerBindController(
+                    recognition_tasker.raw(),
+                    recognition_controller.raw(),
+                )
+            } != 0,
+            "只读识别控制器绑定失败"
+        );
+        ensure!(recognition_tasker.inited(), "只读识别 Tasker 初始化失败");
         sdk::verify_loaded_modules()?;
         Ok(Self {
             pipeline_subscriptions: Vec::new(),
             tasker,
+            recognition_tasker,
             raw_flash: Mutex::new(None),
             raw_detectors: Mutex::new(BTreeMap::new()),
             inference_gate: Mutex::new(()),
@@ -309,11 +338,13 @@ impl NativeSession {
             inference_device: device,
             raw_cpu_threads: raw_inference::DEFAULT_RAW_CPU_THREADS,
             controller,
+            _recognition_controller: recognition_controller,
             _resource: resource,
             input_mode,
             game_window: None,
             capture_method,
             held_keys: BTreeSet::new(),
+            patrol_steering: Default::default(),
             held_contacts: BTreeSet::new(),
             input_cleanup_pending: false,
             pipeline_controller_pending: false,
@@ -521,9 +552,9 @@ impl NativeSession {
             "不支持的识别类型"
         );
         let enqueue_at = Instant::now();
-        let job = self
-            .tasker
-            .post_recognition(kind, &params.to_string(), &image.buffer)?;
+        let job =
+            self.recognition_tasker
+                .post_recognition(kind, &params.to_string(), &image.buffer)?;
         let enqueue_us = enqueue_at.elapsed().as_micros() as u64;
         let completion_at = Instant::now();
         let status = job.wait();
@@ -536,7 +567,7 @@ impl NativeSession {
         // SDK 返回 MaaTaskId；1.25.2 的 job.get 把它当成 MaaRecoId。
         // 按任务 → 节点 → 识别详情读取，保持使用固定官方绑定。
         let task = self
-            .tasker
+            .recognition_tasker
             .get_task_detail(job.id)?
             .context("Maa 未返回识别任务详情")?;
         let detail = task
@@ -589,6 +620,11 @@ impl NativeSession {
 
 impl Drop for NativeSession {
     fn drop(&mut self) {
+        if self.recognition_tasker.running()
+            && let Ok(id) = self.recognition_tasker.post_stop()
+        {
+            Job::for_tasker(&self.recognition_tasker, id).wait();
+        }
         if self.tasker.running()
             && let Ok(id) = self.tasker.post_stop()
         {
@@ -597,6 +633,7 @@ impl Drop for NativeSession {
         let _ = self.release_inputs();
         self.pipeline_subscriptions.clear();
         self.tasker.clear_sinks();
+        self.recognition_tasker.clear_sinks();
     }
 }
 

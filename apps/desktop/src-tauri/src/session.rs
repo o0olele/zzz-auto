@@ -292,6 +292,29 @@ impl EngineSession {
                     .map_err(|e| ApiError::new("invalid_input", e))?;
                 mixed_combat = Some(combat);
             }
+            let exploration_selected = standalone.map_or_else(
+                || {
+                    selection.map_or_else(
+                        || {
+                            group
+                                .apps
+                                .iter()
+                                .any(|a| a.enabled && a.app_id == "map_exploration")
+                        },
+                        |ids| ids.iter().any(|id| id == "map_exploration"),
+                    )
+                },
+                |id| id == "map_exploration",
+            );
+            if exploration_selected && mixed_combat.is_none() {
+                let mut combat = instance.combat.clone();
+                combat.dodge_only = false;
+                combat.start_delay_ms = 0;
+                combat
+                    .validate()
+                    .map_err(|e| ApiError::new("invalid_input", e))?;
+                mixed_combat = Some(combat);
+            }
         }
         let input = match &command {
             Command::StartCombat {
@@ -469,9 +492,12 @@ impl EngineSession {
                     .as_ref()
                     .and_then(|r| r.context.as_ref())
                     .is_some_and(|c| {
-                        c.app_ids
-                            .iter()
-                            .any(|id| matches!(id.as_str(), "intel_board" | "world_patrol"))
+                        c.app_ids.iter().any(|id| {
+                            matches!(
+                                id.as_str(),
+                                "intel_board" | "world_patrol" | "map_exploration"
+                            )
+                        })
                     })
                 {
                     10

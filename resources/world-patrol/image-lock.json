@@ -14,5 +14,6 @@
   "image/world-patrol/normal_world/function_menu.png": "e23509c82557a14d54c6df970ab2e6acf292a782482500359e3adac73e45e601",
   "image/world-patrol/normal_world/map.png": "656f15d90605de0b2ec34492a62efcf31e4bae36a6b66e51dc2b9a621cb43822",
   "image/world-patrol/normal_world/preset_config.png": "55fc715411c71e95492245cfd1a27f54863c18f749553b73f59dd7dd5fade320",
-  "image/world-patrol/normal_world_investigation/btn_area_info_close.png": "4e0e43eb494637ecda1af8d33a3713d0ca1a6613ac5a95de25504045f83f6da2"
+  "image/world-patrol/normal_world_investigation/btn_area_info_close.png": "4e0e43eb494637ecda1af8d33a3713d0ca1a6613ac5a95de25504045f83f6da2",
+  "image/world-patrol/normal_world_investigation/function_menu.png": "109de1a0ac3bfc40f140770ca90fa0cfe96d3b95a328d52dd705452b12deb927"
 }

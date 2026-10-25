@@ -209,6 +209,15 @@ enum Action {
         #[arg(long, default_value = "resources/generated/world-patrol")]
         bundle: PathBuf,
     },
+    /// 只读检查空洞探索截图，不向游戏发送输入。
+    MapExplorationInspect {
+        #[arg(long, default_value = "resources/generated/world-patrol")]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+        #[arg(long, default_value = "observation", value_parser = ["observation", "cargo"])]
+        target: String,
+    },
     BasicDailyBundleCheck {
         #[arg(long)]
         bundle: PathBuf,
@@ -576,8 +585,22 @@ struct ChargePlanPreviewArgs {
     double_reward_left: Option<u8>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // 大型 CLI future 的构造也会占用栈；Windows 主线程默认栈不足。
+    std::thread::Builder::new()
+        .name("zzz-engine-main".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(Box::pin(run()))
+        })?
+        .join()
+        .map_err(|_| anyhow::anyhow!("引擎主线程异常退出"))?
+}
+
+async fn run() -> Result<()> {
     let args = Args::parse();
     if let Action::ConfigRecovery { command } = args.command {
         // 在资源选择、SDK、游戏控制与 Engine 初始化之前分流。
@@ -627,6 +650,7 @@ async fn main() -> Result<()> {
                 | Action::EngagementRewardInspect { .. }
                 | Action::SuibianTempleBundleCheck { .. }
                 | Action::WorldPatrolBundleCheck { .. }
+                | Action::MapExplorationInspect { .. }
                 | Action::BasicDailyBundleCheck { .. }
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
@@ -1220,6 +1244,21 @@ async fn main() -> Result<()> {
     let sdk = maa_adapter::load_sdk(&paths.sdk, &paths.data.join("maa-log"))?;
     match args.command {
         Action::Doctor => print(sdk),
+        Action::MapExplorationInspect {
+            bundle,
+            image,
+            target,
+        } => {
+            let bundle = maa_adapter::world_patrol::validate_bundle(&bundle)?;
+            let mut native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            native.load_world_patrol_bundle(&bundle)?;
+            let target = if target == "cargo" {
+                od_core::map_exploration::ExplorationTarget::Cargo
+            } else {
+                od_core::map_exploration::ExplorationTarget::Observation
+            };
+            print(native.inspect_map_exploration(target)?)
+        }
         Action::CombatInspect {
             bundle,
             image,

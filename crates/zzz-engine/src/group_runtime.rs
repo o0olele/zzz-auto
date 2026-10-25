@@ -1,6 +1,7 @@
 use super::*;
 
 enum GroupAppWork {
+    Exploration(Box<ExplorationWork>),
     Patrol(Box<PatrolWork>),
     Temple(Box<TempleWork>),
     Intel(Box<IntelWork>),
@@ -16,6 +17,12 @@ struct TempleWork {
 }
 struct IntelWork {
     run: crate::intel_board::IntelRun,
+    window: WindowInfo,
+    capture: CaptureMethod,
+    fixture: bool,
+}
+struct ExplorationWork {
+    run: crate::map_exploration::ExplorationRun,
     window: WindowInfo,
     capture: CaptureMethod,
     fixture: bool,
@@ -47,6 +54,7 @@ pub(super) struct GroupWork {
     current: Option<GroupAppWork>,
     intel: Option<crate::intel_board::PreparedIntel>,
     patrol: Option<crate::intel_board::PreparedIntel>,
+    exploration: Option<crate::intel_board::PreparedIntel>,
 }
 
 impl GroupWork {
@@ -64,6 +72,32 @@ impl GroupWork {
             .and_then(|g| g.current_index.map(|i| g.steps[i].app_id.as_str()))
             .ok_or_else(|| anyhow::anyhow!("缺少当前分项"))?;
         let (work, control) = match app {
+            "map_exploration" => {
+                let progress = record
+                    .daily
+                    .iter()
+                    .find(|p| p.app_id == app)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("缺少空洞探索检查点"))?;
+                let run = crate::map_exploration::ExplorationRun::new(
+                    record.id,
+                    progress,
+                    self.exploration
+                        .take()
+                        .ok_or_else(|| anyhow::anyhow!("缺少空洞探索预检脚本"))?,
+                    self.plan.game_day.clone(),
+                )?;
+                let control = run.control();
+                (
+                    GroupAppWork::Exploration(Box::new(ExplorationWork {
+                        run,
+                        window: self.window.clone(),
+                        capture: self.capture,
+                        fixture: self.fixture,
+                    })),
+                    control,
+                )
+            }
             "world_patrol" => {
                 let progress = record
                     .daily
@@ -201,6 +235,18 @@ impl GroupWork {
 
     pub(super) fn control(&mut self, resume: bool) {
         match &mut self.current {
+            Some(GroupAppWork::Exploration(work)) => {
+                if resume
+                    && work.run.interrupt_requested() != Some(od_core::pipeline::Interrupt::Stop)
+                {
+                    if let Err(error) = work.run.resume() {
+                        work.run.progress.state = MailState::Failed;
+                        work.run.message = error.to_string();
+                    }
+                } else {
+                    work.run.control().stop();
+                }
+            }
             Some(GroupAppWork::Patrol(work)) => {
                 if resume
                     && work.run.interrupt_requested() != Some(od_core::pipeline::Interrupt::Stop)
@@ -301,6 +347,22 @@ impl Engine {
         } else {
             None
         };
+        let exploration = if plan.items.iter().any(|i| {
+            i.app_id == "map_exploration" && i.decision == od_core::run_plan::PlanDecision::Run
+        }) {
+            Some(
+                crate::intel_board::PreparedIntel::load(
+                    plan.exploration_combat.clone().ok_or_else(|| {
+                        ApiError::new("invalid_combat", "缺少空洞探索冻结战斗设置")
+                    })?,
+                    &self.combat_root,
+                    &self.combat_data,
+                )
+                .map_err(native_error)?,
+            )
+        } else {
+            None
+        };
         let patrol = if plan.items.iter().any(|i| {
             i.app_id == "world_patrol" && i.decision == od_core::run_plan::PlanDecision::Run
         }) {
@@ -331,6 +393,7 @@ impl Engine {
             current: None,
             intel,
             patrol,
+            exploration,
         });
         let control = work.prepare(&record).map_err(native_error)?;
         if let Err(error) = self.history.save(&record) {
@@ -410,7 +473,7 @@ pub(super) fn run_group_work(
                     continue;
                 }
                 match item.app_id.as_str() {
-                    "world_patrol" => {
+                    "world_patrol" | "map_exploration" => {
                         maa_adapter::world_patrol::validate_bundle(
                             &paths.resources.join("generated/world-patrol"),
                         )?;
@@ -459,6 +522,9 @@ pub(super) fn run_group_work(
     loop {
         if let Some(current) = work.current.take() {
             work.current = match current {
+                GroupAppWork::Exploration(app) => {
+                    run_exploration_work(app, paths, shared, native).map(GroupAppWork::Exploration)
+                }
                 GroupAppWork::Patrol(app) => {
                     run_patrol_work(app, paths, shared, native).map(GroupAppWork::Patrol)
                 }
@@ -622,6 +688,91 @@ fn run_intel_work(
     }
 }
 
+fn run_exploration_work(
+    mut work: Box<ExplorationWork>,
+    paths: &EnginePaths,
+    shared: &Arc<Mutex<State>>,
+    native: &mut Option<NativeSession>,
+) -> Option<Box<ExplorationWork>> {
+    let id = work.run.id;
+    let result = if work.run.progress.state.is_terminal() {
+        Ok(())
+    } else {
+        work.run.execute(
+            native,
+            crate::intel_board::IntelSessionOptions {
+                window: &work.window,
+                capture: work.capture,
+                resources: &paths.resources,
+                fixture: work.fixture,
+            },
+            |progress| {
+                let mut state = shared.lock().expect("运行状态锁失效");
+                let record = state
+                    .slot
+                    .update_daily(id, progress, "空洞探索执行中".into())
+                    .map_err(anyhow::Error::msg)?;
+                save_run(paths, &mut state, &record);
+                anyhow::ensure!(
+                    state.record_error.is_none(),
+                    "空洞探索检查点保存失败，未投递后续输入"
+                );
+                Ok(())
+            },
+        )
+    };
+    if let Err(error) = result {
+        work.run.message = format!("空洞探索失败：{error:#}");
+    }
+    let mut state = shared.lock().expect("运行状态锁失效");
+    match state
+        .slot
+        .update_daily(id, work.run.progress.clone(), work.run.message.clone())
+    {
+        Ok(record) => {
+            save_run(paths, &mut state, &record);
+            state.event(
+                Some(id),
+                if record.state == RunState::Failed {
+                    "error"
+                } else {
+                    "info"
+                },
+                record.message,
+            );
+        }
+        Err(error) => {
+            state.event(
+                Some(id),
+                "error",
+                format!("空洞探索结果未能写入运行槽：{error}"),
+            );
+            // 发布失败不能让外层误认为分项已结束并推进下一个应用。
+            if let Some(mut previous) = state
+                .slot
+                .current()
+                .and_then(|r| r.daily.iter().find(|p| p.app_id == "map_exploration"))
+                .cloned()
+            {
+                previous.state = MailState::Failed;
+                previous.inputs_released = work.run.progress.inputs_released;
+                if let Ok(record) =
+                    state
+                        .slot
+                        .update_daily(id, previous, format!("空洞探索检查点无效：{error}"))
+                {
+                    save_run(paths, &mut state, &record);
+                }
+            }
+        }
+    }
+    if work.run.progress.state == MailState::Paused {
+        Some(work)
+    } else {
+        state.pipeline_control = None;
+        None
+    }
+}
 fn run_patrol_work(
     mut work: Box<PatrolWork>,
     paths: &EnginePaths,

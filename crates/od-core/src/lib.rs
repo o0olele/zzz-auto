@@ -27,6 +27,7 @@ pub mod group_run;
 pub mod intel_board;
 pub mod intel_board_flow;
 pub mod mail;
+pub mod map_exploration;
 pub mod map_transport;
 pub mod model_resources;
 pub mod navigation;
@@ -498,6 +499,16 @@ impl RunSlot {
                 .ok_or("锄大地缺少冻结战斗脚本")?
                 .validate()?;
         }
+        if plan
+            .items
+            .iter()
+            .any(|i| i.app_id == "map_exploration" && i.decision == run_plan::PlanDecision::Run)
+        {
+            plan.exploration_combat
+                .as_ref()
+                .ok_or("空洞探索缺少冻结战斗脚本")?
+                .validate()?;
+        }
         self.begin(if plan.context.app_ids == ["email"] {
             "email"
         } else {
@@ -532,6 +543,10 @@ impl RunSlot {
             }
             Some(app) if basic_daily::APP_IDS.contains(&app) => {
                 let mut progress = basic_daily::DailyProgress::new(app, plan.daily_config)?;
+                if app == "map_exploration" {
+                    progress.stage = "Inspect".into();
+                    progress.app_combat = plan.exploration_combat.clone();
+                }
                 if app == "world_patrol" {
                     let checkpoint = plan
                         .world_patrol_checkpoint
@@ -908,6 +923,9 @@ impl RunSlot {
             .iter_mut()
             .find(|p| p.app_id == progress.app_id)
             .ok_or("日常进度缺失")?;
+        if progress.app_id != "map_exploration" && progress.exploration.is_some() {
+            return Err("其他应用不能添加空洞探索检查点");
+        }
         match (&previous.temple, &progress.temple) {
             (Some(before), Some(after)) if progress.app_id == "suibian_temple" => {
                 before.check_update(after)?;
@@ -943,6 +961,24 @@ impl RunSlot {
                     || battle.script_revision != combat.script_revision)
             {
                 return Err("子战斗不是冻结的情报板战斗配置");
+            }
+        } else if progress.app_id == "map_exploration" {
+            previous
+                .exploration
+                .as_ref()
+                .ok_or("空洞探索原检查点缺失")?
+                .check_update(progress.exploration.as_ref().ok_or("空洞探索检查点缺失")?)?;
+            let combat = progress.app_combat.as_ref().ok_or("空洞探索缺少战斗配置")?;
+            combat.validate()?;
+            if progress.active_ms < previous.active_ms
+                || progress.world_patrol.is_some()
+                || progress.intel_flow.is_some()
+                || progress.intel_board.is_some()
+                || progress.intel_battle.as_ref().is_some_and(|b| {
+                    b.config != combat.config || b.script_revision != combat.script_revision
+                })
+            {
+                return Err("空洞探索进度或子战斗配置不符");
             }
         } else if progress.app_id == "world_patrol" {
             let before = previous.world_patrol.as_ref().ok_or("缺少锄大地原检查点")?;

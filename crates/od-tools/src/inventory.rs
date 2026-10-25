@@ -157,6 +157,13 @@ pub fn scan(reference: &Path, output: &Path) -> Result<()> {
             implemented: false,
         });
     }
+    let reference_factory_count = apps.len();
+    // 本工程新增的 Rust 应用没有旧 Python 工厂，重新扫描时仍须保留登记。
+    apps.extend(
+        od_core::applications()?
+            .into_iter()
+            .filter(|app| app.factory.starts_with("crates/")),
+    );
     apps.sort_by(|a, b| b.priority.cmp(&a.priority).then(a.id.cmp(&b.id)));
     ensure!(
         apps.iter()
@@ -191,7 +198,8 @@ pub fn scan(reference: &Path, output: &Path) -> Result<()> {
         &output.join("docs/migration/inventory.json"),
         &json!({
             "schema_version": 1, "reference_revision": String::from_utf8(revision.stdout)?.trim(),
-            "applications": "../../resources/catalog/applications.json", "factory_count": apps.len(),
+            "applications": "../../resources/catalog/applications.json", "factory_count": reference_factory_count,
+            "native_app_count": apps.len() - reference_factory_count,
             "gui_files": gui_files.iter().map(|path| relative(reference, path)).collect::<Vec<_>>(),
             "plugin_factories": plugin_factories, "public_interface_sources": public_files, "resources": resources,
             "acceptance": "pending", "models": "外部下载模型未在参考 assets 中出现，需另备模型、字典与旧结果"

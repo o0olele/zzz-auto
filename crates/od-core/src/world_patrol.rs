@@ -18,7 +18,117 @@ impl PatrolPoint {
             .to_degrees()
             .rem_euclid(360.0)
     }
+    /// 两次定位之间经过的线段距离，用于连续移动时识别已经跨过的路点。
+    pub fn distance_to_segment(self, start: Self, end: Self) -> f64 {
+        let dx = f64::from(end.x) - f64::from(start.x);
+        let dy = f64::from(end.y) - f64::from(start.y);
+        let length = dx * dx + dy * dy;
+        if length == 0.0 {
+            return self.distance(start);
+        }
+        let t = (((f64::from(self.x) - f64::from(start.x)) * dx
+            + (f64::from(self.y) - f64::from(start.y)) * dy)
+            / length)
+            .clamp(0.0, 1.0);
+        (f64::from(self.x) - f64::from(start.x) - t * dx)
+            .hypot(f64::from(self.y) - f64::from(start.y) - t * dy)
+    }
 }
+#[derive(Debug)]
+pub struct PatrolSteering {
+    scale: f64,
+    pending: Option<(f64, f64)>,
+    last_observed: Option<std::time::Instant>,
+    walking: bool,
+    turning_frames: u8,
+}
+impl Default for PatrolSteering {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            pending: None,
+            last_observed: None,
+            walking: false,
+            turning_frames: 0,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy)]
+pub struct PatrolSteer {
+    pub dx: Option<i32>,
+    pub forward: bool,
+}
+impl PatrolSteering {
+    pub fn invalidate(&mut self) {
+        self.pending = None;
+        self.last_observed = None;
+        self.walking = false;
+        self.turning_frames = 0;
+    }
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
+    pub fn observe(
+        &mut self,
+        heading: f64,
+        target: f64,
+        distance: f64,
+    ) -> Result<PatrolSteer, &'static str> {
+        if !heading.is_finite()
+            || !target.is_finite()
+            || !distance.is_finite()
+            || !(0.0..360.0).contains(&heading)
+            || !(0.0..360.0).contains(&target)
+            || distance < 0.0
+        {
+            self.invalidate();
+            return Err("锄大地转向反馈无效");
+        }
+        if self
+            .last_observed
+            .is_some_and(|at| at.elapsed().as_secs_f64() > 2.0)
+        {
+            self.invalidate();
+        }
+        if let Some((source, command)) = self.pending.take() {
+            let actual = crate::navigation::angle_delta(source, heading);
+            if actual.abs() >= 0.5 && actual * command > 0.0 {
+                self.scale = (self.scale + (command / actual - self.scale).clamp(-0.25, 0.25))
+                    .clamp(0.5, 2.0);
+            }
+        }
+        self.last_observed = Some(std::time::Instant::now());
+        let delta = crate::navigation::angle_delta(heading, target);
+        let moving_limit = if distance < 30.0 { 15.0 } else { 25.0 };
+        self.walking = if self.walking {
+            delta.abs() < moving_limit
+        } else {
+            delta.abs() <= 8.0
+        };
+        if !self.walking && delta.abs() > 2.0 {
+            self.turning_frames += 1;
+            if self.turning_frames > 12 {
+                self.invalidate();
+                return Err("锄大地转向未收敛，已停止前进");
+            }
+        } else {
+            self.turning_frames = 0;
+        }
+        let dx = if delta.abs() > 2.0 {
+            let command = (delta * self.scale).clamp(-90.0, 90.0);
+            let pixels = (command * -5.5).round() as i32;
+            self.pending = Some((heading, f64::from(pixels) / -5.5));
+            Some(pixels)
+        } else {
+            None
+        };
+        Ok(PatrolSteer {
+            dx,
+            forward: self.walking,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct PatrolIcon {

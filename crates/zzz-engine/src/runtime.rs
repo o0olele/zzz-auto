@@ -1008,6 +1008,7 @@ impl Engine {
             .app_combat
             .as_ref()
             .or(plan.world_patrol_combat.as_ref())
+            .or(plan.exploration_combat.as_ref())
             .map(|p| &p.script_revision)
             != combat_revision.as_ref()
         {
@@ -1036,7 +1037,7 @@ impl Engine {
                 item.enabled
                     && matches!(
                         item.app_id.as_str(),
-                        "redemption_code" | "intel_board" | "world_patrol"
+                        "redemption_code" | "intel_board" | "world_patrol" | "map_exploration"
                     )
             })
         {
@@ -1174,6 +1175,18 @@ impl Engine {
                     frozen.config.script
                 ));
                 plan.world_patrol_combat = Some(frozen);
+            }
+            if plan.items.iter().any(|i| i.app_id == "map_exploration" && i.decision == od_core::run_plan::PlanDecision::Run) {
+                let instance = config.instances.iter().find(|i| i.id == instance_id).ok_or_else(|| ApiError::new("invalid_account", "空洞探索账号缺失"))?;
+                let mut settings = instance.combat.clone();
+                settings.dodge_only = false;
+                settings.start_delay_ms = 0;
+                let bundle = maa_adapter::combat_vision::CombatBundle::load(&combat_root).map_err(native_error)?;
+                let revision = crate::combat::script_catalog(&bundle, &combat_data).map_err(native_error)?.revision;
+                let frozen = od_core::app_combat::AppCombatPlan { config: settings, script_revision: revision };
+                crate::intel_board::PreparedIntel::from_bundle(frozen.clone(), bundle, &combat_data).map_err(native_error)?;
+                plan.warnings.push(format!("空洞探索：自动最小缩放并拖图扫描，先解锁观测奇点，再开启小卡格车；以区域信息左侧小卡格车计数确认完成。遇战使用账号脚本 {}（{:?}），总超时 30 分钟。", frozen.config.script, frozen.config.mode));
+                plan.exploration_combat = Some(frozen);
             }
             Ok(plan)
         })

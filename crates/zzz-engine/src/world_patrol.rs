@@ -34,6 +34,7 @@ pub struct PatrolRun {
     recognizer: Option<CombatRecognizer>,
     combat: Option<CombatRun>,
     position: Option<PatrolPoint>,
+    position_at: Option<Instant>,
     no_pos: Option<Instant>,
     stuck: Option<(PatrolPoint, Instant)>,
     backtrack: Option<(PatrolPoint, Instant)>,
@@ -72,6 +73,7 @@ impl PatrolRun {
             recognizer: None,
             combat: None,
             position: None,
+            position_at: None,
             no_pos: None,
             stuck: None,
             backtrack: None,
@@ -110,6 +112,7 @@ impl PatrolRun {
         }
         self.combat = None;
         self.position = None;
+        self.position_at = None;
         self.no_pos = None;
         self.stuck = None;
         self.backtrack = None;
@@ -143,6 +146,16 @@ impl PatrolRun {
         battle: bool,
     ) -> Result<Option<&'a mut NativeSession>> {
         let cancel = self.control.cancellation();
+        // 同一次执行内的 Move 循环独占该槽位，无需逐帧做会松键的控制器交接。
+        if !battle && self.progress.stage == "Move" && self.loaded == Some(false) && slot.is_some()
+        {
+            if cancel.load(Ordering::Acquire) {
+                return Ok(None);
+            }
+            let session = slot.as_mut().unwrap();
+            session.check_combat_input_mode(InputMode::Foreground)?;
+            return Ok(Some(session));
+        }
         if options.fixture {
             slot.as_mut().context("锄大地回放控制器未准备")?.quiesce()?;
             if cancel.load(Ordering::Acquire) {
@@ -184,7 +197,7 @@ impl PatrolRun {
         } else {
             InputMode::Foreground
         })?;
-        if self.loaded != Some(battle) {
+        if self.loaded.is_none() {
             use sha2::{Digest, Sha256};
             ensure!(
                 Sha256::digest(std::fs::read(
@@ -196,8 +209,21 @@ impl PatrolRun {
             );
             self.recognizer = Some(session.load_combat_bundle(&self.prepared.root)?);
             session.load_world_patrol_bundle(&options.resources.join("generated/world-patrol"))?;
-            self.loaded = Some(battle);
+            let flash = self
+                .prepared
+                .script
+                .states
+                .iter()
+                .any(|name| name == "闪避识别-红光" || name == "闪避识别-黄光");
+            self.recognizer
+                .as_mut()
+                .unwrap()
+                .warm_patrol(session, flash, &cancel)?;
         }
+        if self.loaded != Some(battle) {
+            session.reset_patrol_steering();
+        }
+        self.loaded = Some(battle);
         Ok(Some(session))
     }
     fn retry_route(&mut self) -> Result<()> {
@@ -211,6 +237,7 @@ impl PatrolRun {
             self.progress.stage = "Inspect".into();
         }
         self.position = None;
+        self.position_at = None;
         self.no_pos = None;
         self.stuck = None;
         self.backtrack = None;
@@ -230,6 +257,8 @@ impl PatrolRun {
             if let Some(s) = slot.as_mut() {
                 s.quiesce()?;
             }
+            // 暂停后可能已交接给别的应用；每次 execute 重新建立资源和槽位归属。
+            self.loaded = None;
             self.progress.inputs_released = true;
             if self.interrupted() {
                 return Ok(());
@@ -376,10 +405,13 @@ impl PatrolRun {
                     let area = area.unwrap();
                     if self.position.is_none() {
                         self.position = Some(catalog.start(route).map_err(anyhow::Error::msg)?);
+                        self.position_at = Some(Instant::now());
                     }
                     let previous = self.position.unwrap();
-                    let missing = self.no_pos.map_or(0.0, |at| at.elapsed().as_secs_f64());
-                    let radius = ((missing + 1.0) * 50.0).min(800.0);
+                    let elapsed_since_position = self
+                        .position_at
+                        .map_or(0.0, |at| at.elapsed().as_secs_f64());
+                    let radius = (elapsed_since_position * 50.0 + 15.0).clamp(50.0, 800.0);
                     let Some(sight) = session.read_world_patrol(
                         Some(area),
                         Some(previous),
@@ -393,11 +425,9 @@ impl PatrolRun {
                     };
                     if sight.mini_map.is_none() {
                         session.release_inputs()?;
-                        if session.intel_battle_ready(
-                            self.recognizer.as_ref().unwrap(),
-                            &cancel,
-                            remaining.min(Duration::from_secs(2)),
-                        )? {
+                        if session
+                            .patrol_battle_ready(self.recognizer.as_mut().unwrap(), &cancel)?
+                        {
                             self.progress.stage = "Combat".into();
                         } else {
                             let at = self.no_pos.get_or_insert_with(Instant::now);
@@ -449,26 +479,30 @@ impl PatrolRun {
                     }
                     self.no_pos = None;
                     self.position = Some(position);
+                    self.position_at = Some(Instant::now() - sight.age());
                     let patrol = self.progress.world_patrol.as_mut().unwrap();
+                    while let Some(target) = route.points.get(patrol.point_index)
+                        && target.distance_to_segment(previous, position) < 10.0
+                    {
+                        patrol.point_index += 1;
+                        self.stuck = None;
+                        self.backtrack = None;
+                        self.unstuck = 0;
+                    }
                     if patrol.point_index >= route.points.len() {
                         session.release_inputs()?;
                         patrol.complete_route(true).map_err(anyhow::Error::msg)?;
                         self.progress.stage = "Inspect".into();
                         self.position = None;
+                        self.position_at = None;
                         self.stuck = None;
                         self.backtrack = None;
                         continue;
                     }
                     let target = route.points[patrol.point_index];
-                    if position.distance(target) < 10.0 {
-                        session.release_inputs()?;
-                        patrol.point_index += 1;
+                    if !session.patrol_is_walking() {
                         self.stuck = None;
-                        self.backtrack = None;
-                        self.unstuck = 0;
-                        continue;
-                    }
-                    if let Some((origin, at)) = self.stuck {
+                    } else if let Some((origin, at)) = self.stuck {
                         if position.distance(origin) >= 10.0 {
                             self.stuck = Some((position, Instant::now()));
                         } else if at.elapsed() > Duration::from_secs(2) {
@@ -664,14 +698,12 @@ impl PatrolRun {
                     }
                     "Arrival" => {
                         let battle = !world
-                            && session.intel_battle_ready(
-                                self.recognizer.as_ref().unwrap(),
-                                &cancel,
-                                remaining.min(Duration::from_secs(2)),
-                            )?;
+                            && session
+                                .patrol_battle_ready(self.recognizer.as_mut().unwrap(), &cancel)?;
                         if world || battle {
                             let route = route.as_ref().unwrap();
                             self.position = Some(catalog.start(route).map_err(anyhow::Error::msg)?);
+                            self.position_at = Some(Instant::now());
                             self.progress.stage = if battle { "Combat" } else { "Move" }.into();
                             self.no_pos = None;
                             self.stuck = None;

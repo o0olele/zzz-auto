@@ -22,6 +22,27 @@
     "implemented": false
   },
   {
+    "id": "map_exploration",
+    "name": "空洞探索",
+    "execution": "rust",
+    "reason": "识别观测奇点和小卡格车，追踪引导线并交接自动战斗",
+    "factory": "crates/zzz-engine/src/map_exploration.rs",
+    "configs": [],
+    "settings": [
+      "apps/desktop/src/CombatPage.tsx"
+    ],
+    "run_records": [
+      "crates/od-core/src/map_exploration.rs"
+    ],
+    "source_files": [
+      "crates/zzz-engine/src/map_exploration.rs",
+      "crates/maa-adapter/src/map_exploration.rs"
+    ],
+    "priority": 1800,
+    "default_group": true,
+    "implemented": false
+  },
+  {
     "id": "drive_disc_dismantle",
     "name": "驱动盘拆解",
     "execution": "pipeline",

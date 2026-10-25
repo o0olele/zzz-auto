@@ -10,6 +10,7 @@ import { trialAppOptions } from './generated/protocol';
 export const trialAppName = (id: string) => trialAppOptions.find(app => app.id === id)?.label ?? id;
 
 export const runStateNames: Record<string, string> = { running: '运行中', pausing: '暂停中', paused: '已暂停', stopping: '停止中', succeeded: '完成', failed: '失败', stopped: '已停止' };
+const explorationStages: Record<string, string> = { Inspect: '确认当前画面', RecoverTrack: '恢复目标追踪', Zoom: '缩放地图至最小', Pan: '拖动地图', Scan: '扫描地图目标', Detail: '核对目标详情', Track: '追踪目标', Transport: '等待附近传送', CloseMap: '返回探索画面', Follow: '沿引导线行走', CrossZone: '沿小地图道路行走', FollowMarker: '沿世界目标标记接近', ApproachTarget: '对准目标并调整人物朝向', AwaitUnlock: '等待解锁结果', Verify: '核对解锁状态', Combat: '自动战斗', Leave: '结束地图扫描', Done: '已完成' };
 export const isRunActive = (run: RunRecord | null | undefined) => !!run && ['running', 'pausing', 'paused', 'stopping'].includes(run.state);
 export const groupInputsReleased = (run: RunRecord) => run.group
   ? run.group.steps.every(step => step.inputs_released) && (run.mail?.inputs_released ?? true) && (run.coffee?.inputs_released ?? true) && (run.daily ?? []).every(item => item.inputs_released)
@@ -42,6 +43,7 @@ export function GroupRunStatus({ run, disabled, recordError, onCommand }: {
     {run.daily?.filter(item => item.world_patrol).map(item => <WorldPatrolStatus key={item.app_id} progress={item}/>)}
     {run.daily?.filter(item => item.intel_board).map(item => <IntelBoardStatus key={item.app_id} progress={item}/>)}
     {run.daily?.filter(item => item.temple).map(item => <SuibianTempleStatus key={item.app_id} progress={item}/>)}
+    {run.daily?.filter(item => item.exploration).map(item => <p key={item.app_id} aria-label="空洞探索进度">空洞探索 · {explorationStages[item.stage] ?? '读取探索进度'} · 当前优先目标：{item.exploration!.target === 'observation' ? '观测奇点' : '小卡格车'} · 已解锁奇点 {item.exploration!.observations} · 已开启卡格车 {item.exploration!.cargo}{item.exploration!.interaction_attempted ? ' · 等待交互结果确认' : ''}</p>)}
     <RunSteps group={run.group}/>
     <div className="button-row">
       <Button disabled={disabled || run.state !== 'running'} onClick={() => onCommand({ type: 'pause', params: { run_id: run.id } })}>{run.context?.standalone ? '暂停应用' : '暂停应用组'}</Button>

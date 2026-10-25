@@ -935,9 +935,30 @@ impl ConfigStore {
         if bytes.len() as u64 > MAX_CONFIG_BYTES {
             return Err(invalid("账号配置过大"));
         }
-        let config: AccountConfig = serde_yaml::from_slice(&bytes)
+        let mut config: AccountConfig = serde_yaml::from_slice(&bytes)
             .map_err(|_| invalid("账号配置损坏或包含不支持的字段，请从备份恢复"))?;
         config.validate()?;
+        // 本工程新增的默认应用要出现在已有组中，独立运行也从该列表取应用。
+        // 只补缺少的条目并保持禁用，原文件在用户保存配置时才更新。
+        let native_apps: Vec<_> = crate::applications()
+            .map_err(|_| invalid("应用登记无法读取"))?
+            .into_iter()
+            .filter(|app| app.default_group && app.factory.starts_with("crates/"))
+            .collect();
+        for instance in &mut config.instances {
+            for group in &mut instance.groups {
+                for app in &native_apps {
+                    if group.apps.len() < 256
+                        && !group.apps.iter().any(|item| item.app_id == app.id)
+                    {
+                        group.apps.push(GroupApp {
+                            app_id: app.id.clone(),
+                            enabled: false,
+                        });
+                    }
+                }
+            }
+        }
         Ok(config)
     }
 

@@ -13,7 +13,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 pub struct CombatBundle {
@@ -284,6 +284,10 @@ pub struct CombatRecognizer {
     raw: Arc<Mutex<Option<crate::RawRecognitionControl>>>,
     quick: Option<(String, f64)>,
     chain: Option<(Vec<Option<String>>, f64)>,
+    patrol_hud_offset: Option<[i32; 2]>,
+    patrol_avatar_cache: BTreeMap<[i32; 4], usize>,
+    patrol_avatar_scan: BTreeMap<[i32; 4], usize>,
+    patrol_portrait_template: BTreeMap<[i32; 4], (usize, String)>,
 }
 impl CombatRecognizer {
     /// 只读取同一截图中的固定普通结算区域；调用方须确认已进入战斗，
@@ -355,6 +359,10 @@ impl CombatRecognizer {
             raw: Arc::new(Mutex::new(None)),
             quick: None,
             chain: None,
+            patrol_hud_offset: None,
+            patrol_avatar_cache: BTreeMap::new(),
+            patrol_avatar_scan: BTreeMap::new(),
+            patrol_portrait_template: BTreeMap::new(),
         }
     }
     pub fn cancellation_handle(&self) -> Arc<Mutex<Option<crate::RawRecognitionControl>>> {
@@ -367,6 +375,122 @@ impl CombatRecognizer {
         self.last.clear();
         self.quick = None;
         self.chain = None;
+    }
+    /// 仅用于锄大地：用攻击按钮的高分匹配校准 HUD，再统一平移识别帧。
+    /// 不改变控制器的截图或输入坐标；战斗按键仍沿用原有绑定。
+    pub fn align_patrol_frame(
+        &mut self,
+        session: &NativeSession,
+        frame: &mut CombatFrame,
+        cancel: &AtomicBool,
+    ) -> Result<bool> {
+        if cancel.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        let attack = self.area("按键-普通攻击")?;
+        let template = &self.bundle.spec.templates["battle/btn_normal_attack"];
+        let result = session.recognize_prepared(&frame.image, "TemplateMatch", &json!({
+            "template":template.image.strip_prefix("image/").context("攻击模板路径无效")?,
+            "roi":[1380,880,160,200],"threshold":0.9,"method":5,"green_mask":template.mask.is_some(),"order_by":"Score"
+        }))?;
+        let matched = result.detail["hit"] == true;
+        if matched {
+            let [x, y, w, h]: [i32; 4] =
+                serde_json::from_value(result.detail["detail"]["best"]["box"].clone())?;
+            let offset = [
+                x + w / 2 - (attack[0] + attack[2]) / 2,
+                y + h / 2 - (attack[1] + attack[3]) / 2,
+            ];
+            ensure!(
+                offset[0].abs() <= 40 && offset[1].abs() <= 60,
+                "锄大地战斗 HUD 偏移超出支持范围"
+            );
+            self.patrol_hud_offset = Some(offset.map(|v| if v.abs() <= 3 { 0 } else { v }));
+        }
+        if cancel.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        if let Some([dx, dy]) = self.patrol_hud_offset.filter(|offset| *offset != [0, 0]) {
+            let source = frame.image.buffer.raw_data().context("战斗帧像素缺失")?;
+            ensure!(source.len() == 1920 * 1080 * 3, "战斗帧须为 1080p BGR8");
+            let mut aligned = vec![0; source.len()];
+            let left = (-dx).max(0) as usize;
+            let source_left = dx.max(0) as usize;
+            let bytes = (1920 - dx.abs()) as usize * 3;
+            for y in 0..1080i32 {
+                let sy = y + dy;
+                if !(0..1080).contains(&sy) {
+                    continue;
+                }
+                let from = (sy as usize * 1920 + source_left) * 3;
+                let to = (y as usize * 1920 + left) * 3;
+                aligned[to..to + bytes].copy_from_slice(&source[from..from + bytes]);
+            }
+            frame.image.buffer.set_raw_data(&aligned, 1920, 1080, 16)?;
+        }
+        Ok(matched)
+    }
+    /// 模型冷启动发生在跑图前；全部步骤只读画面，取消时不投递输入。
+    pub fn warm_patrol(
+        &mut self,
+        session: &NativeSession,
+        flash: bool,
+        cancel: &AtomicBool,
+    ) -> Result<()> {
+        let Some(mut frame) = session.combat_frame(cancel)? else {
+            return Ok(());
+        };
+        if flash {
+            let control = crate::RawRecognitionControl::default();
+            let finished = AtomicBool::new(false);
+            let result = std::thread::scope(|scope| {
+                let watch = control.clone();
+                let ended = &finished;
+                scope.spawn(move || {
+                    while !ended.load(Ordering::Acquire) {
+                        if cancel.load(Ordering::Acquire) {
+                            let _ = watch.cancel();
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                });
+                let result = session.recognize_prepared_cancellable(
+                    &frame.image,
+                    "LegacyFlashRaw",
+                    &json!({"model":crate::raw_inference::RAW_FLASH_MODEL,"threshold":0.9}),
+                    &control,
+                );
+                finished.store(true, Ordering::Release);
+                result
+            });
+            match result {
+                Err(error)
+                    if cancel.load(Ordering::Acquire)
+                        && error
+                            .downcast_ref::<crate::RawRecognitionCancelled>()
+                            .is_some() =>
+                {
+                    return Ok(());
+                }
+                Err(error) => return Err(error),
+                _ => {}
+            }
+        }
+        if cancel.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        self.align_patrol_frame(session, &mut frame, cancel)?;
+        self.observe(
+            session,
+            &frame,
+            0.0,
+            &BTreeMap::from([("flash_enabled".into(), 0.0)]),
+            false,
+            cancel,
+        )?;
+        self.last.clear();
+        Ok(())
     }
     pub fn refresh_agents(&mut self) {
         self.last.remove("agents");
@@ -404,20 +528,72 @@ impl CombatRecognizer {
             .filter(|_| result.detail["hit"] == true))
     }
     fn avatar(
-        &self,
+        &mut self,
         session: &NativeSession,
         frame: &CombatFrame,
         prefix: &str,
         rect: [i32; 4],
         cancel: &AtomicBool,
     ) -> Result<Option<usize>> {
-        let candidates: Vec<usize> = if self.stable >= 5 && !self.candidates.is_empty() {
+        let patrol = self.patrol_hud_offset.is_some();
+        if patrol {
+            if let Some((index, key)) = self.patrol_portrait_template.get(&rect)
+                && self.matched(session, frame, key, rect, 0.9)?.is_some()
+            {
+                return Ok(Some(*index));
+            }
+            self.patrol_portrait_template.remove(&rect);
+            let preferred: Vec<_> = self
+                .patrol_avatar_cache
+                .get(&rect)
+                .copied()
+                .into_iter()
+                .chain(self.candidates.iter().copied())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            if let Some((index, key)) =
+                self.avatar_candidates(session, frame, prefix, rect, cancel, &preferred)?
+            {
+                self.patrol_avatar_cache.insert(rect, index);
+                self.patrol_portrait_template.insert(rect, (index, key));
+                return Ok(Some(index));
+            }
+            self.patrol_avatar_cache.remove(&rect);
+        }
+        let candidates: Vec<usize> = if patrol {
+            let count = self.bundle.spec.agents.len();
+            if count == 0 {
+                return Ok(None);
+            }
+            let cursor = self.patrol_avatar_scan.entry(rect).or_default();
+            let candidates = (0..count.min(2)).map(|i| (*cursor + i) % count).collect();
+            *cursor = (*cursor + 2) % count;
+            candidates
+        } else if self.stable >= 5 && !self.candidates.is_empty() {
             self.candidates.clone()
         } else {
             (0..self.bundle.spec.agents.len()).collect()
         };
-        let mut best: Option<(usize, f64)> = None;
-        for index in candidates {
+        let best = self.avatar_candidates(session, frame, prefix, rect, cancel, &candidates)?;
+        if patrol && let Some((index, key)) = &best {
+            self.patrol_avatar_cache.insert(rect, *index);
+            self.patrol_portrait_template
+                .insert(rect, (*index, key.clone()));
+        }
+        Ok(best.map(|(index, _)| index))
+    }
+    fn avatar_candidates(
+        &self,
+        session: &NativeSession,
+        frame: &CombatFrame,
+        prefix: &str,
+        rect: [i32; 4],
+        cancel: &AtomicBool,
+        candidates: &[usize],
+    ) -> Result<Option<(usize, String)>> {
+        let mut best: Option<(usize, f64, String)> = None;
+        for &index in candidates {
             for template in &self.bundle.spec.agents[index].templates {
                 if cancel.load(Ordering::Acquire) {
                     return Ok(None);
@@ -427,14 +603,20 @@ impl CombatRecognizer {
                     frame,
                     &format!("battle/{prefix}{template}"),
                     rect,
-                    0.8,
-                )? && best.is_none_or(|(_, previous)| score >= previous)
+                    if self.patrol_hud_offset.is_some() {
+                        0.9
+                    } else {
+                        0.8
+                    },
+                )? && best
+                    .as_ref()
+                    .is_none_or(|(_, previous, _)| score >= *previous)
                 {
-                    best = Some((index, score));
+                    best = Some((index, score, format!("battle/{prefix}{template}")));
                 }
             }
         }
-        Ok(best.map(|(index, _)| index))
+        Ok(best.map(|(index, _, key)| (index, key)))
     }
     pub(crate) fn area(&self, name: &str) -> Result<[i32; 4]> {
         self.bundle
@@ -545,13 +727,21 @@ impl CombatRecognizer {
                 now,
                 *intervals.get("check_agent_interval").unwrap_or(&0.5),
             ) {
-                let mut found = Vec::new();
+                let mut found: Vec<Option<usize>> = Vec::new();
                 for (name, prefix) in [
                     ("头像-3-1", "avatar_1_"),
                     ("头像-3-2", "avatar_2_"),
                     ("头像-3-3", "avatar_2_"),
                     ("头像-2-2", "avatar_2_"),
                 ] {
+                    if self.patrol_hud_offset.is_some()
+                        && name == "头像-2-2"
+                        && found[1].is_some()
+                        && found[2].is_some()
+                    {
+                        found.push(None);
+                        break;
+                    }
                     if cancel.load(Ordering::Acquire) {
                         return Ok(observation);
                     }
@@ -671,6 +861,45 @@ impl CombatRecognizer {
                                     definition.clear_on_zero && value == 0,
                                 ));
                             }
+                        }
+                    }
+                }
+                // 公共前台条与技能按钮不依赖角色身份。头像仍在分批识别时，
+                // 也须提供真实能量状态，让通用脚本的“未知角色”分支能够出招。
+                if team.first().is_none_or(Option::is_none) {
+                    let total = if team.len() == 2 { 2 } else { 3 };
+                    for (key, suffix) in [
+                        ("ENERGY", "能量"),
+                        ("SPECIAL", "特殊技可用"),
+                        ("ULTIMATE", "终结技可用"),
+                    ] {
+                        let definition = self
+                            .bundle
+                            .spec
+                            .common
+                            .get(&format!("{key}_{total}1"))
+                            .context("公共前台状态缺失")?;
+                        let value =
+                            self.agent_state(session, frame, definition, &definition.template_id)?;
+                        let clear = key != "ENERGY" && value == 0;
+                        observation.states.push(update(
+                            format!("前台-{suffix}"),
+                            Some(value),
+                            clear,
+                        ));
+                        if key != "ENERGY" {
+                            observation.states.push(update(
+                                format!(
+                                    "按键可用-{}",
+                                    if key == "SPECIAL" {
+                                        "特殊攻击"
+                                    } else {
+                                        "终结技"
+                                    }
+                                ),
+                                Some(value),
+                                clear,
+                            ));
                         }
                     }
                 }

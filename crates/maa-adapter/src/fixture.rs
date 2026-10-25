@@ -36,6 +36,18 @@ struct ImageController {
     png: Vec<u8>,
 }
 
+/// PostRecognition 已提供图像；此控制器不截图、不支持任何输入。
+/// Maa 的任务末尾 inactive 在这里为空操作，不触发真实 Win32 控制器收尾。
+pub(crate) struct RecognitionController;
+impl CustomControllerCallback for RecognitionController {
+    fn connect(&self) -> bool {
+        true
+    }
+    fn request_uuid(&self) -> Option<String> {
+        Some("zzz-auto-read-only-recognition".into())
+    }
+}
+
 impl CustomControllerCallback for ImageController {
     fn connect(&self) -> bool {
         true

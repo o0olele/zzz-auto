@@ -56,7 +56,8 @@ pub const SCHEMA_SIX_APP_IDS: [&str; 10] = [
     "random_play",
     "predefined_team_checker",
 ];
-pub const APP_IDS: [&str; 13] = [
+pub const APP_IDS: [&str; 14] = [
+    "map_exploration",
     "world_patrol",
     "suibian_temple",
     RESOURCE_APP_IDS[0],
@@ -118,6 +119,9 @@ impl DailyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct DailyProgress {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub exploration: Option<crate::map_exploration::ExplorationProgress>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub world_patrol: Option<crate::world_patrol::PatrolProgress>,
@@ -186,6 +190,7 @@ impl DailyProgress {
             return Err("日常应用未注册");
         }
         Ok(Self {
+            exploration: (app_id == "map_exploration").then(Default::default),
             world_patrol: None,
             temple: if app_id == "suibian_temple" {
                 Some(Box::new(crate::suibian_temple_flow::TempleFlow::new(
@@ -298,6 +303,9 @@ impl DailyProgress {
             && self.stage == "Done"
     }
     pub fn timeout_ms(&self) -> u32 {
+        if self.exploration.is_some() {
+            return crate::map_exploration::TIMEOUT_MS;
+        }
         if let Some(patrol) = &self.world_patrol {
             return patrol.config.timeout_ms;
         }
@@ -316,6 +324,8 @@ impl DailyProgress {
     }
     pub fn navigation_completed(&self) -> bool {
         (self.stage == "Done" || (self.app_id == "predefined_team_checker" && self.stage == "Save"))
+            && (self.app_id != "map_exploration"
+                || self.exploration.as_ref().is_some_and(|p| p.scan_finished))
             && (self.app_id != "world_patrol"
                 || self.world_patrol.as_ref().is_some_and(|p| p.completed()))
             && (self.app_id != "intel_board"

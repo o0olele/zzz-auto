@@ -5,6 +5,7 @@ pub mod compendium;
 pub mod intel_board;
 pub mod legacy_comparison;
 pub mod mail;
+pub mod map_exploration;
 pub mod map_transport;
 pub mod model_resources;
 pub mod recognition;

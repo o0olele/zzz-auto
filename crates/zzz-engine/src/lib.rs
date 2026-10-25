@@ -20,6 +20,7 @@ pub mod simulation_preparation;
 pub mod simulation_settlement;
 pub mod simulation_teams;
 pub mod transport;
+pub mod world_patrol;
 
 pub mod suibian_run;
 pub mod suibian_temple;

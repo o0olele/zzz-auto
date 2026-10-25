@@ -1,3 +1,4 @@
+import { WorldPatrolStatus } from './WorldPatrolSettings';
 import { SuibianTempleStatus } from './SuibianTempleSettings';
 import { RedemptionStatus } from './RedemptionSettings';
 import { IntelBoardStatus } from './IntelBoardSettings';
@@ -38,6 +39,7 @@ export function GroupRunStatus({ run, disabled, recordError, onCommand }: {
     {run.daily?.filter(item => item.redemption).map(item => <RedemptionStatus key={item.app_id} progress={item.redemption!}/>)}
     {run.daily?.filter(item => item.random_play).map(item => <RandomPlayStatus key={item.app_id} progress={item.random_play!}/>)}
     {run.daily?.filter(item => item.team_check).map(item => <TeamCheckStatus key={item.app_id} progress={item.team_check!}/>)}
+    {run.daily?.filter(item => item.world_patrol).map(item => <WorldPatrolStatus key={item.app_id} progress={item}/>)}
     {run.daily?.filter(item => item.intel_board).map(item => <IntelBoardStatus key={item.app_id} progress={item}/>)}
     {run.daily?.filter(item => item.temple).map(item => <SuibianTempleStatus key={item.app_id} progress={item}/>)}
     <RunSteps group={run.group}/>

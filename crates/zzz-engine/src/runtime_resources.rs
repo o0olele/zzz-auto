@@ -215,6 +215,13 @@ fn safe_combat_path(name: &str) -> bool {
             .components()
             .all(|part| matches!(part, std::path::Component::Normal(_)))
 }
+fn safe_patrol_path(name: &str) -> bool {
+    name.starts_with("generated/world-patrol/")
+        && !name.contains([':', '\\'])
+        && Path::new(name)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
 
 fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
     ensure!(
@@ -247,7 +254,10 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
                 || (manifest.schema_version >= 3
                     && manifest.protocol_version >= 44
                     && safe_temple_path(&file.path))
-                || (manifest.schema_version == 4 && safe_combat_path(&file.path)))
+                || (manifest.schema_version == 4 && safe_combat_path(&file.path))
+                || (manifest.schema_version == 4
+                    && manifest.protocol_version >= 46
+                    && safe_patrol_path(&file.path)))
                 && paths.insert(file.path.as_str()),
             "资源文件未登记或重复"
         );
@@ -269,6 +279,9 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
 }
 
 fn validate_semantics(root: &Path) -> Result<()> {
+    if root.join("generated/world-patrol").try_exists()? {
+        maa_adapter::world_patrol::validate_bundle(&root.join("generated/world-patrol"))?;
+    }
     if root.join("generated/suibian-temple").try_exists()? {
         maa_adapter::suibian_temple::validate_full_temple_bundle(
             &root.join("generated/suibian-temple"),
@@ -469,6 +482,24 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
         combat.sort();
         names.extend(combat);
     }
+    if source.join("generated/world-patrol").try_exists()? {
+        ensure!(manifest.schema_version == 4, "锄大地资源需要配套战斗资源");
+        let patrol = source.join("generated/world-patrol");
+        maa_adapter::world_patrol::validate_bundle(&patrol)?;
+        for entry in walkdir::WalkDir::new(patrol).min_depth(1) {
+            let entry = entry?;
+            check_path(entry.path())?;
+            if entry.file_type().is_file() {
+                names.push(
+                    entry
+                        .path()
+                        .strip_prefix(&source)?
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+    }
     if source.join("generated/suibian-temple").try_exists()? {
         let temple = source.join("generated/suibian-temple");
         maa_adapter::suibian_temple::validate_full_temple_bundle(&temple)?;
@@ -573,7 +604,8 @@ fn extract(
                     || DAILY_FILES.contains(&entry.name())
                     || daily_extension_path(entry.name())
                     || safe_temple_path(entry.name())
-                    || safe_combat_path(entry.name()))
+                    || safe_combat_path(entry.name())
+                    || safe_patrol_path(entry.name()))
                 && names.insert(entry.name().to_owned()),
             "ZIP 包含多余、重复或非法条目"
         );

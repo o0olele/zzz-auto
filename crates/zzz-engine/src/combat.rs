@@ -74,6 +74,7 @@ pub struct CombatRun {
     parented: bool,
     end_tracker: BattleEndTracker,
     parent_deadline: Option<Instant>,
+    patrol_ui_timeout: Option<u16>,
 }
 impl CombatRun {
     pub fn new(id: Uuid, config: CombatConfig, script: Script) -> Result<Self> {
@@ -92,6 +93,7 @@ impl CombatRun {
             parented: false,
             end_tracker: BattleEndTracker::default(),
             parent_deadline: None,
+            patrol_ui_timeout: None,
         })
     }
     /// 应用内战斗与外层流程共用请求句柄，结束当前战斗不能结束整个应用。
@@ -108,6 +110,10 @@ impl CombatRun {
     }
     pub fn control(&self) -> PipelineRequest {
         self.control.requester()
+    }
+    pub fn for_world_patrol(mut self, ui_timeout: u16) -> Self {
+        self.patrol_ui_timeout = Some(ui_timeout);
+        self
     }
     pub fn stopping(&self) -> bool {
         self.control.requested() == Some(Interrupt::Stop)
@@ -405,6 +411,8 @@ impl CombatRun {
         let mut last_ultimate = -2.0;
         let mut pending_states = Vec::new();
         let mut observation = CombatObservation::default();
+        let mut patrol_visible_frames = 0_u8;
+        let mut patrol_last_hud = Instant::now();
         self.progress.inputs_released = false;
         publish(self.progress.clone())?;
         loop {
@@ -439,6 +447,26 @@ impl CombatRun {
                     return Ok(None);
                 };
                 self.progress.frames += 1;
+                if self.patrol_ui_timeout.is_some() {
+                    if frame.age_ms() <= self.progress.config.max_frame_age_ms
+                        && native.patrol_world_in_combat(&frame)?
+                    {
+                        native.release_inputs()?;
+                        ledger.clear();
+                        queue.clear();
+                        until = None;
+                        self.scheduler.pause();
+                        self.scheduler.resume();
+                        self.sequence = None;
+                        patrol_visible_frames += 1;
+                        if patrol_visible_frames >= 2 {
+                            return Ok(Some(NormalBattleResult::Completed));
+                        }
+                        next_frame = now + 0.2;
+                        continue;
+                    }
+                    patrol_visible_frames = 0;
+                }
                 let mut intervals = self.intervals()?;
                 intervals.insert("flash_enabled".into(), f64::from(flash_enabled));
                 let fresh = recognizer.observe(
@@ -463,6 +491,15 @@ impl CombatRun {
                             || state.name.starts_with("连携技-1-")
                             || state.name.starts_with("连携技-2-"))
                 });
+                if let Some(seconds) = self.patrol_ui_timeout {
+                    if fresh.in_battle || has_chain {
+                        patrol_last_hud = Instant::now();
+                    }
+                    ensure!(
+                        patrol_last_hud.elapsed() < Duration::from_secs(u64::from(seconds)),
+                        "锄大地战斗界面消失，已停止输入"
+                    );
+                }
                 let end = if check_end && !fresh.in_battle && !has_chain {
                     // 结算识别可能耗时，先释放战斗输入并丢弃尚未执行的动作。
                     native.release_inputs()?;

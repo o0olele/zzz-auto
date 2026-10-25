@@ -25,6 +25,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '战斗资源校验失败，请先完成 combat-bundle 生成。' }
     & ./target/release/zzz-engine.exe --root $projectRoot suibian-temple-bundle-check --bundle resources/generated/suibian-temple
     if ($LASTEXITCODE -ne 0) { throw '随便观资源校验失败，请先完成 suibian-temple-bundle 生成。' }
+    & ./target/release/zzz-engine.exe --root $projectRoot world-patrol-bundle-check --bundle resources/generated/world-patrol
+    if ($LASTEXITCODE -ne 0) { throw '锄大地资源校验失败，请先完成 world-patrol-bundle 生成。' }
     $packageName = "zzz-auto-$($config.version)-windows-x64-prototype"
     $stagingParent = Join-Path $projectRoot ("target/portable-" + [guid]::NewGuid().ToString('N'))
     $staging = Join-Path $stagingParent $packageName
@@ -35,7 +37,7 @@ try {
     Copy-Item -LiteralPath target/release/zzz-engine.exe -Destination (Join-Path $staging 'zzz-auto-engine.exe')
     Copy-Item -LiteralPath resources/sdk-manifest.json -Destination (Join-Path $staging 'resources/sdk-manifest.json')
     Copy-Item -LiteralPath sdk.lock.json -Destination (Join-Path $staging 'sdk.lock.json')
-    foreach ($resourceFolder in @('resources/pipeline', 'resources/catalog', 'resources/generated/mail', 'resources/generated/map-preview', 'resources/generated/coffee-run', 'resources/generated/basic-daily', 'resources/generated/suibian-temple', 'resources/generated/combat')) {
+    foreach ($resourceFolder in @('resources/pipeline', 'resources/catalog', 'resources/generated/mail', 'resources/generated/map-preview', 'resources/generated/coffee-run', 'resources/generated/basic-daily', 'resources/generated/suibian-temple', 'resources/generated/world-patrol', 'resources/generated/combat')) {
         $sourceFolder = Join-Path $projectRoot $resourceFolder
         foreach ($file in (Get-ChildItem -LiteralPath $sourceFolder -File -Recurse)) {
             $relative = $file.FullName.Substring($sourceFolder.Length + 1)
@@ -64,6 +66,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '复制后的战斗资源包校验失败，已停止打包。' }
     & (Join-Path $staging 'zzz-auto-engine.exe') --root $staging suibian-temple-bundle-check --bundle (Join-Path $staging 'resources/generated/suibian-temple')
     if ($LASTEXITCODE -ne 0) { throw '复制后的随便观资源包校验失败，已停止打包。' }
+    & (Join-Path $staging 'zzz-auto-engine.exe') --root $staging world-patrol-bundle-check --bundle (Join-Path $staging 'resources/generated/world-patrol')
+    if ($LASTEXITCODE -ne 0) { throw '复制后的锄大地资源包校验失败，已停止打包。' }
     foreach ($binary in $sdkManifest.binaries) {
         $path = Join-Path (Join-Path $projectRoot 'sdk/maa/bin') $binary.path
         if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $binary.sha256) { throw "SDK 文件校验失败：$($binary.path)" }

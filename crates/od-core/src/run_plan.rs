@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const TRIAL_APP_IDS: [&str; 14] = [
+pub const TRIAL_APP_IDS: [&str; 15] = [
+    "world_patrol",
     "email",
     "coffee",
     "engagement_reward",
@@ -113,6 +114,18 @@ pub struct PlannedApp {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GroupPlan {
+    #[serde(default)]
+    #[ts(as = "Option<crate::world_patrol::WorldPatrolConfig>", optional)]
+    pub world_patrol_config: crate::world_patrol::WorldPatrolConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub world_patrol_combat: Option<crate::app_combat::AppCombatPlan>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub world_patrol_checkpoint: Option<crate::world_patrol::PatrolProgress>,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub world_patrol_active_ms: u64,
     #[serde(default)]
     #[ts(as = "Option<crate::charge_plan::ChargePlanConfig>", optional)]
     pub charge_plan_config: Box<crate::charge_plan::ChargePlanConfig>,
@@ -316,7 +329,8 @@ fn plan_account_at(
                     completed_run_id = completed
                         .and_then(|index| index.apps.get(&item.app_id))
                         .copied();
-                    decision = if group.run_policy == RunPolicy::SkipDailySuccess
+                    decision = if item.app_id != "world_patrol"
+                        && group.run_policy == RunPolicy::SkipDailySuccess
                         && !options.rerun_completed
                         && !standalone
                         && completed_run_id.is_some()
@@ -380,6 +394,10 @@ fn plan_account_at(
     let executable = blockers.is_empty() && has_pending;
     let all_done = blockers.is_empty() && !has_pending;
     Ok(GroupPlan {
+        world_patrol_config: group.world_patrol.clone(),
+        world_patrol_combat: None,
+        world_patrol_checkpoint: None,
+        world_patrol_active_ms: 0,
         charge_plan_config: group.charge_plan.clone(),
         suibian_temple_config: group.suibian_temple.clone(),
         app_combat: None,

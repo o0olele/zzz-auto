@@ -64,7 +64,11 @@ pub fn heading(rgb: &RgbImage) -> Result<Option<Heading>> {
     Ok(sector_heading(&blur))
 }
 
-fn player_found(rgb: &RgbImage) -> bool {
+pub(crate) fn player_found(rgb: &RgbImage) -> bool {
+    player_mask(rgb).pixels().any(|pixel| pixel[0] != 0)
+}
+
+pub(crate) fn player_mask(rgb: &RgbImage) -> GrayImage {
     let mut mask = GrayImage::new(rgb.width(), rgb.height());
     for (x, y, pixel) in rgb.enumerate_pixels() {
         let [h, s, v] = crate::combat_vision::hsv(pixel.0);
@@ -72,9 +76,10 @@ fn player_found(rgb: &RgbImage) -> bool {
             mask.put_pixel(x, y, Luma([255]));
         }
     }
-    find_contours::<i32>(&mask).into_iter().any(|contour| {
+    let mut player = GrayImage::new(rgb.width(), rgb.height());
+    for contour in find_contours::<i32>(&mask) {
         if contour.border_type != BorderType::Outer || contour.parent.is_some() {
-            return false;
+            continue;
         }
         let mut perimeter = 0.0;
         let mut area = 0i32;
@@ -93,15 +98,19 @@ fn player_found(rgb: &RgbImage) -> bool {
             perimeter += f64::from(a.x - b.x).hypot(f64::from(a.y - b.y));
         }
         if !(60.0..=70.0).contains(&perimeter) || !(480..=600).contains(&area.abs()) {
-            return false;
+            continue;
         }
         // 防止静态兜底框偏移后把其他橙色图标当作位于中心的玩家。
-        (cx / (3.0 * f64::from(area)) - 105.0).abs() <= 8.0
+        if (cx / (3.0 * f64::from(area)) - 105.0).abs() <= 8.0
             && (cy / (3.0 * f64::from(area)) - 105.0).abs() <= 8.0
-    })
+        {
+            imageproc::drawing::draw_polygon_mut(&mut player, &contour.points, Luma([255]));
+        }
+    }
+    player
 }
 
-fn morphology(input: &GrayImage, dilate: bool) -> GrayImage {
+pub(crate) fn morphology(input: &GrayImage, dilate: bool) -> GrayImage {
     let mut output = input.clone();
     for y in 0..input.height() {
         for x in 0..input.width() {

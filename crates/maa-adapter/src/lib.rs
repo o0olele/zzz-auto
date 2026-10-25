@@ -34,6 +34,7 @@ pub mod simulation_mission;
 pub mod simulation_settlement;
 pub mod simulation_teams;
 pub mod team_selection;
+pub mod world_patrol;
 pub use coffee::{CoffeeObservation, validate_coffee_bundle};
 pub use mail_bundle::validate_mail_bundle;
 pub use map_transport::{MapObservation, validate_map_bundle};

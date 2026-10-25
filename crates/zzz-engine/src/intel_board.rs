@@ -27,9 +27,9 @@ use uuid::Uuid;
 
 pub struct PreparedIntel {
     pub plan: AppCombatPlan,
-    script: Script,
-    root: PathBuf,
-    manifest_hash: Vec<u8>,
+    pub(crate) script: Script,
+    pub(crate) root: PathBuf,
+    pub(crate) manifest_hash: Vec<u8>,
 }
 impl PreparedIntel {
     /// 整组第一次输入前编译并固定脚本；其后的导入选择变化不改变已编译指令。

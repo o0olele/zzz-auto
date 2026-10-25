@@ -63,6 +63,8 @@ pub mod suibian_temple_auto;
 pub mod suibian_temple_flow;
 pub mod team_check;
 pub mod team_selection;
+pub mod world_patrol;
+pub mod world_patrol_pipeline;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -485,6 +487,17 @@ impl RunSlot {
                 plan.intel_board_history.totals.clone(),
             )?;
         }
+        if plan
+            .items
+            .iter()
+            .any(|i| i.app_id == "world_patrol" && i.decision == run_plan::PlanDecision::Run)
+        {
+            world_patrol::catalog()?.selected(&plan.world_patrol_config)?;
+            plan.world_patrol_combat
+                .as_ref()
+                .ok_or("锄大地缺少冻结战斗脚本")?
+                .validate()?;
+        }
         self.begin(if plan.context.app_ids == ["email"] {
             "email"
         } else {
@@ -519,6 +532,26 @@ impl RunSlot {
             }
             Some(app) if basic_daily::APP_IDS.contains(&app) => {
                 let mut progress = basic_daily::DailyProgress::new(app, plan.daily_config)?;
+                if app == "world_patrol" {
+                    let checkpoint = plan
+                        .world_patrol_checkpoint
+                        .clone()
+                        .map(Ok)
+                        .unwrap_or_else(|| {
+                            world_patrol::PatrolProgress::new(plan.world_patrol_config.clone())
+                        })?;
+                    progress.stage = if checkpoint.next_round_ms.is_some() {
+                        "Wait"
+                    } else if checkpoint.route_index == checkpoint.routes.len() {
+                        "Leave"
+                    } else {
+                        "Inspect"
+                    }
+                    .into();
+                    progress.world_patrol = Some(checkpoint);
+                    progress.active_ms = plan.world_patrol_active_ms;
+                    progress.app_combat = plan.world_patrol_combat.clone();
+                }
                 if app == "suibian_temple" {
                     progress.temple = Some(Box::new(suibian_temple_flow::TempleFlow::new(
                         plan.suibian_temple_config.clone(),
@@ -911,7 +944,35 @@ impl RunSlot {
             {
                 return Err("子战斗不是冻结的情报板战斗配置");
             }
-        } else if progress.intel_flow.is_some()
+        } else if progress.app_id == "world_patrol" {
+            let before = previous.world_patrol.as_ref().ok_or("缺少锄大地原检查点")?;
+            let after = progress.world_patrol.as_ref().ok_or("缺少锄大地检查点")?;
+            after.validate()?;
+            if before.config != after.config
+                || before.routes != after.routes
+                || after.completed_rounds < before.completed_rounds
+                || after.completed_rounds > before.completed_rounds + 1
+                || progress.active_ms < previous.active_ms
+            {
+                return Err("锄大地配置或进度不一致");
+            }
+            progress
+                .app_combat
+                .as_ref()
+                .ok_or("锄大地缺少战斗配置")?
+                .validate()?;
+            let combat = progress.app_combat.as_ref().unwrap();
+            if progress.intel_flow.is_some()
+                || progress.intel_board.is_some()
+                || progress.intel_battle.as_ref().is_some_and(|battle| {
+                    battle.config != combat.config
+                        || battle.script_revision != combat.script_revision
+                })
+            {
+                return Err("锄大地子战斗或流程与冻结设置不符");
+            }
+        } else if progress.world_patrol.is_some()
+            || progress.intel_flow.is_some()
             || progress.app_combat.is_some()
             || progress.intel_battle.is_some()
         {

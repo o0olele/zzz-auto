@@ -1004,7 +1004,13 @@ impl Engine {
                 "预览的游戏日已过期，请重新预览并确认",
             ));
         }
-        if plan.app_combat.as_ref().map(|p| &p.script_revision) != combat_revision.as_ref() {
+        if plan
+            .app_combat
+            .as_ref()
+            .or(plan.world_patrol_combat.as_ref())
+            .map(|p| &p.script_revision)
+            != combat_revision.as_ref()
+        {
             return Err(ApiError::new(
                 "combat_scripts_changed",
                 "情报板战斗脚本或资源与预览不符，请重新预览并确认",
@@ -1027,7 +1033,11 @@ impl Engine {
         if plan.run_policy == RunPolicy::Always
             && !selection.needs_daily_proof()
             && !plan.items.iter().any(|item| {
-                item.enabled && matches!(item.app_id.as_str(), "redemption_code" | "intel_board")
+                item.enabled
+                    && matches!(
+                        item.app_id.as_str(),
+                        "redemption_code" | "intel_board" | "world_patrol"
+                    )
             })
         {
             return Ok(plan);
@@ -1094,6 +1104,76 @@ impl Engine {
                     ));
                     plan.app_combat = Some(frozen);
                 }
+            }
+            if plan
+                .items
+                .iter()
+                .any(|i| i.enabled && i.app_id == "world_patrol")
+                && !plan.context.rerun_completed
+                && let Some((checkpoint, active)) = history
+                    .patrol_checkpoint(
+                        instance_id,
+                        &plan.context.group_id,
+                        &plan.game_day,
+                        &plan.world_patrol_config,
+                        now,
+                    )
+                    .map_err(|e| ApiError::new("history_error", e.to_string()))?
+            {
+                if checkpoint.completed()
+                    && let Some(item) = plan.items.iter_mut().find(|i| i.app_id == "world_patrol")
+                {
+                    item.decision = od_core::run_plan::PlanDecision::NoWork;
+                }
+                plan.world_patrol_checkpoint = Some(checkpoint);
+                plan.world_patrol_active_ms = active;
+                plan.executable = plan.blockers.is_empty()
+                    && plan
+                        .items
+                        .iter()
+                        .any(|i| i.decision == od_core::run_plan::PlanDecision::Run);
+                plan.all_done = plan.blockers.is_empty() && !plan.executable;
+            }
+            if plan.items.iter().any(|i| {
+                i.enabled
+                    && i.app_id == "world_patrol"
+                    && i.decision == od_core::run_plan::PlanDecision::Run
+            }) {
+                let instance = config
+                    .instances
+                    .iter()
+                    .find(|i| i.id == instance_id)
+                    .ok_or_else(|| ApiError::new("invalid_account", "锄大地账号缺失"))?;
+                let mut settings = instance.combat.clone();
+                settings.script = plan.world_patrol_config.auto_battle.clone();
+                settings.dodge_only = false;
+                settings.start_delay_ms = 0;
+                let bundle = maa_adapter::combat_vision::CombatBundle::load(&combat_root)
+                    .map_err(native_error)?;
+                let revision = crate::combat::script_catalog(&bundle, &combat_data)
+                    .map_err(native_error)?
+                    .revision;
+                let frozen = od_core::app_combat::AppCombatPlan {
+                    config: settings,
+                    script_revision: revision,
+                };
+                crate::intel_board::PreparedIntel::from_bundle(
+                    frozen.clone(),
+                    bundle,
+                    &combat_data,
+                )
+                .map_err(native_error)?;
+                let routes = od_core::world_patrol::catalog()
+                    .and_then(|c| c.selected(&plan.world_patrol_config))
+                    .map_err(|e| ApiError::new("invalid_patrol", e))?;
+                plan.warnings.push(format!(
+                    "锄大地：{} 条路线，{} 轮，轮次起点间隔 {} 秒；战斗脚本 {}。",
+                    routes.len(),
+                    plan.world_patrol_config.daily_loop_count,
+                    plan.world_patrol_config.loop_interval_seconds,
+                    frozen.config.script
+                ));
+                plan.world_patrol_combat = Some(frozen);
             }
             Ok(plan)
         })

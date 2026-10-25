@@ -478,6 +478,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             if parts.len() == 2 && parts[1] == "_group.yml" {
                 let group: LegacyGroup = parse(file)?;
                 groups.push(AppGroup {
+                    world_patrol: Default::default(),
                     charge_plan: Default::default(),
                     suibian_temple: Default::default(),
                     intel_board: Default::default(),
@@ -502,6 +503,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         }
         if !groups.iter().any(|g| g.id == "one_dragon") {
             let mut group = AppGroup {
+                world_patrol: Default::default(),
                 charge_plan: Default::default(),
                 suibian_temple: Default::default(),
                 intel_board: Default::default(),
@@ -607,6 +609,19 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                 warnings.push(format!("账号 {} 的 {} 组随便观设置已转换；旧德丰大押设置仅保留，原应用已停用此功能，不执行兑换。完整随便观流程仍在开发。", item.idx, group.id));
             }
             let grouped_intel = format!("{prefix}{}/intel_board.yml", group.id);
+            let grouped_patrol = format!("{prefix}{}/world_patrol.yml", group.id);
+            let old_patrol = format!("{prefix}world_patrol.yml");
+            if let Some(file) = files
+                .iter()
+                .find(|f| f.relative == grouped_patrol)
+                .or_else(|| files.iter().find(|f| f.relative == old_patrol))
+            {
+                group.world_patrol =
+                    crate::world_patrol::import(&parse::<serde_json::Value>(file)?)
+                        .map_err(anyhow::Error::msg)?;
+                converted.insert(file.relative.clone());
+                warnings.push(format!("账号 {} 的 {} 组锄大地设置已转换；使用内置路线，旧轮数仅归档，不作为完成证明。",item.idx,group.id));
+            }
             let old_intel = format!("{prefix}intel_board.yml");
             if let Some(file) = files
                 .iter()
@@ -758,7 +773,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v18\0");
+    hash.update(b"zzz-auto-config-import-v19\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());

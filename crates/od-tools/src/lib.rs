@@ -37,3 +37,4 @@ pub fn sha256(path: &Path) -> Result<String> {
 pub mod basic_daily;
 
 pub mod suibian_temple;
+pub mod world_patrol;

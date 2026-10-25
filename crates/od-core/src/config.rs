@@ -75,6 +75,9 @@ pub struct GroupApp {
 #[serde(deny_unknown_fields)]
 pub struct AppGroup {
     #[serde(default)]
+    #[ts(as = "Option<crate::world_patrol::WorldPatrolConfig>", optional)]
+    pub world_patrol: crate::world_patrol::WorldPatrolConfig,
+    #[serde(default)]
     #[ts(as = "Option<crate::charge_plan::ChargePlanConfig>", optional)]
     pub charge_plan: Box<crate::charge_plan::ChargePlanConfig>,
     #[serde(default)]
@@ -180,6 +183,11 @@ pub enum ConfigChange {
         instance_id: u32,
         group_id: String,
         settings: crate::intel_board::IntelBoardConfig,
+    },
+    SaveWorldPatrol {
+        instance_id: u32,
+        group_id: String,
+        settings: crate::world_patrol::WorldPatrolConfig,
     },
     AddGroupApp {
         instance_id: u32,
@@ -310,6 +318,7 @@ pub fn default_group() -> AppGroup {
     let mut apps = crate::applications().expect("内置应用登记无效");
     apps.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
     AppGroup {
+        world_patrol: Default::default(),
         charge_plan: Default::default(),
         suibian_temple: Default::default(),
         intel_board: Default::default(),
@@ -399,6 +408,7 @@ impl AccountConfig {
             let mut groups = HashSet::new();
             for group in &instance.groups {
                 group.intel_board.validate().map_err(invalid)?;
+                group.world_patrol.validate().map_err(invalid)?;
                 group.suibian_temple.validate().map_err(invalid)?;
                 group.charge_plan.validate().map_err(invalid)?;
                 group.coffee.validate().map_err(invalid)?;
@@ -471,6 +481,22 @@ impl AccountConfig {
                     .find(|group| group.id == group_id)
                     .ok_or_else(|| invalid("应用组不存在"))?
                     .intel_board = settings;
+            }
+            ConfigChange::SaveWorldPatrol {
+                instance_id,
+                group_id,
+                settings,
+            } => {
+                crate::world_patrol::catalog()
+                    .map_err(invalid)?
+                    .selected(&settings)
+                    .map_err(invalid)?;
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .world_patrol = settings;
             }
             ConfigChange::AddGroupApp {
                 instance_id,

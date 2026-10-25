@@ -24,6 +24,8 @@ mod intel_board;
 mod query;
 #[path = "redemption_history.rs"]
 mod redemption;
+#[path = "world_patrol_history.rs"]
+mod world_patrol;
 pub use query::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

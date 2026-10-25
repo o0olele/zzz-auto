@@ -205,6 +205,10 @@ enum Action {
         #[arg(long, default_value = "resources/generated/suibian-temple")]
         bundle: PathBuf,
     },
+    WorldPatrolBundleCheck {
+        #[arg(long, default_value = "resources/generated/world-patrol")]
+        bundle: PathBuf,
+    },
     BasicDailyBundleCheck {
         #[arg(long)]
         bundle: PathBuf,
@@ -622,6 +626,7 @@ async fn main() -> Result<()> {
                 | Action::EngagementRewardBundleCheck { .. }
                 | Action::EngagementRewardInspect { .. }
                 | Action::SuibianTempleBundleCheck { .. }
+                | Action::WorldPatrolBundleCheck { .. }
                 | Action::BasicDailyBundleCheck { .. }
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
@@ -1156,6 +1161,10 @@ async fn main() -> Result<()> {
             return print(
                 serde_json::json!({"valid":true,"accepted":false,"capabilities":manifest["capabilities"],"bundle":bundle}),
             );
+        }
+        Action::WorldPatrolBundleCheck { ref bundle } => {
+            let bundle = maa_adapter::world_patrol::validate_bundle(bundle)?;
+            return print(serde_json::json!({"valid":true,"accepted":false,"bundle":bundle}));
         }
         Action::BasicDailyBundleCheck { ref bundle } => {
             return print(

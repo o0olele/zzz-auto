@@ -56,7 +56,8 @@ pub const SCHEMA_SIX_APP_IDS: [&str; 10] = [
     "random_play",
     "predefined_team_checker",
 ];
-pub const APP_IDS: [&str; 12] = [
+pub const APP_IDS: [&str; 13] = [
+    "world_patrol",
     "suibian_temple",
     RESOURCE_APP_IDS[0],
     RESOURCE_APP_IDS[1],
@@ -117,6 +118,9 @@ impl DailyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct DailyProgress {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub world_patrol: Option<crate::world_patrol::PatrolProgress>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     // 前端只读取编排摘要；完整子流程证明由 Rust 保存和校验。
     #[ts(
@@ -182,6 +186,7 @@ impl DailyProgress {
             return Err("日常应用未注册");
         }
         Ok(Self {
+            world_patrol: None,
             temple: if app_id == "suibian_temple" {
                 Some(Box::new(crate::suibian_temple_flow::TempleFlow::new(
                     Default::default(),
@@ -293,6 +298,9 @@ impl DailyProgress {
             && self.stage == "Done"
     }
     pub fn timeout_ms(&self) -> u32 {
+        if let Some(patrol) = &self.world_patrol {
+            return patrol.config.timeout_ms;
+        }
         if let Some(temple) = &self.temple {
             return temple.config.timeout_ms;
         }
@@ -308,6 +316,8 @@ impl DailyProgress {
     }
     pub fn navigation_completed(&self) -> bool {
         (self.stage == "Done" || (self.app_id == "predefined_team_checker" && self.stage == "Save"))
+            && (self.app_id != "world_patrol"
+                || self.world_patrol.as_ref().is_some_and(|p| p.completed()))
             && (self.app_id != "intel_board"
                 || self
                     .intel_flow

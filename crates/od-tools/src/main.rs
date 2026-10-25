@@ -12,6 +12,20 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    WorldPatrolCatalog {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "resources/world-patrol")]
+        output: PathBuf,
+    },
+    WorldPatrolBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/world-patrol")]
+        output: PathBuf,
+    },
     /// 生成模拟室出战识别资源，不开放完整体力执行。
     SimulationDeployBundle {
         #[arg(long)]
@@ -185,6 +199,21 @@ enum Tool {
 
 fn main() -> Result<()> {
     match Args::parse().command {
+        Tool::WorldPatrolCatalog { reference, output } => {
+            println!("{}", od_tools::world_patrol::extract(&reference, &output)?);
+            Ok(())
+        }
+        Tool::WorldPatrolBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                od_tools::world_patrol::build_bundle(&reference, &models, &output)?
+            );
+            Ok(())
+        }
         Tool::SimulationDeployBundle {
             reference,
             models,
@@ -367,6 +396,31 @@ fn main() -> Result<()> {
         }
         Tool::Types { output } => {
             let declarations = [
+                od_core::world_patrol::WorldPatrolConfig::decl(),
+                od_core::world_patrol::PatrolRetryAction::decl(),
+                od_core::world_patrol::PatrolProgress::decl(),
+                od_core::world_patrol::PatrolRoute::decl(),
+                od_core::world_patrol::PatrolPoint::decl(),
+                format!(
+                    "const worldPatrolDefaults = {} as WorldPatrolConfig;",
+                    serde_json::to_string(&od_core::world_patrol::WorldPatrolConfig::default())?
+                ),
+                format!(
+                    "const worldPatrolRouteLists = {} as const;",
+                    serde_json::to_string(
+                        &od_core::world_patrol::catalog()
+                            .map_err(anyhow::Error::msg)?
+                            .lists
+                    )?
+                ),
+                format!(
+                    "const worldPatrolRoutes = {} as const;",
+                    serde_json::to_string(
+                        &od_core::world_patrol::catalog()
+                            .map_err(anyhow::Error::msg)?
+                            .routes
+                    )?
+                ),
                 od_core::combat::CombatConfig::decl(),
                 od_core::combat::CombatScriptCatalog::decl(),
                 od_core::combat_scripts::CombatScriptImportPreview::decl(),

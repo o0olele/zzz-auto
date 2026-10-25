@@ -22,7 +22,7 @@ pub enum AdventureInputEnd {
     Changed,
     TimedOut,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct Word {
     pub(crate) text: String,
     pub(crate) rect: [i32; 4],

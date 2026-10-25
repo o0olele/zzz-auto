@@ -1,0 +1,2449 @@
+{
+  "areas": [
+    {
+      "id": "production_area_building_east_side",
+      "entry_id": "lemnian_hollow",
+      "name": "大楼东侧",
+      "parent_name": "[空洞]中央制造区",
+      "hollow": true,
+      "width": 1291,
+      "height": 2407,
+      "icons": [
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "物流通道",
+          "lm_pos": {
+            "x": 887,
+            "y": 1464
+          },
+          "tp_pos": {
+            "x": 887,
+            "y": 1464
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "中央制造区入口",
+          "lm_pos": {
+            "x": 636,
+            "y": 2073
+          },
+          "tp_pos": {
+            "x": 636,
+            "y": 2073
+          }
+        },
+        {
+          "template_id": "map_icon_02",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 654,
+            "y": 2007
+          },
+          "tp_pos": {
+            "x": 654,
+            "y": 2007
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 623,
+            "y": 1886
+          },
+          "tp_pos": {
+            "x": 623,
+            "y": 1886
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 559,
+            "y": 1783
+          },
+          "tp_pos": {
+            "x": 559,
+            "y": 1783
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 753,
+            "y": 1761
+          },
+          "tp_pos": {
+            "x": 753,
+            "y": 1761
+          }
+        },
+        {
+          "template_id": "map_icon_04",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 790,
+            "y": 1227
+          },
+          "tp_pos": {
+            "x": 790,
+            "y": 1227
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "制造平台",
+          "lm_pos": {
+            "x": 819,
+            "y": 862
+          },
+          "tp_pos": {
+            "x": 819,
+            "y": 862
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 732,
+            "y": 820
+          },
+          "tp_pos": {
+            "x": 732,
+            "y": 820
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 840,
+            "y": 572
+          },
+          "tp_pos": {
+            "x": 840,
+            "y": 572
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "大楼东侧",
+          "lm_pos": {
+            "x": 477,
+            "y": 710
+          },
+          "tp_pos": {
+            "x": 477,
+            "y": 710
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 532,
+            "y": 657
+          },
+          "tp_pos": {
+            "x": 532,
+            "y": 657
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 500,
+            "y": 891
+          },
+          "tp_pos": {
+            "x": 500,
+            "y": 891
+          }
+        },
+        {
+          "template_id": "map_icon_05",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 528,
+            "y": 900
+          },
+          "tp_pos": {
+            "x": 528,
+            "y": 900
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 584,
+            "y": 608
+          },
+          "tp_pos": {
+            "x": 584,
+            "y": 608
+          }
+        }
+      ]
+    },
+    {
+      "id": "production_area_building_west_side",
+      "entry_id": "lemnian_hollow",
+      "name": "大楼西侧",
+      "parent_name": "[空洞]中央制造区",
+      "hollow": true,
+      "width": 1466,
+      "height": 1113,
+      "icons": [
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "通往物流仓储区的入口",
+          "lm_pos": {
+            "x": 384,
+            "y": 684
+          },
+          "tp_pos": {
+            "x": 384,
+            "y": 684
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "大楼西侧",
+          "lm_pos": {
+            "x": 1076,
+            "y": 305
+          },
+          "tp_pos": {
+            "x": 1076,
+            "y": 305
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 793,
+            "y": 472
+          },
+          "tp_pos": {
+            "x": 793,
+            "y": 472
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 761,
+            "y": 540
+          },
+          "tp_pos": {
+            "x": 761,
+            "y": 540
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 531,
+            "y": 636
+          },
+          "tp_pos": {
+            "x": 531,
+            "y": 636
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 656,
+            "y": 528
+          },
+          "tp_pos": {
+            "x": 656,
+            "y": 528
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 659,
+            "y": 636
+          },
+          "tp_pos": {
+            "x": 659,
+            "y": 636
+          }
+        }
+      ]
+    },
+    {
+      "id": "production_area_rooftop",
+      "entry_id": "lemnian_hollow",
+      "name": "顶楼",
+      "parent_name": "[空洞]中央制造区",
+      "hollow": true,
+      "width": 638,
+      "height": 630,
+      "icons": [
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "大楼顶楼",
+          "lm_pos": {
+            "x": 386,
+            "y": 318
+          },
+          "tp_pos": {
+            "x": 386,
+            "y": 318
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 295,
+            "y": 416
+          },
+          "tp_pos": {
+            "x": 295,
+            "y": 416
+          }
+        }
+      ]
+    },
+    {
+      "id": "former_employee_community",
+      "entry_id": "lemnian_hollow",
+      "name": "[空洞]职工社区旧址",
+      "parent_name": null,
+      "hollow": true,
+      "width": 1938,
+      "height": 1793,
+      "icons": [
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "职工宿舍北区",
+          "lm_pos": {
+            "x": 1305,
+            "y": 271
+          },
+          "tp_pos": {
+            "x": 1305,
+            "y": 271
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1359,
+            "y": 386
+          },
+          "tp_pos": {
+            "x": 1359,
+            "y": 386
+          }
+        },
+        {
+          "template_id": "map_icon_04",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1232,
+            "y": 335
+          },
+          "tp_pos": {
+            "x": 1232,
+            "y": 335
+          }
+        },
+        {
+          "template_id": "map_icon_08",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1057,
+            "y": 598
+          },
+          "tp_pos": {
+            "x": 1057,
+            "y": 598
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 758,
+            "y": 614
+          },
+          "tp_pos": {
+            "x": 758,
+            "y": 614
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 271,
+            "y": 777
+          },
+          "tp_pos": {
+            "x": 271,
+            "y": 777
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "西侧广场",
+          "lm_pos": {
+            "x": 646,
+            "y": 835
+          },
+          "tp_pos": {
+            "x": 646,
+            "y": 835
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 617,
+            "y": 747
+          },
+          "tp_pos": {
+            "x": 617,
+            "y": 747
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1018,
+            "y": 781
+          },
+          "tp_pos": {
+            "x": 1018,
+            "y": 781
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1374,
+            "y": 787
+          },
+          "tp_pos": {
+            "x": 1374,
+            "y": 787
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "旧商业楼",
+          "lm_pos": {
+            "x": 1579,
+            "y": 871
+          },
+          "tp_pos": {
+            "x": 1579,
+            "y": 871
+          }
+        },
+        {
+          "template_id": "map_icon_04",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1733,
+            "y": 949
+          },
+          "tp_pos": {
+            "x": 1733,
+            "y": 949
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1611,
+            "y": 1014
+          },
+          "tp_pos": {
+            "x": 1611,
+            "y": 1014
+          }
+        },
+        {
+          "template_id": "map_icon_07",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1455,
+            "y": 1112
+          },
+          "tp_pos": {
+            "x": 1455,
+            "y": 1112
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1279,
+            "y": 1162
+          },
+          "tp_pos": {
+            "x": 1279,
+            "y": 1162
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1260,
+            "y": 1099
+          },
+          "tp_pos": {
+            "x": 1260,
+            "y": 1099
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1125,
+            "y": 1221
+          },
+          "tp_pos": {
+            "x": 1125,
+            "y": 1221
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1372,
+            "y": 1214
+          },
+          "tp_pos": {
+            "x": 1372,
+            "y": 1214
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1323,
+            "y": 1145
+          },
+          "tp_pos": {
+            "x": 1323,
+            "y": 1145
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1332,
+            "y": 1171
+          },
+          "tp_pos": {
+            "x": 1332,
+            "y": 1171
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1349,
+            "y": 1232
+          },
+          "tp_pos": {
+            "x": 1349,
+            "y": 1232
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1326,
+            "y": 1214
+          },
+          "tp_pos": {
+            "x": 1326,
+            "y": 1214
+          }
+        },
+        {
+          "template_id": "map_icon_04",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1308,
+            "y": 1348
+          },
+          "tp_pos": {
+            "x": 1308,
+            "y": 1348
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "职工宿舍南区",
+          "lm_pos": {
+            "x": 1547,
+            "y": 1522
+          },
+          "tp_pos": {
+            "x": 1547,
+            "y": 1522
+          }
+        },
+        {
+          "template_id": "map_icon_02",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1499,
+            "y": 1499
+          },
+          "tp_pos": {
+            "x": 1499,
+            "y": 1499
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1546,
+            "y": 1489
+          },
+          "tp_pos": {
+            "x": 1546,
+            "y": 1489
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1545,
+            "y": 1450
+          },
+          "tp_pos": {
+            "x": 1545,
+            "y": 1450
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1520,
+            "y": 1307
+          },
+          "tp_pos": {
+            "x": 1520,
+            "y": 1307
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1544,
+            "y": 1181
+          },
+          "tp_pos": {
+            "x": 1544,
+            "y": 1181
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1544,
+            "y": 1128
+          },
+          "tp_pos": {
+            "x": 1544,
+            "y": 1128
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "中央广场",
+          "lm_pos": {
+            "x": 1238,
+            "y": 1089
+          },
+          "tp_pos": {
+            "x": 1238,
+            "y": 1089
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 987,
+            "y": 1234
+          },
+          "tp_pos": {
+            "x": 987,
+            "y": 1234
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 634,
+            "y": 1000
+          },
+          "tp_pos": {
+            "x": 634,
+            "y": 1000
+          }
+        },
+        {
+          "template_id": "map_icon_05",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 740,
+            "y": 1003
+          },
+          "tp_pos": {
+            "x": 740,
+            "y": 1003
+          }
+        },
+        {
+          "template_id": "map_icon_04",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 776,
+            "y": 1089
+          },
+          "tp_pos": {
+            "x": 776,
+            "y": 1089
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "职工宿舍西区",
+          "lm_pos": {
+            "x": 410,
+            "y": 1201
+          },
+          "tp_pos": {
+            "x": 410,
+            "y": 1201
+          }
+        },
+        {
+          "template_id": "map_icon_09",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 446,
+            "y": 1161
+          },
+          "tp_pos": {
+            "x": 446,
+            "y": 1161
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 528,
+            "y": 904
+          },
+          "tp_pos": {
+            "x": 528,
+            "y": 904
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 486,
+            "y": 907
+          },
+          "tp_pos": {
+            "x": 486,
+            "y": 907
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 513,
+            "y": 1250
+          },
+          "tp_pos": {
+            "x": 513,
+            "y": 1250
+          }
+        }
+      ]
+    },
+    {
+      "id": "former_research_center",
+      "entry_id": "lemnian_hollow",
+      "name": "[空洞]科研院旧址",
+      "parent_name": null,
+      "hollow": true,
+      "width": 1820,
+      "height": 1682,
+      "icons": [
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "科研院西侧",
+          "lm_pos": {
+            "x": 359,
+            "y": 1050
+          },
+          "tp_pos": {
+            "x": 359,
+            "y": 1050
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 399,
+            "y": 1141
+          },
+          "tp_pos": {
+            "x": 399,
+            "y": 1141
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 361,
+            "y": 972
+          },
+          "tp_pos": {
+            "x": 361,
+            "y": 972
+          }
+        },
+        {
+          "template_id": "map_icon_05",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 656,
+            "y": 1054
+          },
+          "tp_pos": {
+            "x": 656,
+            "y": 1054
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 638,
+            "y": 1060
+          },
+          "tp_pos": {
+            "x": 638,
+            "y": 1060
+          }
+        },
+        {
+          "template_id": "map_icon_04",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 556,
+            "y": 1056
+          },
+          "tp_pos": {
+            "x": 556,
+            "y": 1056
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 593,
+            "y": 1130
+          },
+          "tp_pos": {
+            "x": 593,
+            "y": 1130
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "科研院仓库",
+          "lm_pos": {
+            "x": 302,
+            "y": 712
+          },
+          "tp_pos": {
+            "x": 302,
+            "y": 712
+          }
+        },
+        {
+          "template_id": "map_icon_08",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 306,
+            "y": 632
+          },
+          "tp_pos": {
+            "x": 306,
+            "y": 632
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 480,
+            "y": 767
+          },
+          "tp_pos": {
+            "x": 480,
+            "y": 767
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 468,
+            "y": 547
+          },
+          "tp_pos": {
+            "x": 468,
+            "y": 547
+          }
+        },
+        {
+          "template_id": "map_icon_05",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 595,
+            "y": 616
+          },
+          "tp_pos": {
+            "x": 595,
+            "y": 616
+          }
+        },
+        {
+          "template_id": "map_icon_04",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 596,
+            "y": 663
+          },
+          "tp_pos": {
+            "x": 596,
+            "y": 663
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 602,
+            "y": 459
+          },
+          "tp_pos": {
+            "x": 602,
+            "y": 459
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 640,
+            "y": 420
+          },
+          "tp_pos": {
+            "x": 640,
+            "y": 420
+          }
+        },
+        {
+          "template_id": "map_icon_05",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 527,
+            "y": 506
+          },
+          "tp_pos": {
+            "x": 527,
+            "y": 506
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "科研院内",
+          "lm_pos": {
+            "x": 799,
+            "y": 453
+          },
+          "tp_pos": {
+            "x": 799,
+            "y": 453
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 724,
+            "y": 480
+          },
+          "tp_pos": {
+            "x": 724,
+            "y": 480
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 680,
+            "y": 419
+          },
+          "tp_pos": {
+            "x": 680,
+            "y": 419
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 627,
+            "y": 289
+          },
+          "tp_pos": {
+            "x": 627,
+            "y": 289
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 521,
+            "y": 446
+          },
+          "tp_pos": {
+            "x": 521,
+            "y": 446
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1079,
+            "y": 461
+          },
+          "tp_pos": {
+            "x": 1079,
+            "y": 461
+          }
+        },
+        {
+          "template_id": "map_icon_09",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1066,
+            "y": 520
+          },
+          "tp_pos": {
+            "x": 1066,
+            "y": 520
+          }
+        },
+        {
+          "template_id": "map_icon_02",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1110,
+            "y": 622
+          },
+          "tp_pos": {
+            "x": 1110,
+            "y": 622
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "一楼广场",
+          "lm_pos": {
+            "x": 1205,
+            "y": 632
+          },
+          "tp_pos": {
+            "x": 1205,
+            "y": 632
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1120,
+            "y": 666
+          },
+          "tp_pos": {
+            "x": 1120,
+            "y": 666
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1177,
+            "y": 714
+          },
+          "tp_pos": {
+            "x": 1177,
+            "y": 714
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "科研院东侧",
+          "lm_pos": {
+            "x": 1251,
+            "y": 423
+          },
+          "tp_pos": {
+            "x": 1251,
+            "y": 423
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1093,
+            "y": 458
+          },
+          "tp_pos": {
+            "x": 1093,
+            "y": 458
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 942,
+            "y": 429
+          },
+          "tp_pos": {
+            "x": 942,
+            "y": 429
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1179,
+            "y": 882
+          },
+          "tp_pos": {
+            "x": 1179,
+            "y": 882
+          }
+        },
+        {
+          "template_id": "map_icon_04",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1126,
+            "y": 1100
+          },
+          "tp_pos": {
+            "x": 1126,
+            "y": 1100
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1129,
+            "y": 1297
+          },
+          "tp_pos": {
+            "x": 1129,
+            "y": 1297
+          }
+        },
+        {
+          "template_id": "map_icon_07",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 1125,
+            "y": 1252
+          },
+          "tp_pos": {
+            "x": 1125,
+            "y": 1252
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "二楼平台",
+          "lm_pos": {
+            "x": 1009,
+            "y": 997
+          },
+          "tp_pos": {
+            "x": 1009,
+            "y": 997
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 947,
+            "y": 958
+          },
+          "tp_pos": {
+            "x": 947,
+            "y": 958
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 916,
+            "y": 767
+          },
+          "tp_pos": {
+            "x": 916,
+            "y": 767
+          }
+        }
+      ]
+    },
+    {
+      "id": "rough_machining_center",
+      "entry_id": "lemnian_hollow",
+      "name": "[空洞]粗加工中心",
+      "parent_name": null,
+      "hollow": true,
+      "width": 943,
+      "height": 1354,
+      "icons": [
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "加工平台",
+          "lm_pos": {
+            "x": 657,
+            "y": 1065
+          },
+          "tp_pos": {
+            "x": 657,
+            "y": 1065
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 667,
+            "y": 918
+          },
+          "tp_pos": {
+            "x": 667,
+            "y": 918
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 424,
+            "y": 989
+          },
+          "tp_pos": {
+            "x": 424,
+            "y": 989
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 372,
+            "y": 989
+          },
+          "tp_pos": {
+            "x": 372,
+            "y": 989
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 403,
+            "y": 1031
+          },
+          "tp_pos": {
+            "x": 403,
+            "y": 1031
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 340,
+            "y": 1099
+          },
+          "tp_pos": {
+            "x": 340,
+            "y": 1099
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 318,
+            "y": 888
+          },
+          "tp_pos": {
+            "x": 318,
+            "y": 888
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 355,
+            "y": 982
+          },
+          "tp_pos": {
+            "x": 355,
+            "y": 982
+          }
+        },
+        {
+          "template_id": "map_icon_01",
+          "icon_name": "一楼广场",
+          "lm_pos": {
+            "x": 357,
+            "y": 491
+          },
+          "tp_pos": {
+            "x": 357,
+            "y": 491
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 373,
+            "y": 547
+          },
+          "tp_pos": {
+            "x": 373,
+            "y": 547
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 391,
+            "y": 472
+          },
+          "tp_pos": {
+            "x": 391,
+            "y": 472
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 391,
+            "y": 510
+          },
+          "tp_pos": {
+            "x": 391,
+            "y": 510
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 521,
+            "y": 472
+          },
+          "tp_pos": {
+            "x": 521,
+            "y": 472
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 612,
+            "y": 570
+          },
+          "tp_pos": {
+            "x": 612,
+            "y": 570
+          }
+        },
+        {
+          "template_id": "map_icon_06",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 520,
+            "y": 513
+          },
+          "tp_pos": {
+            "x": 520,
+            "y": 513
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 525,
+            "y": 429
+          },
+          "tp_pos": {
+            "x": 525,
+            "y": 429
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 710,
+            "y": 530
+          },
+          "tp_pos": {
+            "x": 710,
+            "y": 530
+          }
+        },
+        {
+          "template_id": "map_icon_04",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 720,
+            "y": 474
+          },
+          "tp_pos": {
+            "x": 720,
+            "y": 474
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 630,
+            "y": 239
+          },
+          "tp_pos": {
+            "x": 630,
+            "y": 239
+          }
+        },
+        {
+          "template_id": "map_icon_02",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 329,
+            "y": 783
+          },
+          "tp_pos": {
+            "x": 329,
+            "y": 783
+          }
+        },
+        {
+          "template_id": "map_icon_05",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 298,
+            "y": 801
+          },
+          "tp_pos": {
+            "x": 298,
+            "y": 801
+          }
+        },
+        {
+          "template_id": "map_icon_09",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 375,
+            "y": 683
+          },
+          "tp_pos": {
+            "x": 375,
+            "y": 683
+          }
+        },
+        {
+          "template_id": "map_icon_03",
+          "icon_name": "",
+          "lm_pos": {
+            "x": 227,
+            "y": 884
+          },
+          "tp_pos": {
+            "x": 227,
+            "y": 884
+          }
+        }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "id": "production_area_building_east_side_1",
+      "area_id": "production_area_building_east_side",
+      "tp_name": "中央制造区入口",
+      "points": [
+        {
+          "x": 613,
+          "y": 2046
+        },
+        {
+          "x": 571,
+          "y": 1994
+        },
+        {
+          "x": 551,
+          "y": 1955
+        },
+        {
+          "x": 546,
+          "y": 1871
+        },
+        {
+          "x": 544,
+          "y": 1844
+        },
+        {
+          "x": 544,
+          "y": 1810
+        },
+        {
+          "x": 626,
+          "y": 1804
+        },
+        {
+          "x": 634,
+          "y": 1807
+        },
+        {
+          "x": 634,
+          "y": 1761
+        },
+        {
+          "x": 650,
+          "y": 1737
+        },
+        {
+          "x": 679,
+          "y": 1768
+        },
+        {
+          "x": 658,
+          "y": 1792
+        }
+      ]
+    },
+    {
+      "id": "production_area_building_east_side_2",
+      "area_id": "production_area_building_east_side",
+      "tp_name": "物流通道",
+      "points": [
+        {
+          "x": 903,
+          "y": 1520
+        },
+        {
+          "x": 925,
+          "y": 1615
+        },
+        {
+          "x": 894,
+          "y": 1623
+        },
+        {
+          "x": 903,
+          "y": 1559
+        },
+        {
+          "x": 876,
+          "y": 1506
+        },
+        {
+          "x": 867,
+          "y": 1436
+        },
+        {
+          "x": 867,
+          "y": 1336
+        },
+        {
+          "x": 866,
+          "y": 1236
+        },
+        {
+          "x": 877,
+          "y": 1182
+        },
+        {
+          "x": 867,
+          "y": 1140
+        },
+        {
+          "x": 836,
+          "y": 1094
+        },
+        {
+          "x": 792,
+          "y": 1150
+        }
+      ]
+    },
+    {
+      "id": "production_area_building_east_side_3",
+      "area_id": "production_area_building_east_side",
+      "tp_name": "制造平台",
+      "points": [
+        {
+          "x": 798,
+          "y": 814
+        },
+        {
+          "x": 798,
+          "y": 750
+        },
+        {
+          "x": 832,
+          "y": 716
+        },
+        {
+          "x": 832,
+          "y": 601
+        },
+        {
+          "x": 863,
+          "y": 560
+        },
+        {
+          "x": 863,
+          "y": 521
+        },
+        {
+          "x": 789,
+          "y": 521
+        },
+        {
+          "x": 674,
+          "y": 534
+        },
+        {
+          "x": 597,
+          "y": 598
+        },
+        {
+          "x": 579,
+          "y": 634
+        }
+      ]
+    },
+    {
+      "id": "production_area_building_east_side_4",
+      "area_id": "production_area_building_east_side",
+      "tp_name": "大楼东侧",
+      "points": [
+        {
+          "x": 465,
+          "y": 751
+        },
+        {
+          "x": 474,
+          "y": 785
+        },
+        {
+          "x": 474,
+          "y": 841
+        },
+        {
+          "x": 492,
+          "y": 841
+        },
+        {
+          "x": 514,
+          "y": 867
+        },
+        {
+          "x": 540,
+          "y": 858
+        },
+        {
+          "x": 577,
+          "y": 872
+        },
+        {
+          "x": 577,
+          "y": 817
+        }
+      ]
+    },
+    {
+      "id": "production_area_building_east_side_5",
+      "area_id": "production_area_building_east_side",
+      "tp_name": "大楼东侧",
+      "points": [
+        {
+          "x": 410,
+          "y": 732
+        },
+        {
+          "x": 383,
+          "y": 706
+        },
+        {
+          "x": 409,
+          "y": 671
+        },
+        {
+          "x": 409,
+          "y": 485
+        },
+        {
+          "x": 395,
+          "y": 503
+        }
+      ]
+    },
+    {
+      "id": "production_area_building_west_side_1",
+      "area_id": "production_area_building_west_side",
+      "tp_name": "大楼西侧",
+      "points": [
+        {
+          "x": 1073,
+          "y": 398
+        },
+        {
+          "x": 1042,
+          "y": 398
+        },
+        {
+          "x": 1002,
+          "y": 417
+        },
+        {
+          "x": 1072,
+          "y": 429
+        },
+        {
+          "x": 1042,
+          "y": 465
+        },
+        {
+          "x": 932,
+          "y": 465
+        },
+        {
+          "x": 832,
+          "y": 485
+        },
+        {
+          "x": 799,
+          "y": 515
+        }
+      ]
+    },
+    {
+      "id": "production_area_building_west_side_2",
+      "area_id": "production_area_building_west_side",
+      "tp_name": "通往物流仓储区的入口",
+      "points": [
+        {
+          "x": 509,
+          "y": 639
+        },
+        {
+          "x": 683,
+          "y": 639
+        },
+        {
+          "x": 730,
+          "y": 660
+        },
+        {
+          "x": 767,
+          "y": 674
+        }
+      ]
+    },
+    {
+      "id": "production_area_rooftop_1",
+      "area_id": "production_area_rooftop",
+      "tp_name": "大楼顶楼",
+      "points": [
+        {
+          "x": 392,
+          "y": 349
+        },
+        {
+          "x": 375,
+          "y": 373
+        },
+        {
+          "x": 355,
+          "y": 374
+        },
+        {
+          "x": 277,
+          "y": 373
+        },
+        {
+          "x": 277,
+          "y": 311
+        },
+        {
+          "x": 276,
+          "y": 285
+        },
+        {
+          "x": 248,
+          "y": 255
+        }
+      ]
+    },
+    {
+      "id": "former_employee_community_1",
+      "area_id": "former_employee_community",
+      "tp_name": "职工宿舍北区",
+      "points": [
+        {
+          "x": 1335,
+          "y": 304
+        },
+        {
+          "x": 1352,
+          "y": 353
+        },
+        {
+          "x": 1376,
+          "y": 340
+        }
+      ]
+    },
+    {
+      "id": "former_employee_community_2",
+      "area_id": "former_employee_community",
+      "tp_name": "旧商业楼",
+      "points": [
+        {
+          "x": 1578,
+          "y": 898
+        },
+        {
+          "x": 1538,
+          "y": 899
+        },
+        {
+          "x": 1501,
+          "y": 899
+        },
+        {
+          "x": 1451,
+          "y": 836
+        },
+        {
+          "x": 1480,
+          "y": 906
+        },
+        {
+          "x": 1405,
+          "y": 826
+        },
+        {
+          "x": 1407,
+          "y": 807
+        },
+        {
+          "x": 1330,
+          "y": 806
+        },
+        {
+          "x": 1285,
+          "y": 770
+        },
+        {
+          "x": 1233,
+          "y": 739
+        },
+        {
+          "x": 1173,
+          "y": 753
+        }
+      ]
+    },
+    {
+      "id": "former_employee_community_3",
+      "area_id": "former_employee_community",
+      "tp_name": "职工宿舍南区",
+      "points": [
+        {
+          "x": 1383,
+          "y": 1558
+        },
+        {
+          "x": 1315,
+          "y": 1565
+        },
+        {
+          "x": 1289,
+          "y": 1510
+        },
+        {
+          "x": 1246,
+          "y": 1506
+        },
+        {
+          "x": 1271,
+          "y": 1544
+        }
+      ]
+    },
+    {
+      "id": "former_employee_community_4",
+      "area_id": "former_employee_community",
+      "tp_name": "职工宿舍西区",
+      "points": [
+        {
+          "x": 409,
+          "y": 1254
+        },
+        {
+          "x": 444,
+          "y": 1288
+        },
+        {
+          "x": 503,
+          "y": 1299
+        },
+        {
+          "x": 423,
+          "y": 1292
+        }
+      ]
+    },
+    {
+      "id": "former_employee_community_5",
+      "area_id": "former_employee_community",
+      "tp_name": "西侧广场",
+      "points": [
+        {
+          "x": 665,
+          "y": 857
+        },
+        {
+          "x": 712,
+          "y": 863
+        },
+        {
+          "x": 768,
+          "y": 864
+        },
+        {
+          "x": 775,
+          "y": 889
+        },
+        {
+          "x": 768,
+          "y": 919
+        },
+        {
+          "x": 810,
+          "y": 917
+        },
+        {
+          "x": 870,
+          "y": 940
+        },
+        {
+          "x": 953,
+          "y": 940
+        },
+        {
+          "x": 959,
+          "y": 986
+        },
+        {
+          "x": 940,
+          "y": 1015
+        },
+        {
+          "x": 943,
+          "y": 1063
+        },
+        {
+          "x": 964,
+          "y": 1112
+        },
+        {
+          "x": 1022,
+          "y": 1116
+        },
+        {
+          "x": 1025,
+          "y": 1148
+        },
+        {
+          "x": 1020,
+          "y": 1179
+        },
+        {
+          "x": 1032,
+          "y": 1234
+        },
+        {
+          "x": 1087,
+          "y": 1260
+        }
+      ]
+    },
+    {
+      "id": "former_employee_community_6",
+      "area_id": "former_employee_community",
+      "tp_name": "西侧广场",
+      "points": [
+        {
+          "x": 600,
+          "y": 830
+        },
+        {
+          "x": 584,
+          "y": 776
+        },
+        {
+          "x": 578,
+          "y": 723
+        },
+        {
+          "x": 568,
+          "y": 672
+        },
+        {
+          "x": 523,
+          "y": 658
+        },
+        {
+          "x": 474,
+          "y": 660
+        },
+        {
+          "x": 422,
+          "y": 669
+        },
+        {
+          "x": 408,
+          "y": 704
+        },
+        {
+          "x": 390,
+          "y": 729
+        },
+        {
+          "x": 342,
+          "y": 736
+        },
+        {
+          "x": 300,
+          "y": 742
+        },
+        {
+          "x": 263,
+          "y": 746
+        }
+      ]
+    },
+    {
+      "id": "former_research_center_1",
+      "area_id": "former_research_center",
+      "tp_name": "科研院西侧",
+      "points": [
+        {
+          "x": 385,
+          "y": 1092
+        },
+        {
+          "x": 386,
+          "y": 1123
+        },
+        {
+          "x": 366,
+          "y": 1137
+        },
+        {
+          "x": 357,
+          "y": 1070
+        }
+      ]
+    },
+    {
+      "id": "former_research_center_2",
+      "area_id": "former_research_center",
+      "tp_name": "科研院内",
+      "points": [
+        {
+          "x": 747,
+          "y": 457
+        },
+        {
+          "x": 751,
+          "y": 360
+        },
+        {
+          "x": 744,
+          "y": 309
+        },
+        {
+          "x": 757,
+          "y": 262
+        },
+        {
+          "x": 732,
+          "y": 230
+        },
+        {
+          "x": 688,
+          "y": 248
+        },
+        {
+          "x": 633,
+          "y": 246
+        },
+        {
+          "x": 567,
+          "y": 280
+        },
+        {
+          "x": 568,
+          "y": 323
+        }
+      ]
+    },
+    {
+      "id": "former_research_center_3",
+      "area_id": "former_research_center",
+      "tp_name": "二楼平台",
+      "points": [
+        {
+          "x": 987,
+          "y": 1008
+        },
+        {
+          "x": 946,
+          "y": 1056
+        },
+        {
+          "x": 978,
+          "y": 1073
+        },
+        {
+          "x": 960,
+          "y": 987
+        },
+        {
+          "x": 962,
+          "y": 923
+        },
+        {
+          "x": 975,
+          "y": 826
+        },
+        {
+          "x": 972,
+          "y": 757
+        },
+        {
+          "x": 976,
+          "y": 736
+        },
+        {
+          "x": 965,
+          "y": 661
+        },
+        {
+          "x": 947,
+          "y": 638
+        },
+        {
+          "x": 930,
+          "y": 621
+        }
+      ]
+    },
+    {
+      "id": "former_research_center_4",
+      "area_id": "former_research_center",
+      "tp_name": "科研院仓库",
+      "points": [
+        {
+          "x": 311,
+          "y": 750
+        },
+        {
+          "x": 311,
+          "y": 863
+        },
+        {
+          "x": 344,
+          "y": 925
+        },
+        {
+          "x": 352,
+          "y": 939
+        }
+      ]
+    },
+    {
+      "id": "former_research_center_5",
+      "area_id": "former_research_center",
+      "tp_name": "一楼广场",
+      "points": [
+        {
+          "x": 1225,
+          "y": 660
+        },
+        {
+          "x": 1225,
+          "y": 727
+        },
+        {
+          "x": 1200,
+          "y": 752
+        },
+        {
+          "x": 1199,
+          "y": 776
+        },
+        {
+          "x": 1208,
+          "y": 857
+        },
+        {
+          "x": 1203,
+          "y": 930
+        },
+        {
+          "x": 1199,
+          "y": 994
+        },
+        {
+          "x": 1198,
+          "y": 1028
+        },
+        {
+          "x": 1204,
+          "y": 1150
+        },
+        {
+          "x": 1203,
+          "y": 1182
+        },
+        {
+          "x": 1198,
+          "y": 1227
+        },
+        {
+          "x": 1145,
+          "y": 1224
+        },
+        {
+          "x": 1118,
+          "y": 1232
+        },
+        {
+          "x": 1038,
+          "y": 1218
+        }
+      ]
+    },
+    {
+      "id": "rough_machining_center_1",
+      "area_id": "rough_machining_center",
+      "tp_name": "一楼广场",
+      "points": [
+        {
+          "x": 399,
+          "y": 449
+        },
+        {
+          "x": 456,
+          "y": 510
+        },
+        {
+          "x": 455,
+          "y": 534
+        },
+        {
+          "x": 457,
+          "y": 599
+        },
+        {
+          "x": 495,
+          "y": 596
+        },
+        {
+          "x": 531,
+          "y": 549
+        }
+      ]
+    },
+    {
+      "id": "rough_machining_center_2",
+      "area_id": "rough_machining_center",
+      "tp_name": "一楼广场",
+      "points": [
+        {
+          "x": 414,
+          "y": 491
+        },
+        {
+          "x": 460,
+          "y": 443
+        },
+        {
+          "x": 519,
+          "y": 446
+        },
+        {
+          "x": 586,
+          "y": 455
+        },
+        {
+          "x": 605,
+          "y": 413
+        },
+        {
+          "x": 605,
+          "y": 363
+        },
+        {
+          "x": 627,
+          "y": 270
+        },
+        {
+          "x": 665,
+          "y": 310
+        }
+      ]
+    }
+  ],
+  "lists": [
+    {
+      "name": "中央制造区",
+      "list_type": "whitelist",
+      "route_items": [
+        "production_area_building_east_side_1",
+        "production_area_building_east_side_2",
+        "production_area_building_east_side_3",
+        "production_area_building_east_side_4",
+        "production_area_building_east_side_5",
+        "production_area_building_west_side_1",
+        "production_area_building_west_side_2",
+        "production_area_rooftop_1"
+      ]
+    },
+    {
+      "name": "科研院旧址",
+      "list_type": "whitelist",
+      "route_items": [
+        "former_research_center_1",
+        "former_research_center_2",
+        "former_research_center_3",
+        "former_research_center_4"
+      ]
+    },
+    {
+      "name": "粗加工中心",
+      "list_type": "whitelist",
+      "route_items": [
+        "rough_machining_center_1",
+        "rough_machining_center_2"
+      ]
+    },
+    {
+      "name": "职工社区旧址",
+      "list_type": "whitelist",
+      "route_items": [
+        "former_employee_community_1",
+        "former_employee_community_2",
+        "former_employee_community_3",
+        "former_employee_community_4",
+        "former_employee_community_5",
+        "former_employee_community_6"
+      ]
+    }
+  ]
+}

@@ -76,6 +76,20 @@ impl NativeSession {
             .as_array()
             .context("选队 OCR 缺少结果")?;
         let has = |word: &str, area| texts.iter().any(|t| t["text"] == word && in_area(t, area));
+        if [
+            "恢复电量",
+            "快捷使用",
+            "获得",
+            "确认",
+            "取消",
+            "确定并出战",
+            "确定並出战",
+        ]
+        .iter()
+        .any(|word| has(word, [570, 290, 1310, 810]))
+        {
+            return Ok(Some(page));
+        }
         let back = self.recognize_prepared(frame, "TemplateMatch", &json!({"template":"daily/back.png","roi":[54,12,115,80],"green_mask":true,"threshold":0.7}))?;
         if !ready()? {
             return Ok(None);
@@ -292,14 +306,22 @@ impl NativeSession {
                     };
                     publish(selection.clone())?;
                     if cancel.load(Ordering::Acquire) {
+                        if action == SelectionAction::Confirm {
+                            selection.pending = None;
+                            publish(selection.clone())?;
+                        }
                         return Ok(SelectionEnd::Cancelled);
                     }
                     let remaining = timeout.saturating_sub(started.elapsed());
                     if remaining.is_zero() {
+                        if action == SelectionAction::Confirm {
+                            selection.pending = None;
+                            publish(selection.clone())?;
+                        }
                         return Ok(SelectionEnd::TimedOut);
                     }
                     let execution = self.run_pipeline_detailed(
-                        entry,
+                        &format!("{entry}.Guard"),
                         &crate::PipelineInputPlan {
                             keys: BTreeSet::new(),
                             contacts: [0].into(),
@@ -307,9 +329,16 @@ impl NativeSession {
                         cancel.clone(),
                         remaining.min(Duration::from_secs(10)),
                         &overrides.to_string(),
-                        false,
+                        true,
                     )?;
                     ensure!(execution.report.released, "选队 Pipeline 尚未确认释放输入");
+                    ensure!(
+                        !execution
+                            .nodes
+                            .iter()
+                            .any(|node| node.name == "__ZzzSelect.Blocked" && node.completed),
+                        "选队输入前出现弹窗，不能点击背景"
+                    );
                     match execution.report.end {
                         PipelineEnd::Cancelled => return Ok(SelectionEnd::Cancelled),
                         PipelineEnd::TimedOut => return Ok(SelectionEnd::TimedOut),
@@ -318,6 +347,13 @@ impl NativeSession {
                             execution.report
                         ),
                         PipelineEnd::Succeeded => {
+                            ensure!(
+                                execution
+                                    .nodes
+                                    .iter()
+                                    .any(|node| node.name == entry && node.completed),
+                                "选队 Pipeline 缺少实际输入节点证明"
+                            );
                             if matches!(action, SelectionAction::Up | SelectionAction::Down) {
                                 selection.acknowledge_scroll().map_err(anyhow::Error::msg)?;
                             }
@@ -355,6 +391,13 @@ fn selection_pipeline() -> Value {
     p["__ZzzSelect.Enabled"] = ocr([1634, 1000, 192, 54], "^预备出战$");
     p["__ZzzSelect.Enabled"]["color_filter"] = json!("__ZzzSelect.White");
     p["__ZzzSelect.Name"] = ocr([140, 100, 700, 70], ".+");
+    p["__ZzzSelect.Blocked"] = ocr(
+        [570, 290, 740, 520],
+        "^(恢复电量|快捷使用|获得|确认|取消|确定[并並]出战)$",
+    );
+    for entry in ["Up", "Down", "Toggle", "Confirm"] {
+        p[format!("__ZzzSelect.{entry}.Guard")] = json!({"recognition":"DirectHit","action":"DoNothing","next":["__ZzzSelect.Blocked",format!("__ZzzSelect.{entry}")],"pre_delay":0,"post_delay":0});
+    }
     p["__ZzzSelect.Marker"] = ocr([795, 215, 160, 125], "(?i).*SELECT.*|^TEAM.*");
     for node in p.as_object_mut().unwrap().values_mut() {
         for (key, value) in [

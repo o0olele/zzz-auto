@@ -469,6 +469,11 @@ struct InputProbeArgs {
 
 #[derive(Subcommand)]
 enum ResourceDiagnostics {
+    /// 校验模拟室出战资源，不加载 SDK 或开放游戏输入。
+    SimulationDeployBundleCheck {
+        #[arg(long, default_value = "resources/generated/simulation-deploy")]
+        bundle: PathBuf,
+    },
     /// 校验模拟室结算资源，不加载 SDK。
     SimulationSettlementBundleCheck(SettlementBundleArgs),
     /// 固定图只读检查结算和奖励，不提供本次完成证明。
@@ -1055,6 +1060,14 @@ async fn main() -> Result<()> {
             return print(
                 serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"completion_verified":false,
                 "bundle":maa_adapter::simulation_settlement::validate_simulation_settlement_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::SimulationDeployBundleCheck {
+            ref bundle,
+        }) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"selection_verified":false,
+                "bundle":maa_adapter::simulation_deploy::validate_simulation_deploy_bundle(bundle)?}),
             );
         }
         Action::ResourceDiagnostics(ResourceDiagnostics::SimulationSettlementInspect(

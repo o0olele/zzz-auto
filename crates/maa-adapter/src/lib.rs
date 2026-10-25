@@ -29,8 +29,10 @@ pub mod predefined_teams;
 mod random_play;
 pub mod restore_charge;
 pub mod simulation;
+pub mod simulation_deploy;
 pub mod simulation_mission;
 pub mod simulation_settlement;
+pub mod simulation_teams;
 pub mod team_selection;
 pub use coffee::{CoffeeObservation, validate_coffee_bundle};
 pub use mail_bundle::validate_mail_bundle;
@@ -146,6 +148,7 @@ pub struct NativeSession {
     suibian_temple_bundle: Option<PathBuf>,
     restore_charge_bundle: Option<PathBuf>,
     simulation_bundle: Option<PathBuf>,
+    simulation_deploy_bundle: Option<PathBuf>,
     simulation_mission_bundle: Option<PathBuf>,
     simulation_settlement_bundle: Option<PathBuf>,
     compendium_bundle: Option<PathBuf>,
@@ -296,6 +299,7 @@ impl NativeSession {
             suibian_temple_bundle: None,
             restore_charge_bundle: None,
             simulation_bundle: None,
+            simulation_deploy_bundle: None,
             simulation_mission_bundle: None,
             simulation_settlement_bundle: None,
             compendium_bundle: None,

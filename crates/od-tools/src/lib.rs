@@ -14,6 +14,7 @@ pub mod models;
 pub mod resources;
 pub mod restore_charge;
 pub mod simulation;
+pub mod simulation_deploy;
 pub mod simulation_mission;
 pub mod simulation_settlement;
 

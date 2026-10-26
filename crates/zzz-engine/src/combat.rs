@@ -131,6 +131,20 @@ impl CombatRun {
         self.progress.state = RunState::Running;
         Ok(())
     }
+    /// 外层确认整个任务安全暂停后恢复子战斗，覆盖结果返回与父交接之间的暂停。
+    pub fn resume_segment_after_parent_pause(&mut self) -> Result<()> {
+        ensure!(
+            self.parented
+                && self.progress.inputs_released
+                && !matches!(self.progress.state, RunState::Failed | RunState::Stopped)
+                && self.control.resume(),
+            "子战斗尚未由父任务确认暂停、输入未释放或已经失败 / 停止"
+        );
+        self.progress.state = RunState::Running;
+        self.sequence = None;
+        self.end_tracker.reset_confirmation();
+        Ok(())
+    }
     fn intervals(&mut self) -> Result<BTreeMap<String, f64>> {
         let mut result = BTreeMap::new();
         for (name, default) in [

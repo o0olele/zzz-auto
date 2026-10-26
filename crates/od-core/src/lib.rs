@@ -50,6 +50,7 @@ pub mod shortcuts;
 pub mod simulation_cards;
 pub mod simulation_deploy;
 pub mod simulation_deploy_pipeline;
+pub mod simulation_entry;
 pub mod simulation_mission;
 pub mod simulation_mission_pipeline;
 pub mod simulation_pipeline;

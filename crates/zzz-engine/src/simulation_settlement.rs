@@ -64,7 +64,11 @@ impl SettlementRun {
     }
     pub fn resume(&mut self) -> Result<()> {
         ensure!(
-            self.end == Some(SettlementEnd::Paused) && self.snapshot.inputs_released,
+            matches!(
+                self.end,
+                Some(SettlementEnd::Paused | SettlementEnd::Collected)
+            ) && self.snapshot.inputs_released
+                && self.control.requested() == Some(Interrupt::Pause),
             "模拟室结算准备尚未安全暂停"
         );
         let mut flow = self.snapshot.flow.clone();

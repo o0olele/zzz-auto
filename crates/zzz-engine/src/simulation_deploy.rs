@@ -26,6 +26,9 @@ pub struct PreparedDeployment {
     manifest_hash: Vec<u8>,
 }
 impl PreparedDeployment {
+    pub(crate) fn plan(&self) -> &AppCombatPlan {
+        &self.plan
+    }
     pub fn load(plan: AppCombatPlan, root: &Path, data: &Path) -> Result<Self> {
         plan.validate().map_err(anyhow::Error::msg)?;
         let bundle = CombatBundle::load(root)?;
@@ -85,6 +88,22 @@ pub struct DeploymentRun {
     end: Option<DeploymentEnd>,
 }
 impl DeploymentRun {
+    pub(crate) fn parent_context(&self) -> Result<(&Path, &AppCombatPlan, PipelineControl)> {
+        self.snapshot.flow.validate().map_err(anyhow::Error::msg)?;
+        ensure!(
+            self.end.is_none()
+                && self.snapshot.active_ms == 0
+                && self.snapshot.inputs_released
+                && !self.snapshot.flow.completed()
+                && self.snapshot.combat == self.prepared.plan,
+            "模拟室父任务只能接收尚未执行的冻结出战流程"
+        );
+        Ok((
+            &self.prepared.root,
+            &self.prepared.plan,
+            self.control.clone(),
+        ))
+    }
     pub fn after_teams(
         id: Uuid,
         request: DeployRequest,
@@ -126,7 +145,11 @@ impl DeploymentRun {
     }
     pub fn resume(&mut self) -> Result<()> {
         ensure!(
-            self.end == Some(DeploymentEnd::Paused) && self.snapshot.inputs_released,
+            matches!(
+                self.end,
+                Some(DeploymentEnd::Paused | DeploymentEnd::Entered)
+            ) && self.snapshot.inputs_released
+                && self.control.requested() == Some(Interrupt::Pause),
             "出战尚未安全暂停"
         );
         let mut flow = self.snapshot.flow.clone();
@@ -142,11 +165,18 @@ impl DeploymentRun {
     }
     pub fn into_combat(self) -> Result<CombatRun> {
         ensure!(
+            self.control.requested().is_none(),
+            "仍有控制请求，不能交接子战斗"
+        );
+        self.into_combat_for_parent()
+    }
+    /// 父流程转换不发送输入；转换与请求并发时由父流程在交接检查点后处理请求。
+    pub(crate) fn into_combat_for_parent(self) -> Result<CombatRun> {
+        ensure!(
             self.end == Some(DeploymentEnd::Entered)
                 && self.snapshot.inputs_released
-                && self.snapshot.flow.completed()
-                && self.control.requested().is_none(),
-            "出战未完成或仍有控制请求，不能交接子战斗"
+                && self.snapshot.flow.completed(),
+            "出战未完成或输入未释放，不能交接子战斗"
         );
         ensure!(
             self.snapshot.combat == self.prepared.plan,

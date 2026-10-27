@@ -13,6 +13,7 @@ pub mod runtime;
 pub mod runtime_download;
 pub mod runtime_feed;
 pub mod runtime_resources;
+pub mod simulation_approach;
 pub mod simulation_battle;
 pub mod simulation_cards;
 pub mod simulation_deploy;

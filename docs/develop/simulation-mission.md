@@ -1,6 +1,6 @@
 # 实战模拟室类型与关卡选择投递
 
-本内部子流程接续[快捷手册传送](compendium-transport.md)，处理普通四类材料及自定义模板的类型重选、关卡定位、横向翻页和选择投递。只有定位与投递回执已经开发完成；现有真实留档缺少可靠的关卡选中标记，因此结果固定为 `MissionEnd::AwaitingVerification`，回执的 `selection_verified` 始终为 `false`。父流程不能据此进入卡片、电量消费、选队或出战，也不能写计划次数和应用完成。
+本内部子流程接续[快捷手册传送](compendium-transport.md)，处理普通四类材料及自定义模板的类型重选、关卡定位、横向翻页和选择投递；二者已接入同一[传送与选关父流程](simulation-approach.md)。只有定位与投递回执已经开发完成；现有真实留档缺少可靠的关卡选中标记，因此结果固定为 `MissionEnd::AwaitingVerification`，回执的 `selection_verified` 始终为 `false`。父流程不能据此进入卡片、电量消费、选队或出战，也不能写计划次数和应用完成。
 
 依据为参考仓 `CombatSimulation` 的类型选择、目录顺序翻页和文字框左上角向下 50 像素的点击规则，以及 `combat_simulation.yml`、`menu.yml`、战斗画面和副本目录。独立资源固定六份参考来源、原有返回模板及锁定 OCR；没有推测新的选中颜色、边框或关卡标题区域。
 

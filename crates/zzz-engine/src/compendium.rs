@@ -45,7 +45,16 @@ impl TransportRun {
     }
     pub fn resume(&mut self) -> Result<()> {
         ensure!(
-            self.end == Some(TransportEnd::Paused) && self.snapshot.inputs_released,
+            self.end == Some(TransportEnd::Paused),
+            "手册传送准备尚未暂停"
+        );
+        self.resume_after_parent_pause()
+    }
+    /// 父流程在子流程完成之后才暂停时，同样撤销旧到达证明。
+    pub(crate) fn resume_after_parent_pause(&mut self) -> Result<()> {
+        ensure!(
+            matches!(self.end, Some(TransportEnd::Paused | TransportEnd::Arrived))
+                && self.snapshot.inputs_released,
             "手册传送准备尚未安全暂停"
         );
         let mut flow = self.snapshot.flow.clone();

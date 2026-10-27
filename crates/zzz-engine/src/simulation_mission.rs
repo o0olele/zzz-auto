@@ -44,8 +44,16 @@ impl MissionRun {
         })
     }
     pub fn resume(&mut self) -> Result<()> {
+        ensure!(self.end == Some(MissionEnd::Paused), "关卡选择准备尚未暂停");
+        self.resume_after_parent_pause()
+    }
+    /// 父流程在子流程完成之后才暂停时，撤销旧回执并重新读取详情。
+    pub(crate) fn resume_after_parent_pause(&mut self) -> Result<()> {
         ensure!(
-            self.end == Some(MissionEnd::Paused) && self.snapshot.inputs_released,
+            matches!(
+                self.end,
+                Some(MissionEnd::Paused | MissionEnd::AwaitingVerification)
+            ) && self.snapshot.inputs_released,
             "关卡选择准备尚未安全暂停"
         );
         let mut flow = self.snapshot.flow.clone();

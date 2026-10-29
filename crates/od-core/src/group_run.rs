@@ -19,6 +19,7 @@ pub fn recovery_inputs() -> Vec<crate::InputProbeConfig> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum GroupStepState {
+    Ended,
     Pending,
     Running,
     Skipped,
@@ -50,6 +51,7 @@ pub struct GroupProgress {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppOutcome {
+    Ended,
     Succeeded,
     Failed,
     Stopped,
@@ -266,6 +268,7 @@ impl GroupSchedule {
             outcome
         };
         step.state = match outcome {
+            AppOutcome::Ended => GroupStepState::Ended,
             AppOutcome::Succeeded => GroupStepState::Succeeded,
             AppOutcome::Failed => GroupStepState::Failed,
             AppOutcome::Stopped => GroupStepState::Stopped,
@@ -276,7 +279,7 @@ impl GroupSchedule {
         self.progress.state = match outcome {
             AppOutcome::Failed => RunState::Failed,
             AppOutcome::Stopped => RunState::Stopped,
-            AppOutcome::Succeeded
+            AppOutcome::Succeeded | AppOutcome::Ended
                 if self
                     .progress
                     .steps
@@ -289,7 +292,18 @@ impl GroupSchedule {
                     RunState::Running
                 }
             }
-            AppOutcome::Succeeded => RunState::Succeeded,
+            AppOutcome::Succeeded | AppOutcome::Ended => {
+                if self
+                    .progress
+                    .steps
+                    .iter()
+                    .any(|s| s.state == GroupStepState::Ended)
+                {
+                    RunState::Failed
+                } else {
+                    RunState::Succeeded
+                }
+            }
         };
         self.changed();
         Ok(())

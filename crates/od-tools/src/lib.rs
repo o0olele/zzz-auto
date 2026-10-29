@@ -1,4 +1,10 @@
+pub mod agent_goal;
+pub mod agent_mission;
+pub mod agent_transport;
+pub mod area_patrol;
 pub mod baseline;
+pub mod charge_navigation;
+pub mod charge_transport;
 pub mod coffee;
 pub mod coffee_run;
 pub mod combat;
@@ -6,6 +12,9 @@ pub mod combat_source;
 pub mod compendium;
 pub mod config_import;
 pub mod engagement_reward;
+pub mod ether_synthesis;
+pub mod ether_synthesis_entry;
+pub mod expert_challenge;
 pub mod flash_model;
 pub mod inventory;
 pub mod mail;
@@ -36,5 +45,7 @@ pub fn sha256(path: &Path) -> Result<String> {
 }
 pub mod basic_daily;
 
+pub mod charge_level;
+pub mod deep_hunt;
 pub mod suibian_temple;
 pub mod world_patrol;

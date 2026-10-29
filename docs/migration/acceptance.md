@@ -1610,3 +1610,367 @@ Workspace 与相关测试目标严格 Clippy、格式和两仓差异检查通过
 Workspace 和新增测试目标的严格 Clippy、格式与两仓差异检查通过。默认目录桌面构建遇到既有“拒绝访问”，改用 `target/m4` 完成引擎、工具及原生桌面构建。引擎构建产物、默认 debug 入口和桌面随附引擎 SHA-256 同为 `4987734F593843EE7668B2F8F03F4333F738C6AE5D099660FAB6D33D5B5CC914`。两份资源包在不存在 SDK 的配置下通过原生 CLI 校验，报告为 `artifacts/simulation-approach-compendium-check.json` 与 `artifacts/simulation-approach-mission-check.json`；保持 `accepted=false`、`input_sent=false` 及关卡 `selection_verified=false`，隔离数据目录未创建。没有重打包正式发行包，未提交或推送。
 
 父流程仅以 `AwaitingVerification` 交回未验证关卡，不能提供后续消费入口或成功证明。协议 v46、导入预览 v19、资源 schema 和应用正式可用标记保持不变。关卡选中态素材和证明生产者、后续准备及单战的完整编排、体力运行登记、实际游戏 / 设备交接及全部实机验收继续保留；既有 Maa 队列交接时序待查项没有关闭。
+
+## 2026 年 10 月 27 日 M5 模拟室完整挑战流程
+
+接通[准备到领奖的完整挑战流程](../develop/simulation-challenge.md)：接收属于本次冻结计划的已验证关卡，在同一运行 ID、原生槽位、控制句柄和活动预算内串联卡片 / 电量准备、详情 / 选队及单战 / 领奖返回。关卡、默认等级、完整编队和脚本名称先验证；首次卡片输入前冻结已编译脚本与全部下游资源，运行、继续和阶段交接重新校验，后续导入不改变本次指令。
+
+准备实际返回不足电量时，明确结束为 `InsufficientCharge` 并保留准备结果，不投递详情推进或出战。成功证明包含运行身份、完整冻结计划、单战证明和实际领奖后电量，不直接登记计划次数或每日成功。阶段保存失败、停止、超时或未释放输入不能启动后继；明确保存失败不被同时超时覆盖。
+
+补齐三层父子交接：准备、详情或单战已返回之后，父流程才收到暂停，继续仍撤销旧证明并读取新帧。已完成单战的继续只重新验证领奖返回，不重复出战、战斗、完成或领奖；正常暂停则保留原子流程意图及已编译脚本。内部详情到出战转换不发送输入，转换与控制请求并发时由已保存的父交接点处理，公开转换入口仍拒绝待处理请求。
+
+回放使用明确构造的已验证关卡、真实 Maa SDK 自定义控制器，以及已有电量恢复 / 奖励留档和组合画面，没有操作真实游戏或修改用户配置。准备画面的测试绘图依赖仅调整模块可见性，原图片内容与既有预期未修改。
+
+新增 21 项 Rust 回放全部通过：首轮 18 项、补充电量不足终态控制 / 暂停期间资源变化 / 撤退与返回数量变化 3 项。随后强化非默认等级和错误返回断言，2 项重跑也通过，按唯一用例不重复计数。覆盖完整默认方案和固定三张卡片恢复、冻结脚本及运行身份、八个输入阶段连续暂停并重建会话、父终态新帧复验、两处阶段保存、停止优先、全部下游资源变化、零预算及输入释放失败，以及保存失败与超时同时发生。相邻准备、详情和出战核心各 8 项、共 24 项通过。日志为 `artifacts/simulation-challenge-tests.log`、`artifacts/simulation-challenge-additional-tests.log` 和 `artifacts/simulation-challenge-core-neighbor-tests.log`，原生过程为 `artifacts/simulation-challenge-logs/maafw.log`。
+
+原准备、详情及单战执行器的 3 项终态专项回归全部通过，分别覆盖暂停 / 停止 / 保存失败 / 超时，以及暂停后复验和成功证明拦截；相邻日志为 `artifacts/simulation-challenge-public-neighbor-tests.log`。连同新增及核心回归，按唯一用例共 48 项 Rust 检查通过。
+
+Workspace 和新增测试目标严格 Clippy、格式与两仓差异检查通过，使用 `target/m4` 完成引擎、工具及原生桌面构建；构建引擎、默认 debug 入口及桌面随附引擎 SHA-256 同为 `8C7B180B6783B409674C4BA7E3B830E03638CB5EB02C1125F0B448EE614EE594`。五类界面资源在不存在 SDK 的配置下通过原生 CLI 只读检查，报告位于 `artifacts/simulation-challenge-*-check.json`，全部保持 `accepted=false`，隔离数据目录未创建。首轮出战校验使用相对数据路径被既有参数校验拒绝，改为绝对隔离路径后检查通过；没有改变生产参数规则。没有重打包正式发行包，未提交或推送。
+
+当前选关生产者仍固定返回未验证回执，构造完整挑战会在任何卡片输入前拒绝；没有新增验证绕过开关、桌面或 CLI 的真实输入入口。协议 v46、导入预览 v19、资源 schema 与应用正式可用标记保持不变。关卡选中证明、传送到挑战的最终连接、体力计划循环及运行登记、实际设备交接和全部实机验收继续保留，既有 Maa 队列交接时序待查项不因此关闭。
+
+## 2026 年 10 月 28 日 M5 体力循环与挑战次数登记核心
+
+实现[内部调度及登记接口](../develop/charge-run.md)：冻结运行、账号、组、配置修订、区服游戏日、体力设置和完整编队，按保存顺序生成逐次尝试；支持零目标、每日重置、整轮扣减保留超额、任一允许来源足额恢复的估算、电量不足结束 / 本次跳过，以及只生成一次且不写正式次数的双倍临时计划。一次挑战计一次，与卡片张数分开；旧次数只作为基线，不能当作本次成功。
+
+输入前保存意图，实际挑战正常终态、输入释放及同一控制句柄复验后保存结果，再提交内存次数。保存失败保留原尝试并重试登记，不重跑挑战；相同回执幂等，不同结果不能覆盖。每个挑战实例产生独立执行 ID，成功和不足均拒绝被下一尝试再次采用，包括整轮扣减后内容完全相同，以及临时计划与正式计划同 ID 的情况。保存结果期间才收到暂停或停止时，保留此前已经取得的正常结果并禁止后继；输入意图保存期间收到控制请求不返回输入许可。
+
+新增核心 19 项、实际 Maa SDK 隔离登记 4 项通过。核心覆盖每日重置与旧基线、顺序和脚本冻结、默认及固定卡片、整轮扣减与零目标、双倍优先及一次性、电量估算与真实不足、重复结果、4096 次上限、检查点往返及序号 / 卡片 / 脚本 / 终态篡改；执行覆盖完整成功后保存失败重试、重复及旧循环结果拒绝、同一身份下外来控制句柄拒绝、实际不足不加次数、身份 / 修订 / 跨日保护，以及保存期间暂停的两种交接边界。原生回放仍使用明确构造的已验证关卡和固定组合帧，没有连接游戏或修改用户数据。
+
+相邻核心体力估算 15 项、准备 8 项、详情 8 项和出战 7 项通过，连同新增核心共 57 项，日志为 `artifacts/charge-run-core-tests.log`。新增登记执行 4 项和原完整挑战执行 2 项全部通过；后两项覆盖固定卡片恢复到领奖，以及不足终态暂停后重读、停止时撤销不足证明。执行共 6 项，日志为 `artifacts/charge-run-execution-tests.log`。按唯一用例共 63 项定向 Rust 回归通过，重复运行不重复计数；没有把未运行的全量测试标为通过。
+
+首次 SDK 回放在重新生成日常及出战包时，因参考仓兑换码和 `deploy.py` 与固定哈希不符而拒绝，尚未到达执行。回放改为复用已有固定执行包，复制前由生产校验器检查来源、节点和全部文件，运行时仍重新完整校验；没有修改生产来源锁。随后发现不足测试使用默认卡片时实际足额，修正为固定三张、43 / 60 的明确不足场景，生产逻辑不变。参考仓体力目录对照实跑仍失败：`compendium_data.yml` 与体力配置源码也发生来源变化。定向相邻批次显式排除该项和依赖变化来源的出战包测试，两项均不计通过数；四份文件的实际与预期哈希保留于 `artifacts/charge-run-reference-drift.json`，来源重新审核及资源重建继续待办。
+
+Workspace 和新增测试目标严格 Clippy、格式及两仓差异检查通过，静态检查日志为 `artifacts/charge-run-clippy.log` 和 `artifacts/charge-run-test-clippy.log`。默认 target 的桌面构建仍报既有拒绝访问，使用 `target/m4` 完成引擎、工具和原生桌面构建，日志为 `artifacts/charge-run-build.log`；本次构建引擎 SHA-256 为 `65C731C5576CB86DD0DCEA0176B1A638D8DEA1E2A7CFC47610232268FB10C756`。未重打包发行包、刷新默认 debug / 随附引擎、提交或推送。
+
+目前只产出内部次数投影与可复验检查点，尚未接入体力应用工作线程、跨运行历史采用或用户配置写回；成功登记也不代表应用每日成功。关卡选中态素材与生产者、快捷手册资源和双倍实际识别、传送到挑战的完整自动循环、其他副本、实际设备交接及全部实机验收继续保留。协议 v46、导入预览 v19、执行资源定义和正式可用标记不变，既有 Maa 队列时序待查项没有关闭。
+
+## 2026 年 10 月 28 日 M5 体力次数持久化与资源栏识别
+
+继续“完成体力刷本剩余内容”的目标，接通[次数保存与启动恢复](../develop/charge-history.md)和[快捷手册资源读取](../develop/charge-resources.md)。完整体力工作线程、关卡确认、所有副本、双倍实际分流及实机验收仍属于同一目标，没有把本轮两项基础能力当作整个体力应用完成。
+
+次数日志先于配置提交，完整请求和已确认前缀绑定 SHA-256；计数、保存修订和去重回执同文件原子替换，沿用备份及账号配置锁。输入意图可保存，但未执行的循环扣减不能提前写回。结果保存失败后冻结旧结果并阻止再次挑战，暂停时也能只补交此前核实的结果；相同修订的手工内容变化同样禁止继续。引擎在 SDK 和任何游戏输入之前恢复同配置分支的已确认结果，不重放意图，旧分支保留历史而不覆盖新设置；损坏、改名、超量、同基线分叉和主配置丢失但存在备份时拒绝自动恢复。
+
+新增持久化 21 项、实际 Maa SDK 隔离登记 1 项通过，后者完整执行到领奖后制造配置写入失败，证明不能重新挑战、暂停时只补交旧结果、保存后循环新意图及外部修改拒绝。追加原有“保存可能已成功但应答失败”的登记回归 1 项通过。持久化还覆盖每日重置、逐次提交、跨运行继承、配置和文件锁冲突、旧快照 / 改写结果、计数回执复验、备份恢复后不被旧日志撤销，以及无 SDK 启动恢复。日志为 `artifacts/charge-history-resources-final-tests.log`、`artifacts/charge-history-sdk-tests.log` 与 `artifacts/charge-history-prior-registration-test.log`。
+
+资源栏新增 6 项通过，包括真实 Maa SDK 对照原 19 张截图的全部三项数值、目标及两张训练页、大世界、遮挡、取消、零预算和双倍文本边界。初次原生检查暴露 RGB 白字过滤会去掉灰色分母、细字 4 检测不完整，以及斜杠被识别为 1 时可能得到错误长数；改为同帧白字 / 原色完整结果核对、检测框扩边单行复读和固定三位电量分数正规化，不降低置信度或以零代替缺失。两边完整但冲突时仍保持未知，不跨字段拼数。原 19 张均符合人工期望，输出为 `artifacts/charge-resources-corpus.json`；最终结果与遮挡反例在 `artifacts/charge-history-resources-final-tests.log` 中。咖啡 1/1 不提供五次双倍证明；真实五次活动、无活动的可靠证明继续待补。
+
+相邻账号配置 15、原调度 19、配置备份 9、离线恢复 13、应用组 7 和账号管理 8 项共 71 项通过，日志为 `artifacts/charge-history-neighbor-tests.log`；连同本轮持久化、读取与两个 SDK 登记检查共 100 项。另有旧资源协议兼容 1 项通过，实际打包及复验 schema 1 的协议 15..47 和 schema 2 咖啡包的协议 16..47，拒绝未知 999 及不兼容的咖啡协议 15；日志为 `artifacts/charge-history-resource-compat-tests.log`。按唯一用例共 101 项定向 Rust 回归通过，没有将重复运行、固定图数量或未运行的全量测试计入用例数。
+
+Workspace 和三个相关测试目标严格 Clippy、格式、两仓差异检查、前端生产构建、引擎 / 工具和原生桌面构建通过。协议升级至 v47，生成 TypeScript 的可缺省次数回执字段；旧配置按空列表读取，导入预览保持 v19。构建引擎、默认 debug 入口和桌面随附引擎 SHA-256 同为 `1E79ED044AB2FAE4348F6D248C3AF3D9CC0B246A8991063187100E82950168C0`。没有重打包发行包、提交或推送。
+
+只读 CLI `compendium-inspect --read-resources` 在隔离数据目录读到 86 / 2400 / 5，保持 `accepted=false`、`input_sent=false`，只产生 Maa 日志，没有创建账号配置或运行记录；报告为 `artifacts/charge-resources-cli.json`。当前窗口枚举为 `[]`，没有进行真实游戏采集、消费体力或修改用户数据。前轮四份来源哈希差异仍保留，已定位到参考目录 / 区域巡防旧名兼容和出战 60 秒节点等变更，尚未改变冻结来源锁。后续继续来源兼容、关卡选中证明、完整自动循环、正式运行登记及剩余副本，全部实机验收与应用正式可用标记不提前修改。
+
+## 2026 年 10 月 28 日 M5 体力目录兼容与单次电池合成
+
+用户明确选择“暂不启动，继续开发并保留实机验收”。本轮没有启动游戏、采集实时画面或消费用户资源，完整体力刷本目标继续有效。
+
+重新审核原七份体力来源锁，补齐区域巡防旧名、快捷手册来源撤销变更及出战节点 60 秒限制。区域巡防原名保留在配置和日志中，只在所属分类的执行解析时转换；前端打开设置不自动保存，显式改名保留 ID 与次数。快捷手册、关卡和出战资源各输出 schema 2，冻结旧来源为 source-lock-v1.json，保留 schema 1 校验，拒绝交叉来源、未知版本和重算清单后的节点篡改。训练 TAB 仍采用已验证的宽黄色范围和完整文字匹配，没有随着上游撤销修改而放宽文字约束。原有锋御、征服者、库萨里库不是本轮新增项目。
+
+新增单次电池合成状态机、同帧输入复核、原生执行器、独立资源构建和只读 CLI；四张真实留档识别合成、消费确认、获得与素材不足。确认采用截图实证的 60 电量、1 储值电卡和 100 丁尼，避免参考文档中错误的储值电卡数值。每个动作保存独立意图，成功还要求获得弹窗、领取后明确电量 −60 与电池 +1。合成成功和素材不足使用独立结果类型，不能跨分类采用模拟室证明；素材不足不加次数，跳过本轮该计划并保留未完成标记。
+
+实际合成结果复用日志先于计数的保存、去重、失败补交和启动恢复。12 项合成专项通过，包含正常兑换、三处暂停继续、错误数量、旧确认及旧奖励弹窗、实际资源变化、意图保存失败、终态保存失败 / 暂停 / 停止、零预算、释放失败、资源篡改，以及结果保存失败后暂停期间仅补交一次。日志为 artifacts/ether-synthesis-final-tests.log；4 张固定图输出为 artifacts/ether-synthesis-corpus.json。目录兼容 5 项、相邻配置 / 调度及资源核心共 87 项通过，日志为 artifacts/charge-catalog-validation.log，后续修改后的持久化与调度重验在 artifacts/ether-synthesis-registration-tests.log。出战 60 秒边界的新用例通过，日志为 artifacts/deploy-deadline-tests.log。
+
+前端 7 项、生产构建、workspace 和相关测试目标严格 Clippy、格式及两仓差异检查通过。原生引擎、工具和桌面构建通过，当前引擎、默认 debug 与桌面随附引擎 SHA-256 一致为 6C85F95413276B1CFA5986D2C96E470F18E79F67C144F42DD4C8B5E79FE2BCBF。八份体力来源锁共 47 项哈希全部匹配，报告为 artifacts/charge-source-audit.json。资源只读 CLI 在不存在 SDK 的条件下完成 bundle-check；实际 SDK 的 inspect 输出 confirmation、accepted=false、input_sent=false、completion_verified=false，仅在隔离数据目录产生 Maa 日志，没有账号或运行记录，报告为 artifacts/ether-synthesis-cli.json。
+
+当前单次合成从已打开的道具处理合成页开始。快捷手册到合成页导航、完整体力工作线程、关卡选中态生产者、五次双倍与可靠无活动证明、区域巡防 / 专业挑战 / 深度追猎 / 代理人方案培养、应用历史与每日成功登记和全部实机验收继续待办。协议 v47、导入预览 v19 和应用正式可用标记不变；未重打发行包、提交或推送。
+
+追加相邻 SDK 回归：资源读取 6 项与模拟室完整挑战 26 项全部通过，覆盖准备、恢复电量、交接、终态、暂停停止以及实际登记与保存失败重试。该组挑战共耗时 1404 秒；随后排队的出战扩展 34 项主动停止，未完成用例不计入通过数。结合新出战截止边界 1 项、合成 12 项及原配置 / 目录等 87 项，按唯一用例共 132 项定向 Rust 回归通过，界面为 7 项。部分扩展套件终止导致批次命令非零退出，不能宣称该批次整体通过；已完成目标和中止范围保存在 artifacts/ether-synthesis-neighbor-sdk-tests.log，最终汇总为 artifacts/ether-synthesis-verification.json。新增用例的最终严格 Clippy 同样通过。合成当前严格要求电量差为 60，期间自然恢复电量会拒绝采用旧结果，该场景仍待完善和实机验证，没有提前开放完整体力入口。
+
+## 2026 年 10 月 29 日 M5 合成入口与自然恢复电量
+
+继续同一体力刷本目标，接通快捷手册资源栏到电池详情、获取合成入口和单次兑换的父任务。入口沿用参考电池原图及二值掩码，模板转换后逐字节校验；详情位置按完整文字动态定位，候选框仅保留于当次调用，点击前重新截图局部复核名称、入口及覆盖层。合成页采用已有有限区域读取，输入仍要求 1500ms 内的新帧。入口等待累计 20 秒活动时间，暂停不清零；父任务在首次导航输入前预检全部下游资源，交接及终态保存失败、暂停或停止时不开放结果给计数器。
+
+初次回放发现两个问题并修复：离线 PNG 构造占用截图预算，已移到测试控制器启动前；真实快捷手册整页 OCR 与上下文读取的组合会超过输入前的新帧时效，已按阶段区分有限区域读取与详情候选发现，并在实际点击前只读取新帧候选区域。旧候选的文字、位置或覆盖层变化均禁止点击，没有放宽实际输入时的新帧限制。另一个新增用例证明 game=true 本身不能区分真实和回放会话，现要求模式与 NativeSession 的实际游戏窗口属性一致，回放会话及不一致目标在输入前拒绝。父任务的无输入阶段转换单独处理控制请求，避免子流程完成与暂停并发时误报失败。
+
+合成成功继续要求本次完整消费确认、获得 1 个以太电池、领取与拥有量恰好 +1；电量采用从“原电量 −60”到其与自然上限 240 较大者的区间，不假设恢复速率。自然上限以上的电量不能凭空增加，额外消耗、超范围或电池数量异常仍拒绝。已确认未投递时，重新读取自然增加的电量并更新基线；旧严格差值日志保持可重放。实际父任务结果接入 record_synthesis_challenge_persisted，导航本身不能加次数，成功保存与启动恢复保持幂等。
+
+入口 / 父任务 13 项、合成 13 项、次数调度 19 项和持久化 21 项共 66 项定向 Rust 回归全部通过，日志为 artifacts/ether-entry-final-tests.log。涵盖真实快捷手册电池图标及合成留档、明确标注的详情组合画面、暂停继续、按下鼠标时暂停、零预算、停止、20 秒等待跨暂停、资源变化、旧候选与陈旧帧、终态保存失败以及保存一次 / 启动恢复。父任务终态控制边界在最后调整后单独复验通过，日志 artifacts/ether-entry-terminal-final-tests.log，不重复计数。workspace 和四个测试目标严格 Clippy、格式与两仓差异检查通过，日志 artifacts/ether-entry-final-clippy.log 与 artifacts/ether-entry-final-test-clippy.log。
+
+原生引擎、工具和桌面构建通过。引擎、默认 debug 入口与桌面随附引擎 SHA-256 同为 58004A959C4B2F846F0E6E43D5C929C92DE2D7F2CE2E75599C68016F0FD6789B。九份来源锁共 54 条全部匹配，报告 artifacts/ether-entry-source-audit.json。入口构建 CLI 实际产出 schema 1、5 个受管文件 / 7 条来源，报告 artifacts/ether-entry-builder-cli.json；在不存在 SDK 的条件下完成 bundle-check。固定图 inspect 识别快捷手册电池图标，保持 accepted=false、input_sent=false、navigation_verified=false、completion_verified=false；只在隔离数据目录产生 Maa 日志，没有创建账号或运行记录，报告 artifacts/ether-entry-cli.json。协议 v47、导入预览 v19 和正式可用标记保持不变。
+
+用户此前选择暂不启动游戏，本轮遵守该选择。资源详情缺少真实留档，合成导航实际操作、自然恢复及长暂停、持续多次合成、窗口与设备交接和真实异常恢复继续保留实机验收；组合回放不能作为实机证据。完整体力工作线程、大世界起点与返回、实际关卡选中态、五次双倍与无活动证明、区域巡防 / 专业挑战 / 深度追猎 / 代理人方案培养、应用历史及每日成功登记继续开发，未缩小原目标。没有重打发行包、提交或推送。
+
+## 2026 年 10 月 29 日 M5 体力父流程与页面交接
+
+新增内部 ChargeWorker，独占唯一 NativeSession，在同一运行 ID、控制句柄和总活动预算内接通大世界起点、快捷手册、实时资源、保存尝试、电池合成、实际计数、返回和下一轮重读。ChargeRunSeed 先冻结配置与游戏日，实际读帧后才绑定双倍；没有启用计划、体力不足、素材不足和完成各用独立结果。每个输入阶段及保存回调前后复验当前配置，计数器允许自身提交的新修订。正常结果取得后的控制请求、跨日或外部配置变化不能撤销已经发生的消费日志，保存失败和冲突均冻结结果，补交期间不发送输入。
+
+已知页面导航采用动作意图、投递和实际后态，返回或关闭须在新帧确认具体页面与按钮。详情候选只留在内存，关闭前用新帧局部复核名称、获取合成入口和覆盖层；1500ms 时效保持。暂停不重置活动预算和不确定意图，同一页面按钮变化不触发重复返回。训练及模拟室分类必须见到各自真实后态。确认、奖励、未知弹窗及战斗画面不使用通用确认或兜底返回。新导航资源 schema 1，复用已转换模板并锁定六份参考来源、模型和全部只读节点。
+
+导航 17 项、父流程 12 项，连同调度 19 项、持久化 21 项、合成 13 项和合成入口 13 项共 95 项 Rust 回归全部通过，日志 artifacts/charge-worker-final-tests.log。覆盖两次子流程合成回放各登记一次并返回大世界、领取后与返回时暂停、停止后只补交结果、配置变更保存前阻止首个输入、实际消费后保留冲突日志、体力为零、空计划、双倍无标签保持未知，以及模拟室传送 / 选关后停在未验证回执且不计数。首次导航测试一项预期把目标 TAB 的模拟室分类误写为可见，按留档修正后全部通过；没有放宽生产识别。回放使用真实 Maa SDK、留档与明确标注的组合画面，不作为实机验收。
+
+workspace 及七个相关测试目标严格 Clippy、Rust 格式和两仓差异检查通过，日志 artifacts/charge-worker-clippy.log 与 artifacts/charge-worker-test-clippy.log。引擎、工具与原生桌面构建通过；引擎、默认 debug 与桌面随附引擎 SHA-256 均为 6462DBBDD7F8C175646F09AE22A1373F7BEC9FC59867878212C4911FD46C0A38。十份来源锁共 60 条哈希全部匹配，报告 artifacts/charge-worker-source-audit.json。
+
+实际只读 CLI 首轮暴露 Windows 调试版大型命令解析栈溢出，已将参数解析放到有界 8MiB 独立栈，SDK、控制器与异步引擎仍由原主线程运行。最终 --help 正常、缺少 --image 返回参数错误码 2；不存在 SDK 时 bundle-check 正常，固定合成图 inspect 识别 synthesis_page/back=true。输出 accepted、input_sent、navigation_verified 和 completion_verified 均保持 false，资源 / 识别报告为 artifacts/charge-nav-builder-cli.json、artifacts/charge-nav-check-cli.json 和 artifacts/charge-nav-inspect-cli.json。隔离数据目录仅有 Maa 日志，没有账号配置或运行记录。
+
+模拟室父分支目前只接到未验证选关回执，不能据此出战；区域巡防、专业挑战、深度追猎和代理人方案培养的消费 / 结算执行器、实际关卡选中态、五次双倍与可靠无活动证明、正式应用组 / 桌面运行入口、应用历史及每日成功登记继续开发。协议 v47、导入预览 v19 和正式可用标记不变。用户选择暂不启动游戏，本轮遵守该选择，全部实际游戏操作和验收保留；没有重打发行包、提交或推送，完整体力刷本目标尚未完成。
+
+补充固定资源栏回归 6 项全部通过，包含 19 张真实留档；日志 artifacts/charge-worker-resource-tests.log。按唯一用例，本轮共 101 项定向 Rust 检查通过，最终汇总 artifacts/charge-worker-verification.json，goal_complete=false。完整目标继续推进，未把回放或只读检查视为实机通过。
+
+## 2026 年 10 月 29 日 M5 三类体力副本传送
+
+继续原体力刷本目标，新增区域巡防、专业挑战室及恶名狩猎的内部传送状态机、独立资源、Maa 识别 / 输入与运行器。冻结完整计划及其原名称，旧区域别名只在执行时解析，恶名狩猎目录中的明确别名用于画面匹配；空白、间隔点及装饰引号可归一化，错字和近似名称不能授权前往。所选训练与分类、完整副本名、同帧唯一前往、确认和实际入口分别取得证据；不会采用启动前已存在的弹窗或入口。
+
+真实专业挑战训练页首次使用蓝色过滤 OCR 未得到完整白字，已据实改为原色完整文字与同位置蓝底两次核对，登记范围内蓝色像素至少占候选框的五分之一。原色和颜色使用同一帧，框必须留在分类列表内；错分类、错误页签、重复条目和重复前往不能通过。已知电池详情、恢复和确认 / 奖励覆盖层先于背景手册识别，新增覆盖层末次专项复验通过。
+
+区域巡防和专业挑战按各自登记的电量区域读取入口，恶名狩猎区分列表奖励次数锚点与带街区按钮及完整标题的详情。父子共用原生控制器、控制句柄及剩余活动预算；前往和确认的已投递或不确定意图跨暂停保留，不重放。保存失败、终态暂停停止、超时或未释放输入不能取得运行器回执。回执保持 selection_verified=false，既不消费也不登记次数；体力父流程的整组预检仍明确报告缺少消费执行器。
+
+新增 13 项、相邻模拟室传送 9 项及目录 / 旧包兼容 5 项共 27 项 Rust 回归通过，日志 artifacts/charge-transport-final-tests.log；最后覆盖层调整复验原用例 1 项通过，日志 artifacts/charge-transport-modal-final-test.log，不重复计数。三条路线使用真实 Maa SDK、自定义控制器、真实专业挑战训练页及明确标注的分类 / 确认 / 到达组合图，不能算实机验收。资源测试逐文件改写并重哈希仍被拒绝，覆盖模板、Pipeline、模型、来源及额外文件。
+
+workspace 与三个测试目标严格 Clippy、Rust 格式及两仓差异检查通过，日志 artifacts/charge-transport-clippy.log 与 artifacts/charge-transport-test-clippy.log。引擎、工具和原生桌面构建通过；引擎、默认 debug 及桌面随附引擎 SHA-256 均为 2F3D478238E109D7AE07FCA535BA4CA73356BABA7C00F4E04D9880E364DF6FF5。十一份来源锁共 74 条哈希全部匹配，报告 artifacts/charge-transport-source-audit.json。
+
+构建 CLI 产出 schema 1、7 个受管文件和 14 条来源，报告 artifacts/charge-transport-builder-cli.json；不存在 SDK 时 bundle-check 正常，实际只读 inspect 在真实训练页读到 training=true、category_selected=true 和 target_go=true。accepted、input_sent、navigation_verified、selection_verified 及 completion_verified 均保持 false；代理人方案培养在加载 SDK 之前明确拒绝。报告为 artifacts/charge-transport-check-cli.json、artifacts/charge-transport-inspect-cli.json 和 artifacts/charge-transport-agent-check.txt，隔离数据目录仅产生 Maa 日志，没有账号配置或运行记录。
+
+专业挑战燃竭、深度追猎模式与鸣徽、等级、准备、电量恢复、战斗及结算执行器、代理人方案培养、模拟室生产选中态、实际双倍与无活动证明、完整运行入口、应用历史与每日登记仍待完成。用户选择暂不启动游戏，本轮遵守，全部实际游戏操作、设备交接和验收保留。协议 v47、导入预览 v19 和正式可用标记不变，没有重打发行包、提交或推送，完整目标仍未完成。
+
+## 2026 年 10 月 29 日 M5 区域巡防单次挑战
+
+新增普通区域巡防的内部单次父任务。目标身份来自同一次完整训练分类、目录全名、唯一前往、传送确认及实际到达路径；依据参考 area_patrol.py 的“传送过来已经是对的副本”语义，消费前继续用新帧核对区域自己的挑战等级、下一步与 1525,1000..1650,1055 电量区域。只接受实际需要 60 电量，默认等级与普通方案；不把模拟室选关回执改为已验证，不加入已移除的家政券流程。
+
+首个导航输入前冻结计划、编队、恢复策略、战斗脚本与修订、全部下游资源及目标窗口。共用出战流程增加各副本前置类型，原模拟室请求及其关卡验证保持原义。父任务独占一个原生槽位，顺序执行传送、恢复与详情复验、选队、出战与前移、战斗、结算和实际返回；界面前台 CPU 与战斗设备切换保留在同一冻结目标内。单场完成不要求“再来一次”同时出现；如见到已知战斗奖励，还须完成自己的确认意图，不能采用启动前既有战斗或奖励画面。
+
+独立 PatrolSucceeded / PatrolInsufficientCharge 结果和私有执行 UUID 进入原日志先于配置的提交路径；成功增加一次，实际不足不计成功，重提与启动恢复不能重复累计。配置提交失败后冻结结果，停止状态下仍可只补交原结果，不发送输入。审计快照不能构造新的可执行父任务或伪造登记证明。
+
+首轮 12 项区域回放、次数调度 19 项、持久化 21 项、模拟室出战核心 8 项及入口核心 8 项共 68 项全部通过，日志 artifacts/area-patrol-final-tests.log。最终补充资源重哈希篡改拒绝与零预算两项，并复验只有完成按钮、无奖励直接返回、恢复后重新读到 60 电量且战斗后返回 0 电量的完整流程；补充日志 artifacts/area-patrol-boundary-final-tests.log。覆盖七个输入边界暂停、前移持有时停止、终态迟到暂停与返回重读、终态保存失败、一次性计数、结果补交、错误类别及错误消耗拒绝。回放使用真实 Maa SDK、自定义控制器、已有战斗 / 恢复留档与明确标注的分类 / 详情组合帧，不能作为真实游戏验收。
+
+workspace 与相关测试目标严格 Clippy、格式及两仓差异检查通过，日志 artifacts/area-patrol-clippy-final.log、artifacts/area-patrol-tests-clippy.log 和 artifacts/area-patrol-test-clippy-final.log。引擎、工具及原生桌面构建通过，日志 artifacts/area-patrol-build-final.log 与 artifacts/area-patrol-desktop-build-final.log。引擎、默认 debug 和桌面随附引擎 SHA-256 均为 084A320E72EA7879CF79447DBBF1A764799248A110EE6144463C585F4E0DA094。十二份当前来源锁共 85 条全部匹配，报告 artifacts/area-patrol-source-audit.json。
+
+构建 CLI 产出 schema 1、4 个受管数据文件及 11 条来源，报告 artifacts/area-patrol-builder-cli.json。不存在 SDK 时 bundle-check 正常，固定组合图只读 inspect 识别 detail.current_charge=129、required_charge=60；accepted、input_sent 与 completion_verified 均保持 false，报告 artifacts/area-patrol-check-cli.json 与 artifacts/area-patrol-inspect-cli.json。隔离数据目录仅产生 Maa 日志，没有账号配置或运行记录。
+
+ChargeWorker 的多类循环尚未接入区域战斗配置及从区域详情返回的页面交接，预检仍在首个输入前拒绝该类计划；单次能力不等于完整体力入口。专业挑战、深度追猎、代理人方案培养、等级、模拟室生产选中态、实际双倍与可靠无活动证明、正式入口、应用历史及每日登记继续开发。用户选择暂不启动游戏，本轮遵守；实际操作、长时间循环、设备切换、异常恢复和全部游戏验收保留。协议 v47、导入预览 v19 及正式可用标记不变，没有重打发行包、提交或推送，原体力刷本目标仍未完成。
+
+最终原模拟室 entry_preparation_next_teams_deploy_combat_share_id_and_frozen_script 实际 SDK 完整交接回归 1 项通过。区域按唯一用例计 14 项，连同相邻共 71 项，补充日志中的两项区域复验不重复计数。最终汇总 artifacts/area-patrol-verification.json，goal_complete=false。
+
+## 2026 年 10 月 29 日 M5 区域巡防父循环与合成串联
+
+普通区域巡防接入 ChargeWorker。new_with_combat 从同一 ConfigStore 读取账号战斗设置、冻结脚本目录修订并编译全部启用区域计划的脚本；缺失或非法的后继脚本在首个导航输入前拒绝。原 new 缺少冻结战斗能力时仍拒绝区域计划，专业挑战、深度追猎及代理人方案继续预检拒绝。账号战斗设置除修订外额外按内容复验，同修订手工改写也不能授权输入。
+
+父流程改为独占唯一 Option<NativeSession> 槽位，通过原生会话只读取得窗口及截图方式；子任务内切换界面 / 战斗方式，回交后恢复同一冻结目标的前台 CPU 会话并加载导航依赖。区域详情返回新增独立视图与意图，要求独立 60 电量详情、已知返回模板和新帧复验；缺失按钮、覆盖层及未知画面不能授权点击，暂停保留已投递或不确定意图。旧导航 schema 1 及源节点保持原义，区域能力由自己的 schema 1 资源显式加载。
+
+区域正常完成或实际不足先进入只登记阶段，保存私有执行 UUID 对应的原结果；已取得的正常结果不因迟到控制、跨日或配置变更丢失。配置冲突保留消费日志，不覆盖新设置或启动后继输入；保存失败仍由原补交接口处理，停止状态下只补交。保存完成后返回大世界、重读手册资源并按保存顺序继续。循环重访相同计划创建新的挑战执行 UUID，已编译脚本跨轮复用，运行中修改磁盘脚本不替换冻结内容。
+
+新增区域父循环最终 9 项，原父流程 12 项、导航 17 项及原单次接口 1 项，按唯一用例共 39 项通过。主日志 artifacts/charge-worker-patrol-final-tests.log 为 37 项，补充 artifacts/charge-worker-patrol-mixed-final-tests.log 包含新串联用例和原单次接口各 1 项，并重新验证原返回用例，不重复计数。覆盖两场相同计划的循环与不同执行 ID、资源不足后结束、四个阶段暂停及去重、持有前移时停止、正常结果后配置冲突、停止状态下补交、同修订战斗参数改写、无返回模板及恢复覆盖层拒绝。区域后合成按保存顺序执行，69 电量交给合成、结束读到 9 电量，各计划增加一次并回到大世界。回放使用真实 Maa SDK、自定义控制器、已有战斗 / 合成留档及明确标注的分类、详情和资源变化组合图，不作为实机验收或性能数据。
+
+workspace 与四个相关测试目标严格 Clippy、Rust 格式及两仓差异检查通过，日志 artifacts/charge-worker-patrol-clippy-final.log、artifacts/charge-worker-patrol-test-clippy-final.log。引擎、工具和原生桌面构建通过，日志 artifacts/charge-worker-patrol-build.log 与 artifacts/charge-worker-patrol-desktop-build.log。引擎、默认 debug 及桌面随附引擎 SHA-256 均为 EFF44889F77D33603FE91B57AC1CF62B411EBFE1D1FA415D98F5329495AFE957。十二份当前来源锁共 85 条全部匹配，报告 artifacts/charge-worker-patrol-source-audit.json。
+
+只读 CLI 增加 --area-patrol-bundle 显式加载区域能力。无 SDK 时导航包校验正常，无效区域资源在加载 SDK 前拒绝；帮助与检查报告为 artifacts/charge-worker-patrol-cli-help.txt、artifacts/charge-worker-patrol-cli-check.json、artifacts/charge-worker-patrol-cli-invalid-area.txt。固定组合图实际识别 patrol_page.back=true，accepted、input_sent、navigation_verified 和 completion_verified 均为 false，报告 artifacts/charge-worker-patrol-cli-inspect.json。隔离数据目录仅有 Maa 日志，无账号或运行记录。
+
+协议 v47、导入预览 v19 和正式可用标记不变。专业挑战燃竭、深度追猎模式与鸣徽、代理人方案、等级、模拟室生产选中态、实际双倍及可靠无活动证明、完整桌面 / 应用组入口、应用历史与每日成功继续开发。用户选择暂不启动游戏，本轮遵守；实际游戏、长时间循环、设备切换、异常恢复和全部实机验收保留，没有重打发行包、提交或推送。汇总 artifacts/charge-worker-patrol-verification.json 保持 goal_complete=false，原目标继续。
+
+## 2026 年 10 月 29 日 M5 专业挑战室单次挑战与父循环
+
+新增普通默认等级的专业挑战室父任务，目标来自同一次完整训练分类、目录全名、唯一前往、确认与到达路径。专业采用自己的剩余电量和需要电量区域，常规实际需求限定 40。燃竭 ON 使用参考恶名狩猎的区域与 RGB 过滤，关闭、确认分别保存意图，确认须具备关闭燃竭语义并拒绝开启或普通确认；分开的标题及正文允许组合识别，已有弹窗不能被采用。较高的 ON 费用只用于关闭前观察，明确 OFF 和实际 40 电量才允许恢复或下一步。未命中 ON 不能推断 OFF，已识别详情连续三帧仍未知或费用不符时返回 AwaitingVerification。
+
+独立准备、恢复后详情复核、选队、共用出战和前移、战斗、结算与实际返回接到私有执行结果，ExpertSucceeded / ExpertInsufficientCharge 与区域及模拟室严格区分类别。正常保存并释放输入的单次结果才可登记，实际不足不计成功，失败、撤退及未验证状态不产生成功。父循环预编译全部启用区域和专业脚本，冻结资源并复验战斗设置；同一次运行可先专业后区域，分别按 40 与 60 电量登记，129 电量依次变为 89 与 29，最终返回大世界。唯一原生槽位、保存失败后停止状态补交、日志先于配置及执行 UUID 去重沿用原有规则。
+
+专业详情、明确 OFF 与燃竭关闭确认尚无真实留档；本轮模式、详情与资源变化采用明确标注的合成画面，训练页和已有恢复、战斗、奖励使用原留档，均通过真实 Maa SDK 自定义控制器回放。此项只能说明内部流程及固定素材行为，不代表实际游戏文案、布局、切换和完整挑战通过验收。用户此前选择暂不启动游戏，本轮遵守，全部实机验收保留。
+
+专业专项按唯一用例 16 项、次数调度 19 项、持久化 21 项及相邻定向 5 项，共 61 项通过。首轮主日志 artifacts/expert-challenge-final-tests.log 中一处未知模式测试错误地在已重新读到明确 OFF 后仍期待禁止准备；已修正断言顺序，未知状态仍禁止下一步，重新确认 OFF 后才可准备。最终边界日志 artifacts/expert-challenge-boundary-final-tests.log 四项通过，包含该修复、新增的分开标题与正文确认、实际不足及完整关闭燃竭流程；重复用例不计入唯一数。相邻日志 artifacts/expert-challenge-adjacent-final-tests.log 五项通过，覆盖导航意图序列化、固定页只读检查、连续两次合成、整组未支持类别预检及区域后合成。专项另覆盖八个边界暂停、恢复后重新核对 OFF / 40、前移持有时停止并释放、保存失败后停止状态下补交、公共单次接口私有证明、跨类别与错误费用拒绝、未知模式和开启确认拒绝、来源及 Pipeline 重哈希篡改拒绝。回放账号固定美服，以免本地凌晨四点跨日干扰长套件，生产游戏日复验保持原规则。
+
+引擎、工具和原生桌面构建通过，日志 artifacts/expert-challenge-build-final.log 与 artifacts/expert-challenge-desktop-build-final.log；引擎、默认 debug 与桌面随附引擎 SHA-256 均为 7FFEDE0C6B3B1A96AE9DBFBB629A0EAA32D79168513955DCB6B8A15E49EBEF09。workspace 与六个相关测试目标严格 Clippy 通过，日志 artifacts/expert-challenge-clippy-final.log 和 artifacts/expert-challenge-test-clippy-final.log；主仓 Rust 格式、本轮修改的独立测试文件格式及两仓差异检查通过。十三份相关当前来源锁共 98 条全部匹配，报告 artifacts/expert-challenge-source-audit.json。
+
+构建 CLI 产出 schema 1、四个受管数据文件及十三条来源，报告 artifacts/expert-challenge-builder-cli.json；不存在 SDK 时 bundle-check 正常，无效专业资源在 SDK 加载前拒绝。固定合成图只读 inspect 分别读到 ON / 240 和 OFF / 40，导航检查读到 expert_page.back=true；accepted、input_sent、completion_verified 及导航的 navigation_verified 均保持 false。报告 artifacts/expert-challenge-check-cli.json、artifacts/expert-challenge-on-cli.json、artifacts/expert-challenge-off-cli.json、artifacts/expert-challenge-nav-cli.json 和 artifacts/expert-challenge-invalid-cli.txt。隔离数据目录仅产生 Maa 日志，没有账号或运行记录。
+
+协议 v47、导入预览 v19 及正式可用标记不变。专业真实素材与操作、深度追猎、代理人方案、等级、模拟室生产选中态、实际双倍及可靠无活动证明、完整桌面 / 应用组入口、应用历史与每日成功仍待完成。没有重打发行包、提交或推送，原体力刷本目标保持未完成，汇总 artifacts/expert-challenge-verification.json 的 goal_complete=false。
+
+## 2026 年 10 月 29 日 M5 深度追猎单次挑战与父循环
+
+新增体力深度追猎的独立准备、模式、移动、战斗与结算父任务，接入 ChargeWorker 的冻结战斗配置与唯一原生槽位。目标由同次快捷手册路径、完整副本名或明确别名及实际详情标题共同核对。传送若进入其他已知恶名详情，到达回执保留实际标题且 selection_verified=false；消费前须保存自己的返回列表意图、实际返回、唯一名称选择及正确详情，不采用外部切换后直接出现的目标。该返回和重新选择各有独立意图，暂停后不重复投递。
+
+周常仍有 1..3 次奖励时，独立登记 HuntWeeklyRewardsAvailable 并跳过当前项，不增加次数，也不受电量不足跳过开关影响；整组处理完保留 WeeklyRewardsAvailable，不能写每日成功。明确耗尽、深度 ON 与实际需要 60 电量才允许下一步或恢复，未知或冲突状态保留待验证。开启深度与语义确认分别保存，普通或关闭确认不能授权。储蓄 / 电池恢复沿用现有共用子流程，返回后重新核对同一目标、耗尽证据、ON 和费用。
+
+出战类型保留各副本前置；原模拟室、区域和专业默认仍执行各自战前步骤，追猎单独进入距离、交互、鸣徽及搜索移动，累计 120 秒移动活动预算跨暂停保留。首个输入前预检距离模型，移动采用前台 CPU，随后交接冻结的战斗方式。正常战斗、自己的完成及奖励意图、实际返回同一详情才形成私有成功证明；实际不足、周常阻挡、失败及未知状态不增加次数。结果采用日志先于配置的提交路径及独立执行 UUID，保存失败只补交。
+
+列表、详情、耗尽、深度模式和开启确认没有真实留档；本轮使用明确标注的合成画面、参考原图及掩码、既有恢复 / 战斗 / 鸣徽素材，通过真实 Maa SDK 自定义控制器验证。参考深度信息模板与返回模板确定性复用，六个受管数据文件和二十条来源独立校验。所有实际模式切换、鸣徽操作、长时间循环、设备交接与异常恢复保留实机验收；用户选择暂不启动游戏，本轮遵守。
+
+追猎专项按唯一用例 19 项、次数调度 19 项、持久化 21 项、传送 13 项、原模拟室出战核心 8 项及导航 / 预检 / 专业定向 4 项，共 84 项通过。主日志 artifacts/deep-hunt-final-tests.log 包含次数、持久化及前八个追猎用例；初始恢复回放错误选择以太策略，而控制器只映射储蓄页，回调 panic 中止该轮。已按对应画面改用储蓄策略和 43 电量基线，并让未登记回调返回失败。新增返回分支曾把 SDK 模板框读错层级，旧构建回放 artifacts/deep-hunt-boundary-final-tests.log 主动停止且不计通过；按 detail.best.box 修正并加范围约束后，artifacts/deep-hunt-reselect-final-tests.log 覆盖错详情及两处暂停、完整鸣徽、储蓄恢复至 60 并战斗后返回 0、单次接口、保存失败补交、停止、未知状态、错误确认和资源篡改。
+
+周常回放随后暴露 22×25 数字被检测拆开，低置信候选没有被填为零；改为参考单行识别，保持 ROI 与 0.6 阈值。artifacts/deep-hunt-weekly-final-tests.log 另验证 ON / 无报酬冲突及单行节点重哈希篡改拒绝，并发现周常终态停在手册的遗漏。修正后 artifacts/deep-hunt-weekly-return-final-tests.log 验证实际剩余 2 次、跳过开关为 false、成功数 0 及最终大世界，独立终态不作为整组成功。相邻完整日志 artifacts/deep-hunt-adjacent-full-tests.log 的传送 13 项和原出战核心 8 项通过，定向日志 artifacts/deep-hunt-adjacent-selected-tests.log 的导航 2 项、代理人整组预检 1 项及专业完整燃竭 / 消费路径 1 项通过。重复复验不计入唯一数，初始失败及修复记录保留；回放账号固定美服，生产游戏日规则不变。
+
+workspace 与八个相关独立测试目标严格 Clippy 通过，日志 artifacts/deep-hunt-final-clippy.log、artifacts/deep-hunt-final-test-clippy.log；主仓 Rust 格式、本轮修改的独立测试文件格式与两仓差异检查通过。引擎、工具和原生桌面构建通过，日志 artifacts/deep-hunt-final-build.log 与 artifacts/deep-hunt-final-desktop-build.log。引擎、默认 debug 及桌面随附引擎 SHA-256 均为 AE33B60A93E7E3CD75AEA3324AEF88157E2996F32BA46B918A81A827E32211C2。十四份相关当前来源锁共 118 条全部匹配，报告 artifacts/deep-hunt-source-audit.json。
+
+构建 CLI 产出 schema 1、六个受管数据文件及二十条来源，报告 artifacts/deep-hunt-builder-cli.json。不存在 SDK 时 bundle-check 正常，无效追猎资源在 SDK 加载前拒绝。固定组合图只读 inspect 正常读取完整标题、周常耗尽、深度 ON / OFF、实际需要 60 电量及 back=true；周常组合图另读到 remaining=2，电量保持未知，不作为消费证据。导航读到 hunt_page.back=true。accepted、input_sent、completion_verified 及导航的 navigation_verified 全部为 false。报告 artifacts/deep-hunt-check-cli.json、artifacts/deep-hunt-on-cli.json、artifacts/deep-hunt-off-cli.json、artifacts/deep-hunt-weekly-cli.json、artifacts/deep-hunt-nav-cli.json 和 artifacts/deep-hunt-invalid-cli.txt；隔离数据目录只产生 Maa 日志，无账号或运行记录。
+
+协议 v47、导入预览 v19 和正式可用标记不变。专业与追猎真实素材和实际操作、代理人方案、等级、模拟室生产选中态、实际双倍及可靠无活动证明、正式桌面 / 应用组入口、应用历史与每日成功继续开发；没有重打发行包、提交或推送，汇总 artifacts/deep-hunt-verification.json 的 goal_complete=false，完整体力刷本目标仍未完成。
+
+## 2026 年 10 月 29 日 M5 指定等级与代理人标记
+
+继续[体力刷本](../ROADMAP.md)剩余内容，用户选择“暂不启动，继续开发并保留实机验收”。依参考 notorious_hunt.py、notorious_hunt.yml 和固定等级目录，普通深度追猎接入 Lv.65、60、50、40、30；其他分类的旧操作没有等级切换分支，继续要求默认等级。新增独立 schema 1 等级资源，锁定五条来源、四个数据文件和固定 OCR；只在启用追猎计划要求指定等级时于首个导航输入前预检并冻结，默认等级清除上一项遗留的可选识别能力。
+
+打开等级列表和选择目标等级分别保存意图。菜单须仍处于同次目标、周常耗尽、深度 ON 且没有无报酬冲突的页面，匹配唯一完整等级；不盲目重复点击最高等级。选择、暂停继续和电量恢复后重新读取实际目标等级与 60 电量，再允许下一步。缺失、错误、重复或未确认等级不能消费。等级选择和回读使用明确标注的合成图，真实入口文字、布局与消费继续保留实机验收。
+
+[代理人方案](../develop/agent-plan.md)目前完成纯 Rust 标记候选检测和不加载 SDK 的固定图检查，未放开代理人执行预检。RGB→HSV 后反选低 H / S 背景，按参考外轮廓面积至少 800、返回顺序、区域及上下 80 像素偏移定位。参考仓现有 OpenCV 4.13.0 仅用于独立生成对照数据，全部 16,777,216 种 RGB 掩码摘要一致；14 组合成图覆盖恰好面积阈值、像素数与轮廓面积差异、嵌套、顺序、边界裁切及不规则轮廓。初测发现 imageproc 在 ROI 左边缘漏轮廓，补零边框并修正坐标后复验一致。固定结果和可选生成器保存于独立测试仓，Rust 回归本身不启动 Python。候选像素指纹不提供角色身份、到达、选中或完成证明。
+
+定向测试覆盖五项等级核心、五项代理人检测、指定等级打开 / 选择两处暂停、已选目标等级后恢复与暂停、缺失 / 未生效等级拦截、固定图只读检查、资源定义 / 来源 / 模型 / 额外文件篡改，以及指定等级后接默认等级的独立登记；另回归原默认等级列表、深度开启和鸣徽完整挑战。代理人检测另将 14 组固定图通过真实 Maa 图像缓冲读取，与 OpenCV 几何和 RGB 裁切指纹比较，核对 BGR 转换。日志为 artifacts/charge-level-final-pure-tests.log、artifacts/charge-level-final-native-tests.log、artifacts/charge-level-mixed-tests.log。重复复验不重复计数，所有原生回放使用真实 Maa SDK 的自定义控制器，没有连接游戏。
+
+工作区及三个相关独立测试目标严格 Clippy、Rust 格式和两仓差异检查通过，日志 artifacts/charge-level-main-clippy.log、artifacts/charge-level-tests-clippy.log。引擎、工具及原生桌面构建通过，日志 artifacts/charge-level-build.log、artifacts/charge-level-desktop-build.log；引擎、默认 debug 和桌面随附副本 SHA-256 均为 617683187108A4FE905F2CCF3487EB05E6421E3A689F2B3446A2F5B4CA66B7C5。十六份相关来源锁共 129 条与当前参考仓一致，报告 artifacts/charge-level-source-audit.json。
+
+构建 CLI 正常产出独立等级包；无 SDK 时 bundle-check 正常，固定图 inspect 读取五档菜单和选后 Lv.65，标记检查按顺序读到两个几何候选。只读报告的 accepted、input_sent、selection_verified、completion_verified 均为 false，代理人报告另保持 navigation_verified=false。缺失等级资源及非 1080p 标记图在 SDK 加载前拒绝。对应 artifacts/charge-level-builder-cli.json、artifacts/charge-level-check-cli.json、artifacts/charge-level-menu-cli.json、artifacts/charge-level-selected-cli.json、artifacts/agent-markers-cli.json 和两份 invalid-cli.txt；数据目录只产生 Maa 日志，没有账号或运行记录。
+
+新增 16 项，连同原默认等级完整挑战回归共 17 项唯一检查全部通过。指定等级后接默认等级回放分别登记一次且执行 UUID 不同，打开菜单和选择等级各一次，最终返回大世界。汇总 artifacts/charge-level-verification.json 保持 goal_complete=false。
+
+协议 v47、导入预览 v19、正式可用标记及原追猎包定义不变。代理人完整导航、选中、挑战和“已达成”收尾，模拟室生产选中态，实际双倍 / 可靠无活动证明，正式桌面及应用组入口、应用历史和每日登记继续开发。全部实际游戏验收保留；本轮未启动游戏，没有重打发行包、提交或推送，完整目标继续保持未完成。
+
+## 2026 年 10 月 29 日 M5 代理人培养导航
+
+继续[体力刷本](../ROADMAP.md)剩余内容，按用户选择不启动或连接游戏。[AgentTransportRun](../develop/agent-transport.md)接入实战模拟室、区域巡防、专业挑战室和恶名狩猎的内部培养目标导航。模拟室保留目录中的代理人关卡占位值，其余分类保留空关卡；原计划 ID、脚本、编队、次数和配置不被具体目标替换。训练页签、蓝色选中分类、参考顺序的首个标记、下方最近前往及唯一完整副本名称须在同帧配对，标记还须属于该名称所在行，避免本行按钮缺失时误取下一行。
+
+打开手册、训练、分类、前往和确认分别保存意图，只有已投递动作及后态才推进。投递前标记变化撤销尚未发送的意图，重新取得候选；前往已投递后冻结本次目标，不采用现成确认或到达。四类到达分别核对，追猎详情要求同次具体名称，模拟室只交接详情或类型列表。回执须经过保存、输入释放和共享控制句柄复核，仍为 selection_verified=false，不提供消费、培养完成或次数证明。
+
+缺少标记时按参考普通 / 收窄追猎区域滚动 300，标记有但对应按钮缺失时按前往区域滚动 200；拖动终点完整投递后才计一次。半次滚动取消后释放输入，暂停继续从新画面重新查找。十次完整滚动后仍须读到已知分类、已知列表且无候选，才产生独立 Unavailable 结果；未知画面和错误到达不能转成未找到，更不能计成功。后续父循环仍需将该结果接到返回大世界及本次跳过分支。
+
+新增代理人导航核心 7 项、真实 Maa SDK 自定义控制器执行 / 资源 8 项，连同标记对照 5 项、等级核心 5 项及原普通传送 13 项，共 38 项唯一检查通过，日志 artifacts/agent-transport-final-tests.log。覆盖四类各五处暂停、前往与确认各一次、具体目标与原计划保留、现成确认拒绝、错误追猎到达、标记变化、缺少标记 / 本行按钮及收窄追猎视野、半次滚动暂停、持有 Alt 时停止、保存失败和资源重哈希篡改。固定图均有合成用途标注，不能替代实机验收。
+
+首轮代理人测试把模拟室占位关卡错误设为空，已依固定目录纠正；原生滚动回放的自定义控制器缺少 touch_move 回调，补齐后可验证完整拖动。记录保留 artifacts/agent-transport-native-tests.log 与 artifacts/agent-transport-scroll-tests.log。后续连续读取暴露 Maa 单任务终态与 Tasker 空闲标记的时序差，下一次识别被正在执行检查拒绝；失败记录 artifacts/agent-transport-busy-first-tests.log。共用识别适配仍持有本会话识别锁，读取本任务详情后最多等待一秒完成 SDK 收尾，再放行下一次识别；不会停止或替换其他任务。修复后完整 38 项通过，包括普通传送的过期帧、取消、变帧、保存失败及到达边界。
+
+独立 schema 1 包固定十七条来源和七个受管数据文件，包含固定 OCR、手册模板以及只读 Pipeline；普通传送、等级及日常资源定义不变。工作区和五个相关独立测试目标严格 Clippy、主仓 / 本轮测试格式与两仓差异检查通过，日志 artifacts/agent-transport-main-clippy.log、artifacts/agent-transport-tests-clippy.log。引擎、工具及原生桌面构建通过，日志 artifacts/agent-transport-build.log、artifacts/agent-transport-desktop-build.log；引擎、默认 debug 和桌面随附副本 SHA-256 均为 A021E1C8DE69E3F2A236A446F26BE194B2B1B555F5C019A34C33D27D41B24E18。十七份相关来源锁共 146 条全部匹配当前参考仓，报告 artifacts/agent-transport-source-audit.json。
+
+构建 CLI、无 SDK 的 bundle-check、四类固定图 inspect、缺少标记 / 对应按钮及无效资源 / 分类检查通过。四类候选分别为代理人晋升、恶拳与凶枪、祸首·通缉打手、未知复合侵蚀体；缺失标记和本行按钮时 candidate=null。accepted、input_sent、navigation_verified、selection_verified、completion_verified 均为 false。无效资源和分类在 SDK 加载前拒绝，数据目录仅产生 Maa 日志。报告 artifacts/agent-transport-builder-cli.json、artifacts/agent-transport-check-cli.json、四份分类 CLI JSON、missing / no-go CLI JSON 和两份 invalid CLI 文本；applications 命令仍报告 charge_plan.implemented=false。
+
+协议 v47、导入预览 v19 和正式体力可用标记保持不变。代理人导航尚未接入完整挑战和体力父循环，选中、实际费用、结算已达成、原计划次数 / 本次跳过登记继续开发；模拟室生产选中态、实际双倍和可靠无活动证明、正式入口、应用历史、每日登记及全部实机验收仍待完成。没有重打发行包、提交或推送，汇总 artifacts/agent-transport-verification.json 的 goal_complete=false，完整目标保持未完成。
+
+## 2026 年 10 月 29 日 M5 代理人三类挑战与原计划计数
+
+按用户“暂不启动，继续开发并保留实机验收”的选择，继续离线完成区域、专业和追猎代理人挑战的内部串联。原计划保留代理人类型、ID、次数、等级、编队和脚本，本次导航冻结的具体副本仅交给私有挑战构造路径；须属于同一控制句柄、运行身份、已保存并释放输入的实际到达，不重做普通传送。沿用各分类的实际费用、恢复、编队、出战和结算，追猎继续使用独立移动及等级前置。模拟室代理人选择和生产选中证明继续待办。
+
+新增 agent-goal schema 1 独立只读包，固定八份参考文字来源、PP-OCRv5 和四个受管数据文件，不改原挑战包定义。结算上下文中完整“已达成”才判定达成；完成意图保存同帧读数，投递前重读，变化则撤销未发送意图。正常单场始终只给原计划加一次，由外层独立执行 UUID 去重；达成只跳过本次余项，不填满计划次数。含糊文字保留已完成计数，并返回大世界等待验证；无目标、实际不足和周常阻挡不计成功，实际代理人不足不受全局 skip_plan 影响。已跳过的代理人不阻碍普通计划下一轮；实际进入下一普通轮时按参考清零其轮内次数，未确认的下一轮意图不提前提交清零，日志始终保留每场完成事实。
+
+结果继续采用先保存消费日志、再提交配置的路径。最后检查点回调失败、迟到停止或配置冲突不能撤销已正常返回的单场；保存失败仅补交原结果，停止状态不发送输入。新增重启恢复用例核对达成和含糊两种结果均只恢复原计划一次，且状态重放保留本次跳过或待验证含义。默认普通挑战清除可选达成读取能力，保持原快照和资源兼容。
+
+新增核心 6 项、代理人调度与恢复 9 项、真实 Maa SDK 自定义控制器回放 9 项，共 24 项；连同原调度 19 项、持久化 21 项及区域、专业、追猎、指定后默认等级完整路径 4 项，共 68 项唯一检查通过。覆盖三类各正常完成一次、六处暂停去重、投递前达成文字变化、无目标十次完整滚动、实际不足、含糊读数保存后返回、保存失败后停止补交、最后检查点失败后的实际消费保留及资源预检拒绝。日志 artifacts/agent-challenge-core-tests.log、artifacts/agent-challenge-schedule-persistence-final-tests.log、artifacts/agent-challenge-native-final-tests.log、artifacts/agent-challenge-navigation-context-final-tests.log，以及三份 ordinary 分类回放日志。整批原生回放为 8 项通过、1 项测试依赖缺失失败；补齐该导航用例自身的手册、合成、合成入口及通用页面资源并使用独立目录后，单独复验通过，按用例名去重为 9 项原生通过。
+
+首轮截图在自定义控制器内反复压缩大图，使采集耗时约 1.2–1.5 秒并触发新帧时限；改为预算前准备和快速编码，保留 artifacts/agent-challenge-slow-fixture-tests.log。暂停回放发现父循环继续分派遗漏 Agent 阶段，已补齐。追猎返回回放出现超时，导航改用已知列表或街区与完整标题的页面身份，再核对本页返回模板；不读取导航无需使用的模式、费用和达成，不将等级菜单视作详情。完成和消费仍使用原完整识别，1500ms 新帧限制不变。修复后原追猎完整流程及指定等级后默认等级串联复验通过。首轮失败保留 artifacts/agent-challenge-first-native-tests.log、artifacts/agent-challenge-first-ordinary-hunt-tests.log；新增导航用例缺少基础依赖的失败保留 artifacts/agent-challenge-navigation-context-missing-resources-tests.log。
+
+工作区及四个相关独立测试目标严格 Clippy、主仓和本轮测试格式、两仓差异检查通过；引擎、工具及原生桌面构建通过，日志 artifacts/agent-challenge-clippy.log、artifacts/agent-challenge-test-clippy.log、artifacts/agent-challenge-build.log、artifacts/agent-challenge-desktop-build.log。18 份相关来源锁共 154 条匹配当前参考仓，报告 artifacts/agent-challenge-source-audit.json。引擎、默认 debug 和桌面随附副本 SHA-256 均为 E8E3F4CF93FAE82039E76FB1DFEAB399A8F5EEAC5617A6AD1EA9B7B5CB7AD5AA。只读 CLI 对完整达成、残缺文字和非结算页分别返回 achieved、unknown、unknown，accepted、input_sent、completion_verified 始终为 false，隔离数据目录仅产生 Maa 日志。
+
+协议 v47、导入预览 v19 及 charge_plan.implemented=false 保持。未启动或连接真实游戏，代理人实际详情及结算布局、操作、长时间运行等全部实机验收保留。模拟室完整目标、生产选中态、实际双倍和可靠无活动判断、正式独立及应用组入口、应用历史和每日成功继续开发；没有重打发行包、提交或推送。汇总 artifacts/agent-challenge-verification.json 的 goal_complete=false，完整目标未完成。
+
+## 2026 年 10 月 29 日 M5 模拟室代理人详情选择
+
+沿用用户“暂不启动，继续开发并保留实机验收”的选择。核对参考 CombatSimulation.choose_mission、外轮廓辅助、模拟室画面与固定目录后，补齐代理人模拟室详情的具体关卡解析和选择投递。现有真实素材仅有领奖页，详情及出战仍待建档，不能从选择点击或电量可读推导已选中。原代理人计划、占位关卡、ID、编队、脚本和计数保持，导航得到的具体类型及本次关卡仅属于子流程。
+
+详情先通过本页返回模板回类型列表，再选择本次导航的具体类型。顶部首个培养标记按参考轮廓顺序读取，中心下移 80 像素为候选位置，与同帧同列唯一完整目录名称配对；不借用后续标记或邻列名称。十次完整向左拖动上限跨暂停保留，中途释放不计完整翻页；最终仍需已知本类型列表的无候选读数才结束为未找到。重复、重叠、目录次序异常及其他类型名称阻止投递。
+
+返回、类型、翻页和选择分别保存意图与投递。输入前重读新帧，未投递目标变化撤销意图，投递后冻结目标；暂停继续仅回读后态，不重复选择。不确定的原生输入结果保留意图并拒绝重放。AgentSimulationApproachRun 预检并冻结导航与详情资源，复用同一原生槽位、控制句柄和活动预算，真实到达后才交接具体类型。回执要求保存、释放输入及控制复验，仍为 selection_verified=false；不进入卡片、恢复、消费或次数登记。
+
+新增核心 7 项及真实 Maa SDK 自定义控制器回放 6 项，连同标记 5 项、原导航核心 7 项和普通选关 9 项，共 34 项唯一检查通过，日志 artifacts/agent-mission-final-tests.log。覆盖本次类型、首轮廓及同列配对、错误类型和缺少返回、目标改变、五处暂停去重、暂停后新电量、保存失败、持有 Alt 时停止释放、半次拖动及十次完整翻页、零预算和资源篡改。回放采用明确标注的离线合成画面；首轮 core 与 native 日志保留，最终合并日志在最后代码改动后全部通过。
+
+独立 agent-mission schema 1 包固定八份文字来源、PP-OCRv5、原返回模板及只读 Pipeline，共五个受管数据文件。19 份相关来源锁的 162 条记录全部匹配，报告 artifacts/agent-mission-source-audit.json。工作区和两个新增测试目标严格 Clippy、主仓及本轮测试格式、两仓差异检查通过，日志 artifacts/agent-mission-clippy.log、artifacts/agent-mission-test-clippy.log。引擎、工具及原生桌面构建通过，日志 artifacts/agent-mission-build.log、artifacts/agent-mission-desktop-build.log。引擎、默认 debug 和桌面随附副本 SHA-256 均为 6A155EDDC262C4812B986B88E01719AE4B990C043604E4A4DF80B9AF91A6490C。
+
+资源构建、无 SDK 的资源校验及固定图只读检查通过；候选为“命破演练”，缺少标记时 candidate=null。accepted、input_sent、selection_verified、completion_verified 始终为 false。逻辑占位类型在 SDK 加载前拒绝，隔离数据目录仅有 Maa 日志，applications 仍报告 charge_plan.implemented=false。报告 artifacts/agent-mission-builder-cli.json、artifacts/agent-mission-check-cli.json、artifacts/agent-mission-positive-cli.json、artifacts/agent-mission-missing-cli.json 和 artifacts/agent-mission-invalid-cli.txt。
+
+协议 v47、导入预览 v19 和正式可用标记保持。未启动或连接真实游戏，真实布局、选中后态、操作和完整消费全部保留实机验收。生产选中证明和模拟室消费 / 计次、实际双倍及可靠无活动判断、正式独立与应用组入口、应用历史和每日成功继续开发；没有重打发行包、提交或推送。汇总 artifacts/agent-mission-verification.json 的 goal_complete=false，完整目标未完成。
+
+## 2026 年 10 月 29 日 M5 双倍实际余量与训练选中读取
+
+继续完整体力目标，按用户选择不启动或连接游戏。核对参考 ChargePlanApp.check_double_reward_event、快捷手册区域与训练页留档后，补齐五次活动的实际读取。完整“每日怪物卡双倍掉落次数”标签允许同一行相邻框组成，但不能缺字、重叠、重复或混入其他内容；固定次数区按参考使用单行识别，只接受一个 0..5 数字及完整 /5。标签含次数时须与独立读数一致，错误分母、咖啡 1/1、额外文字和含糊结果均为未知。0/5 明确表示耗尽，不证明活动不存在；参考原有的“标签未命中即无活动”分支继续保留待实现门槛。
+
+资源读取要求无遮挡手册、训练选中、模拟室、基础材料与对应前往，以及完整同帧三项资源；模拟室名称须唯一并在同位置有蓝底。真实咖啡训练页的黄色文字过滤得到 0.558 的乱码，被原 0.6 阈值拒绝。快捷手册保留原过滤路径，失败时用原色完整“训练”文字框及同位置黄底复核，不降低阈值，不借用邻页签。原 Pipeline、模型和模板定义保持兼容，新帧仍限 1500ms。首次失败日志 artifacts/charge-double-first-tests.log、artifacts/charge-double-context-tests.log 保留。
+
+实际余量继续由内部父流程绑定冻结请求。43 电量与 5 次生成两张卡的单次临时计划，不借用储蓄或电池扩大；暂停后即使回放活动读数变化，也保留本次已保存绑定。明确 0/5 选择普通计划，两条路径均保持保存配置及普通次数，并停在当前关卡选中待验证处，不进入卡片、消费或计次。
+
+新增核心 3 项、真实 Maa SDK 固定图 1 项（18 组组合 / 真实画面）、父流程 2 项，共 6 项；连同原父流程 12 项、次数调度 19 项、资源读取 6 项、传送核心 9 项及原生传送 11 项，共 63 项唯一检查通过。核对完整 0..5、错误分母、残缺标签、未选中分类、错页签、资源遮挡、重复及越界框、标签 / 次数冲突；原 19 张资源栏截图继续符合预期，传送暂停、停止、超时、过期帧、保存异常及资源篡改回归均通过。日志 artifacts/charge-double-final-native-tests.log、artifacts/charge-double-schedule-context-tests.log、artifacts/charge-double-worker-tests.log 和 artifacts/charge-double-worker-preflight-tests.log。
+
+父流程整批先为 13 项通过、1 项失败：旧预检仍将已接通的追猎代理人视作未实现。用例改为当前缺少生产选中证明的模拟室代理人，并核对具体拒绝原因后，单独复验通过；没有将旧失败整批描述为一次全绿。其余用例及生产代码未因这项测试修正变化，按目标及用例名称去重合计 63 项。
+
+工作区及两个修改测试目标严格 Clippy、格式和两仓差异检查通过；引擎、工具和原生桌面构建通过，日志 artifacts/charge-double-clippy.log、artifacts/charge-double-test-clippy.log、artifacts/charge-double-build.log、artifacts/charge-double-desktop-build.log。19 份相关来源锁共 162 条匹配，报告 artifacts/charge-double-source-audit.json。引擎、默认 debug 和桌面随附副本 SHA-256 均为 E583D3E12967A6BBFC20D6D38B33DE14BBBA74733E72241AF07422A28BA7FD71。
+
+无 SDK 的资源校验和四类只读 CLI 通过，实际余量分别为 5、0、未知和未知；其中 5 次画面的当前电量为 43，咖啡原始留档及缺失标签均不填零。accepted、input_sent 始终为 false，隔离数据目录仅有 Maa 日志，applications 仍为 charge_plan.implemented=false。报告 artifacts/charge-double-check-cli.json、artifacts/charge-double-five-cli.json、artifacts/charge-double-zero-cli.json、artifacts/charge-double-coffee-cli.json、artifacts/charge-double-missing-cli.json；原生 18 案报告 artifacts/charge-double-native-corpus.json。
+
+协议 v47、导入预览 v19 和正式可用标记保持；未启动或连接真实游戏，没有重打发行包、提交或推送。可靠无活动证明、模拟室生产选中证明及包括双倍临时计划在内的完整消费、代理人计次、正式独立及应用组入口、应用历史和每日成功继续开发，全部实机验收保留。汇总 artifacts/charge-double-verification.json 的 goal_complete=false，完整目标未完成。
+
+## 2026 年 10 月 29 日 M5 体力应用历史与每日证明
+
+按用户“暂不启动，继续开发并保留实机验收”的选择，将已有私有 ChargeWorker 接入内部应用记录适配器。RunRecord 增加可缺省的紧凑体力摘要，保留同一运行 ID、账号、应用组、启动修订、游戏日、状态、资源、耗时、输入释放、结果计数及完整日志指纹。完整消费事实继续在原 runs/charge 日志中，摘要不复制每场结果；实际单次回放记录小于 4 KiB，通用历史 1 MiB 和体力日志 8 MiB 限制保留。
+
+只有私有父实例的完整完成、实际返回大世界、输入释放及次数提交共同提供每日成功。完成摘要须与对应完整日志、结束选择、次数及指纹一致，写入和读取均复验；缺失、损坏或不匹配的完成日志归入不可读项。无计划、资源不足、合成素材不足、周常或目标阻挡、待验证、停止、超时和保存未完成均不提供每日成功，失败也不撤销此前成功。后续应用组分项失败时，体力分项已取得的成功仍可复验保留。无体力字段的旧记录继续按原规则读取，体力超时沿用超时筛选。
+
+适配器必须先于私有父实例执行建立，首次记录用新文件创建拒绝覆盖同 ID 历史，保存失败不输入；历史和配置绑定同一冻结数据目录，补存不能改换目录。过程保存错误停止原父流程并释放输入，已消费事实保留原日志。最终结果与暂停 / 停止共用控制锁确定提交先后：提交前的请求撤销应用成功，已封存结果的历史失败仅补存，不重新运行。外部只取得请求句柄。最终发布失败保留正常消费次数但不写每日成功；收尾发布时间计入父预算。
+
+新增核心 9 项、真实 Maa SDK 自定义控制器回放 8 项和配套引擎命名管道 1 项，共 18 项；连同原持久化 21 项、历史 9 项、每日计划 7 项、应用组 8 项、组调度 6 项、结束后动作 14 项及本机提醒 15 项，共 98 项唯一检查通过。8 项原生整批通过后，最终控制封存改动又单独复验迟到暂停、停止 / 发布失败及最终历史补存三项，去重仍为 8 项。日志 artifacts/charge-application-core-adjacent-final-tests.log、artifacts/charge-application-native-final-tests.log、artifacts/charge-application-core-pipe-final-tests.log、artifacts/charge-application-control-final-tests.log 和 artifacts/charge-application-sealed-final-tests.log。
+
+原生回放完成一次合成并登记一次，覆盖无计划、迟到暂停后返回复读而不重复合成、停止及最终发布失败保留次数、首次历史失败不输入、最终历史只补存、次数提交失败后停止补交、重复运行 ID、冻结数据目录及收尾超时。固定帧及自定义控制器为离线素材，不计为实机通过。实际父流程导出的独立数据见 artifacts/charge-application-native-proof.json；配套新引擎重启后通过命名管道读取并导出该体力记录，复验每日成功，账号原文字节未变，窗口和当前任务均为空，未创建输入恢复登记。报告 artifacts/charge-application-pipe-proof.json。
+
+首轮测试编译使用了测试仓未直接依赖的 chrono，并有两处中文字节串，改用已有 SystemTime 转换和 UTF-8 字节后通过。相邻三个桌面夹具缺少当前 DesktopLayout.development，按实际开发工作区启动补齐 true 后，全部回归通过。失败记录 artifacts/charge-application-first-core-tests.log、artifacts/charge-application-first-native-tests.log、artifacts/charge-application-core-adjacent-tests.log 保留；不将编译失败描述为原生运行通过。
+
+工作区及三个修改测试目标严格 Clippy、主仓及本轮新测试格式、两仓差异检查通过，日志 artifacts/charge-application-final-clippy.log、artifacts/charge-application-final-test-clippy.log。类型生成与已保存 TypeScript 一致，前端生产、引擎 / 工具和原生桌面构建通过，日志 artifacts/charge-application-frontend-build.log、artifacts/charge-application-final-build.log、artifacts/charge-application-final-desktop-build.log；前端保留原大于 500 KiB 的单块提示。20 份相关来源锁共 165 条匹配，新增独立记录来源锁固定三份参考文字，不改变原运行资源定义或增加包依赖，报告 artifacts/charge-application-source-audit.json。
+
+引擎、默认 debug 和桌面随附副本 SHA-256 均为 118588A107C4257F7FD7D5D9D7ABDD5A79F1B8FFACD3E1ABB4C2FF6B896D4A02。applications 仍为 charge_plan.implemented=false；没有新增公开运行命令，协议 v47、导入预览 v19 和既有资源兼容保持。正式独立及应用组执行入口、可靠无活动判断、模拟室生产选中证明与完整消费继续开发，全部实机验收保留。未启动或连接真实游戏，没有重打发行包、提交或推送；汇总 artifacts/charge-application-verification.json 的 goal_complete=false，完整目标未完成。
+
+## 2026 年 10 月 29 日 M5 体力独立与应用组试运行入口
+
+沿用用户“暂不启动，继续开发并保留实机验收”的选择，将既有完整执行器接入 StartStandaloneTrial 和 StartGroupTrial。复用账号、修订、游戏日及输入确认，不新增绕过确认的命令。启用模拟室或双倍计划时，缺少生产选中证明会在整组任何输入前阻挡；指定等级当前仅开放追猎。预览编译全部启用脚本，启动再冻结资源、窗口及输入设置，原生句柄只驻留工作线程，暂停保留同一执行器和尝试，释放后才回交唯一会话槽位。脚本预检覆盖后序计划缺失，不能因第一项可运行就提前输入。
+
+体力每次运行，已有每日证明展示但不跳过；空计划为无需执行且不生成证明。电量、合成素材、周常及目标阻挡在已返回大世界并释放输入后记为 Ended，保留次数，继续后续应用，整组最终保留未完成状态。真正错误或待验证停止交接。后续应用的暂停、继续及停止不修改先前体力成功。前序编队扫描只有完整保存证明才能更新体力种子的成员和起始修订；反向顺序复验原日志、摘要和提交回执后，编队保存接续体力自身形成的确切修订。
+
+次数提交失败暂停，重试保存只补交原结果；停止后补交仍保持停止。公开命令回放验证计数从 0 补存为 1、动作列表不变。纯界面沿用 v9，含战斗沿用 v10，桌面继续流程复用原冻结恢复登记，不按变化后的账号绑定重建。schema 4 资源包在协议 v48 起接纳十四类体力资源，分别验证内容和清单，旧包的协议及目录原义保持。
+
+本轮新增核心 10 项、公开入口真实 Maa SDK 自定义控制器 5 项、桌面恢复 1 项（四种组合）和资源包 1 项，共 17 项。连同相邻应用记录、每日计划、组计划、组调度、独立选择、编队保存、输入恢复和资源包回归，共 80 项唯一检查通过。公开入口验证一次实际离线合成及每日证明、素材不足不计成功、暂停继续不重复投递、停止后的次数补存，以及后序脚本缺失时零输入。证据 artifacts/charge-entry-public-proof.json；汇总 artifacts/charge-entry-verification.json，复验脚本 artifacts/verify-charge-entry.py。
+
+主要日志：artifacts/charge-entry-core-final.log、artifacts/charge-entry-native-final.log、artifacts/charge-entry-preview-tests.log、artifacts/charge-entry-recovery-tests.log、artifacts/charge-entry-pack-tests.log，以及 CLI、旧随便观包和编队回写的单项复验。资源包整批首轮 14 项通过，两项失败分别来自旧 CLI 和把来源转换混入打包的旧夹具；同步 v48 引擎、改用已校验生成包后，对应单项复验通过，去重合计 16 项。素材不足首轮误用 120 电量帧、保存失败夹具误把目录当文件阻挡，修正后公开命令最终五项通过。旧日志保留，不将失败描述为通过。
+
+相关 20 份来源锁的 165 条记录匹配。另查既有日常来源 38 条，兑换码样例、代理人数据、情报板页面及编队相关七处不符，记录 artifacts/charge-entry-existing-daily-source-drift.json；参考仓和来源锁均未改写，转换器继续严格拒绝。资源包回归仅复用当前已校验生成包，新的基础日常资源转换仍须另行核对这七处漂移。
+
+主仓及修改测试目标严格 Clippy、格式与两仓差异检查通过；类型、前端生产、引擎/工具及桌面原生构建通过。前端保留既有大于 500 KiB 单块提示。三个引擎副本 SHA-256 均为 166C63637589D0F5ED90290B9773803CB633D3F07F59F8B477FEDFE0D2786B5F。协议 v48、导入预览 v19，charge_plan.implemented=false；未重打发行包、提交或推送。模拟室生产选中证明、可靠无活动判断及完整模拟室/双倍消费继续开发，所有实机验收保留，goal_complete=false。
+
+## 2026 年 10 月 29 日 M5 当前名册与来源兼容核对
+
+继续遵守“暂不启动，继续开发并保留实机验收”。逐份核对上次的七条主哈希差异，并在参考仓本地提交中定位原锁文件。情报板页面本已列入兼容版本，原审计遗漏兼容列表，因此实际新增不兼容项为六份；本轮迁移代理人数据和码表示例两份，剩余四份编队行为来源。新增只读 basic-daily-sources 命令，与转换器使用相同来源校验；当前 38 条中 34 条接受，四条拒绝，不能宣称已可从当前参考仓生成整套新日常包。旧审计产物保留，对照 artifacts/charge-source-drift-review.json 和 artifacts/charge-roster-source-audit.json。
+
+菲欧妮及三个原始头像变体进入 61 人名册和 88 份固定图，新增 schema 8；schema 5 至 7 使用冻结的 60 人名册、85 份固定图及原节点。宣传员完整名称选择保持，头像回退按包版本生成，不引用旧包缺少的节点。编队识别读取已校验包对应名册；体力启动和前序编队扫描后复验指定成员是否存在于冻结战斗资源，缺少成员在输入前拒绝。原主来源锁保留，新版本加入兼容列表，新头像另有固定来源锁；实际生成清单记录所读哈希。原始 PNG 复制后逐字节核对，没有改图。当前参考战斗资源可独立生成，离线产物包含 61 名代理人、539 份模板和新增状态。
+
+新增 charge_roster 十项全部通过：真实转换器的新旧名册分支、未迁移当前来源拒绝且无输出、完整名称与头像回退兼容、重新计算清单后的篡改/缺失/降级拒绝、来源审计及篡改、三个原始头像 Maa 特征读取、旧战斗包缺少新成员预检拒绝、新战斗包公开预览通过，以及新资源包安装和协议降级拒绝。头像与预览用例使用自定义控制器，零按键输入，未连接游戏。转换分支使用明确标注的快照，将四份编队来源固定为原锁对应提交；这只验证新旧资源分支，不是当前编队行为迁移证明。快照原文和出处保存在独立测试仓 fixtures/charge-source-baseline。
+
+体力记录 9 项、入口 10 项和新增 10 项合计 29 项通过，日志 artifacts/charge-roster-final-tests.log；录像店核心 16 项通过，日志 artifacts/charge-roster-random-play-core.log。共 45 项唯一检查，新增 10 项。录像店另八项转换及原生用例本轮未运行，不计入通过数；不宣称该目标全套通过。当前生成的 schema 8 日常包只作为离线验证产物，工作区原 schema 7 日常包及旧战斗包均未替换。
+
+工作区和新增测试严格 Clippy、格式及两仓差异检查通过；类型生成、前端生产、引擎/工具及桌面原生构建通过。日志 artifacts/charge-roster-clippy-final.log、artifacts/charge-roster-test-clippy-final.log、artifacts/charge-roster-format-check.log、artifacts/charge-roster-types.log、artifacts/charge-roster-frontend.log、artifacts/charge-roster-build.log 和 artifacts/charge-roster-desktop-build.log。前端保留既有大于 500 KiB 单块提示。构建引擎、默认 debug 入口和桌面随附引擎 SHA-256 均为 1A753D58B71A87BBB163A4F238C1320254B2F749499738EBEEDDFF54DEC7E706，协议 v49、导入预览 v19，charge_plan.implemented=false。
+
+复验脚本 artifacts/verify-charge-roster.py，汇总 artifacts/charge-roster-verification.json。四份编队行为来源迁移、模拟室生产选中证明、可靠无活动判断及完整模拟室/双倍消费继续开发，全部实机验收保留，goal_complete=false。参考仓没有修改，未重打发行包、提交或推送。
+
+## 2026 年 10 月 29 日 M5 预备编队按槽位扫描
+
+继续离线开发，遵守用户不启动游戏的选择。核对原始管理页、选择页、team_select.yml 和当前编队相关源码后，迁移管理页的三份变化：按固定槽位读取、同步实际名称、保留头像匹配的角色归属。新增五份固定来源，涵盖配置、检查器、匹配器、识别器和槽位布局；原主锁保留，兼容版本逐份登记。当前审计四十条中三十九条接受，仅 ChoosePredefinedTeam 未迁移，整套当前参考转换仍严格拒绝。测试转换快照只将该选择文件固定为原锁版本，不将其当作当前选择行为已经迁移。
+
+新日常 schema 9 按六卡、每页四槽扫描二十槽，先复位再读取。后续页的前两张须与前页末两张可靠结果一致，未翻页、错位或重叠不可读均阻止回写。回执保留冻结名称并另存可缺省的实际名称；旧回执不改名，新回执按下标同步名称和成员，脚本保持原槽位，未识别字段保留旧值。名称可重复；旧名称选择在歧义时拒绝。配置保存仍核对完整冻结配置、账号和修订，修改名称才去空白，不顺带改写其他未识别槽位的旧名称。名称导入语义变化使预览升级 v20，测试实际拒绝 v19 令牌后才应用新预览。
+
+按参考 DragTiming 明确实现按下后 600ms、分段移动约 100ms、终点保持 1000ms、抬起后稳定等待。最初用 Swipe 的输入前后延时不能证明按住时长，复核本地 SDK 文档后改为 TouchDown、TouchMove、TouchUp，按下带 auto_up，原触点恢复清单继续保护取消与错误。最后回放另记录实际按住时长；原粗略时序回放日志保留，不用其证明正确时序。
+
+新增 team_slots 十五项 Rust 用例通过，覆盖名称和槽位读取、同名与空白导入、旧预览失效、冻结名称及脚本绑定、五页及重叠证据、未识别字段保留、旧回执和重启、版本及来源篡改、缺失/重复/越界槽位、真实 SDK 只读原图、真实 SDK 分页执行、按下途中取消释放和资源包协议降级拒绝。原图检查在全部保存队名不同的情况下读取六队，零按键输入；选择页不生成管理回执。分页回放从已打开并复位的管理页开始，用原始卡片组合五页，执行四次翻页、校验重叠、返回大世界画面、释放输入并只回写一次修订，二十槽名称与成员都保存，脚本保持。合成分页和自定义控制器不代表实机布局、性能或翻页验收。证据 artifacts/team-slots-native-proof.json、artifacts/team-slots-worker-proof.json。
+
+连同体力入口 10 项、名册兼容 10 项、原预备编队 13 项和编队调度核心 4 项，共 52 项唯一 Rust 检查；界面新增同名编队保存 1 项，连同相邻共 6 项通过，并验证扫描显示实际名称。原编队检查目标另五项转换或公开执行器用例本轮未运行，不计通过；不宣称该目标全套通过。主要日志 artifacts/team-slots-final-tests.log、artifacts/team-slots-core-complete-tests.log、artifacts/team-slots-timing-final-tests.log、artifacts/team-slots-cancel-final-test.log、artifacts/team-slots-ui-tests.log 和 artifacts/team-slots-ui-progress-test.log。原预备编队三项 SDK 回归在首轮整批十三项通过，相关核心在最后再次复验，去重仍十三项。
+
+首轮编译漏传两个协议参数，随后已修正；审计误去重旧来源条目，恢复后正确计数四十条。SDK 不能直接解码 WebP 的测试回调改为 PNG；测试仓没有 serde_yaml 直接依赖，补充旧配置夹具使用已有 JSON 序列化并由原 YAML 加载器读取。严格检查发现旧 team_check 夹具的两处写法，修正后通过。首轮失败产物保留，不将失败批次整体描述为通过。界面五项完成后，Playwright 等待其 Vite 子进程退出；确认任务自建进程、启动时间与监听端口后关闭该服务，批次正常以 0 退出，另外一项进度检查正常通过。
+
+工作区和修改测试目标严格 Clippy、格式及两仓差异检查通过；类型生成、前端生产、引擎/工具和原生桌面构建通过，前端保留既有大于 500 KiB 单块提示。协议 v50、导入预览 v20，工作区原 schema 7 日常包和旧战斗包未替换，charge_plan.implemented=false。三个引擎副本 SHA-256 均为 E9005FDC060DCD463E03CED3AE00EDDB85F005E08D19EDC579F77ED063B39DBC。最终构建、时序和引擎副本哈希见 artifacts/team-slots-verification.json，复验脚本 artifacts/verify-team-slots.py。
+
+战前选择的按槽位读取、按钮及反馈继续迁移，模拟室生产选中证明、可靠无活动判断、完整模拟室/双倍消费及全部实机验收保留，goal_complete=false。没有启动或连接游戏，没有修改参考仓、重打发行包、提交或推送。
+
+## 2026 年 10 月 29 日 M5 战前按槽位选队
+
+继续遵守用户不启动游戏、保留实机验收的选择。核对当前 ChoosePredefinedTeam 公共路径、编队识别器、team_select.yml 和原始选择/管理页后，接入按下标定位、实际按钮点击和局部后态反馈。新日常 schema 10 固定六份来源，要求协议 v51；导入预览保持 v20。当前四十条来源全部核对接受，转换直接读取当前参考仓，没有替换旧源文件或修改参考仓。上轮兼容表两条错配值已删除：识别器哈希不能用于选择文件，布局哈希不能用于菜单文件；它们此前没有使当前未迁移文件通过，原三十九条通过、一条拒绝的结果保持为历史记录。
+
+新回执记录卡片下标、实际名称、人数和原按钮位置。明确未选、选中且有序号、选中但序号未读到分别处理；TEAM/SELECTED 须在当前卡片按钮位置，缺号不能凭空提供预选顺序。本次完整清空后，只由依次实际投递并在原按钮区域确认的目标提供顺序；保留二十槽复核，额外选择、人数/身份变化、缺卡或反馈不符不能确认。回顶期间不假定当前页号，允许末页只有四卡；翻页复用明确按下、移动和抬起时序，末节点完成才递增页号。所有输入仍先保存检查点，保存失败、投递后取消、停止或释放失败不能交接，确认后恢复只检查返回页。
+
+选择观察保存到本次检查点，账号配置、脚本、成员和修订继续冻结；持久名称及成员同步由预备编队检查执行，并以完整保存回执更新体力种子。未把原函数的运行中配置更新引入次数提交。此次接受的是体力及情报板共用的公共选择路径；式舆自动配队评分、禁用队判断、多间及对应未迁移应用仍保持待办。schema 1 至 9 继续使用原名称及序号选择，旧记录缺省新字段；schema 9 不能附带新选择来源伪装降级，新包安装后篡改为协议 v50 也被拒绝。
+
+新增十一项 Rust 检查全部通过：完整清除和顺序复核、有号与缺号反馈、缺少名称、额外选中/身份变化/错误按钮、旧回执与重新开始、当前源码真实转换、原始页只读识别、真实 SDK 双目标选择、保存失败和投递后取消、确认恢复及末页四卡、资源篡改/降级与安装，以及父流程回执序列化且关卡证明仍为 false。原始选择页在保存队名全部不同的情况下读取六卡和两个预选顺序，管理页不能选队。人数 OCR 框会越过顶部约两像素，改按完整文字和中心区域核对；按钮仍使用严格固定区域。诊断实际坐标保存 artifacts/team-selection-slots-raw-ocr.jsonl。
+
+真实 SDK 组合帧仅显示 TEAM、去掉顺序数字，先清除两项预选，再按第 20、第 1 槽选择；十六次回顶、十二次下翻、五次实际按钮点击（包括确认）后复核二十槽并返回，配置前后相同，输入释放。证据 artifacts/team-selection-slots-native-proof.json，耗时 149518ms。该双目标回放超过旧 120 秒子上限，因此情报板选队子预算调整为最多 300 秒，并继续受父任务剩余预算截断；组合图回放不计实机布局、效果或性能验收。
+
+连同旧选队九项、体力入口十项、名册十项、管理页十四项、模拟室选队核心九项和真实 SDK 父流程十三项，共 76 项唯一 Rust 检查通过。管理页完整五页执行用例本轮未重跑，未计入本轮通过数；没有新增或重跑界面用例。主要日志 artifacts/team-selection-slots-full-tests.log、artifacts/team-selection-slots-final-tests.log、artifacts/team-selection-slots-parent-tests.log、artifacts/team-selection-slots-complete-tests.log。父流程十三项耗时约 358 秒，覆盖保存失败、暂停停止、零预算、原生弹窗重查和不重复确认。
+
+初批旧选队九项通过，新分支八项通过、原图一项失败；局部按钮复读未解决，提取真实 OCR 坐标后确认是人数框边界问题。修正后原图及最后十项定向用例通过，长双目标用例在前批已经通过，去重仍十一项。原日志保留，不将失败批次整体描述为通过。严格检查发现惰性合并和嵌套条件两处写法，修正后通过。
+
+工作区及七个相关测试目标严格 Clippy、格式和两仓差异检查通过；类型生成、前端生产、引擎/工具和原生桌面构建通过，前端保留既有大于 500 KiB 单块提示。构建引擎、默认 debug 和桌面随附引擎 SHA-256 均为 9ABA35D8E88D8B4852D383E3128A02C78360A6056F4A44B75DDBA9BBC49484DF。工作区原 schema 7 日常包和旧战斗包未替换，charge_plan.implemented=false。汇总 artifacts/team-selection-slots-verification.json，复验脚本 artifacts/verify-team-selection-slots.py。
+
+模拟室生产选中证明、可靠无活动判断、完整模拟室/双倍消费和全部实机验收仍待完成，goal_complete=false。没有启动或连接游戏，没有重打发行包、提交或推送。
+
+## 2026 年 10 月 29 日 M5 体力应用组收尾计时
+
+体力分项在结果核验后已计入活动预算，但成功分支复用核验前的摘要，导致历史少记该次核验耗时。现在复用摘要时同步当前活动耗时；核验失败、超时及暂停停止仍重新取得对应结果，原消费日志、次数提交和每日成功条件不变。同步修正入口说明中已过期的四项来源迁移状态。
+
+本轮没有新增测试。现有入口核心十项、真实 Maa SDK 自定义控制器入口五项及收尾预算一项，共 16 项通过。五项入口回放耗时 155.50 秒，覆盖独立成功、组内正常阻挡、暂停继续、停止后的计数补存和首个输入前拒绝缺失脚本；收尾预算回放耗时 48.17 秒。日志分别为 artifacts/charge-finishing-entry-tests.log、artifacts/charge-finishing-public-tests.log、artifacts/charge-finishing-budget-test.log。固定留档及组合帧回放不计实机验收。
+
+工作区严格 Clippy、格式、两仓差异检查及引擎 / 工具 / 原生桌面构建通过。没有改动界面或协议，不重跑前端构建及类型生成。构建引擎、默认 debug 与桌面随附引擎 SHA-256 一致，均为 EE64319BF0908ED176AC1752DF2042D5BD736262EC9127464D01592864A51E55。汇总 artifacts/charge-finishing-verification.json，协议 v51、导入预览 v20、charge_plan.implemented=false。
+
+再次核对本地素材和 Git 历史：模拟室只有领奖留档，参考画面文档仍将副本选择态标为待完整建档，没有可靠生产选中证明；当前也没有可支持可靠无活动判断的画面。名册、槽位扫描、公共选队三轮记录均保留相同缺口，当前参考来源迁移已完成。后续模拟室与双倍完整消费接入依赖新的画面证据，不能将投递当作选中或将漏字当作无活动。按用户选择暂不启动游戏，完整目标仍未完成，停在此依赖；没有启动或连接游戏，没有提交、推送或重打发行包。

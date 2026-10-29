@@ -167,8 +167,9 @@ impl DailyRun {
                         .team_check
                         .as_ref()
                         .ok_or_else(|| anyhow::anyhow!("缺少冻结编队"))?;
-                    let read = session.read_team_page(
+                    let read = session.read_team_page_at(
                         &scan.config,
+                        scan.pages_read,
                         game,
                         &self.control.cancellation(),
                         Duration::from_millis(u64::from(self.progress.timeout_ms()) - used),
@@ -187,8 +188,20 @@ impl DailyRun {
                             }
                             maa_adapter::predefined_teams::TeamPageMode::Editing => {
                                 let scan = self.progress.team_check.as_mut().unwrap();
-                                scan.record_page(scan.pages_read, page.members, &page.unreadable)
-                                    .map_err(anyhow::Error::msg)?;
+                                if page.by_slot {
+                                    scan.record_slot_page(
+                                        scan.pages_read,
+                                        page.members,
+                                        &page.unreadable_slots,
+                                    )
+                                } else {
+                                    scan.record_page(
+                                        scan.pages_read,
+                                        page.members,
+                                        &page.unreadable,
+                                    )
+                                }
+                                .map_err(anyhow::Error::msg)?;
                                 self.progress
                                     .observe("Teams.Read")
                                     .map_err(anyhow::Error::msg)?;

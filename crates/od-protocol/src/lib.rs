@@ -8,7 +8,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 // v34 接通 Rust 战斗；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 46;
+pub const PROTOCOL_VERSION: u32 = 51;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 

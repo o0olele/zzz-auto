@@ -1,11 +1,11 @@
 [
   {
     "path": "assets/game_data/compendium_data.yml",
-    "sha256": "c806b626b96f5d019dbfdbd4910a2315721523873c5087d7a005208392e0ea7e"
+    "sha256": "33a28eb3ffc3b49fc19083a1fbf66873bc88c6ff8aafcc886e3d1fad321096cc"
   },
   {
     "path": "src/zzz_od/application/charge_plan/charge_plan_config.py",
-    "sha256": "bac916596e5a7e493ecaae47957a6703df3e9c98bd64aee65ac2eb0180e57c12"
+    "sha256": "dfb8624f20e767aad79d0a022dce8d52472d1795b012bd70f474f87de36312c4"
   },
   {
     "path": "src/zzz_od/application/charge_plan/charge_plan_app.py",

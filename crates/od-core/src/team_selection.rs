@@ -80,6 +80,15 @@ pub struct TeamSelection {
     pub chosen: Vec<u8>,
     pub cleared: bool,
     pub pending: Option<SelectionAction>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(
+        as = "Option<Vec<crate::team_selection_slots::SlotIdentity>>",
+        optional
+    )]
+    pub slot_cards: Vec<crate::team_selection_slots::SlotIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub slot_toggle: Option<crate::team_selection_slots::SlotToggle>,
 }
 
 impl TeamSelection {
@@ -93,11 +102,42 @@ impl TeamSelection {
             chosen: vec![],
             cleared: false,
             pending: None,
+            slot_cards: vec![],
+            slot_toggle: None,
         };
         result.validate()?;
         Ok(result)
     }
     pub fn validate(&self) -> Result<(), &'static str> {
+        if self.slot_cards.len() > 20
+            || self
+                .slot_cards
+                .iter()
+                .any(|c| !crate::team_selection_slots::valid_identity(c))
+            || self
+                .slot_cards
+                .iter()
+                .map(|c| c.index)
+                .collect::<BTreeSet<_>>()
+                .len()
+                != self.slot_cards.len()
+            || self.slot_toggle.as_ref().is_some_and(|r| {
+                !valid_rect(r.button)
+                    || self.pending
+                        != Some(SelectionAction::Toggle {
+                            index: r.index,
+                            order: r.order,
+                        })
+            })
+            || (!self.slot_cards.is_empty()
+                && matches!(
+                    self.phase,
+                    SelectionPhase::Ready | SelectionPhase::Confirmed
+                )
+                && self.slot_cards.len() != 20)
+        {
+            return Err("编队槽位身份或按钮检查点无效");
+        }
         if !(1..=2).contains(&self.targets.len()) || self.targets.iter().any(|&id| id >= 20)
             || self.targets.iter().collect::<BTreeSet<_>>().len() != self.targets.len()
             || self.top_scrolls > 4 || self.page > 4 || self.seen.len() > 20
@@ -169,6 +209,10 @@ impl TeamSelection {
                 .all(|&(index, order)| self.expected(index) == order)
     }
     fn reset(&mut self, phase: SelectionPhase) {
+        self.slot_toggle = None;
+        if phase == SelectionPhase::ResetClear {
+            self.slot_cards.clear();
+        }
         self.phase = phase;
         self.top_scrolls = 0;
         self.page = 0;
@@ -195,12 +239,15 @@ impl TeamSelection {
         cards: &[SelectionCard],
         confirm_enabled: bool,
     ) -> Result<Option<SelectionAction>, &'static str> {
+        if !self.slot_cards.is_empty() || self.slot_toggle.is_some() {
+            return Err("槽位检查点不能使用旧名称选择");
+        }
         let mut next = self.clone();
         let action = next.next_inner(cards, confirm_enabled)?;
         *self = next;
         Ok(action)
     }
-    fn next_inner(
+    pub(super) fn next_inner(
         &mut self,
         cards: &[SelectionCard],
         confirm_enabled: bool,

@@ -32,6 +32,13 @@ cargo(['run', '--locked', '-p', 'od-tools', '--', 'world-patrol-bundle', '--refe
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'combat-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+// 体力试运行共用模拟训练的编队与恢复资源；模拟室消费仍由整组预检阻挡。
+for (const command of ['compendium', 'simulation', 'simulation-deploy', 'restore-charge',
+  'charge-navigation', 'charge-transport', 'area-patrol', 'expert-challenge', 'deep-hunt',
+  'charge-level', 'agent-transport', 'agent-goal', 'ether-synthesis-entry', 'ether-synthesis']) {
+  cargo(['run', '--locked', '-p', 'od-tools', '--', `${command}-bundle`, '--reference',
+    process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+}
 cargo(['build', '--locked', '-p', 'zzz-engine', ...(release ? ['--release'] : [])]);
 if (release) {
   const check = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),

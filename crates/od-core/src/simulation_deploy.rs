@@ -14,6 +14,26 @@ pub struct DeployRequest {
     pub team: TeamsResult,
     pub timeout_ms: u32,
 }
+/// 共享出战步骤只依赖已核对的前置、选队和预算；各副本保留自己的身份类型。
+pub trait DeploymentContext: std::fmt::Debug + Clone + PartialEq {
+    fn validate(&self) -> Result<(), &'static str>;
+    fn team(&self) -> &TeamsResult;
+    fn timeout_ms(&self) -> u32;
+    fn requires_forward(&self) -> bool {
+        true
+    }
+}
+impl DeploymentContext for DeployRequest {
+    fn validate(&self) -> Result<(), &'static str> {
+        DeployRequest::validate(self)
+    }
+    fn team(&self) -> &TeamsResult {
+        &self.team
+    }
+    fn timeout_ms(&self) -> u32 {
+        self.timeout_ms
+    }
+}
 impl DeployRequest {
     pub fn from_plan(
         plan: &ChargePlanItem,
@@ -95,15 +115,15 @@ enum Receipt {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DeployFlow {
-    request: DeployRequest,
+pub struct DeployFlow<R = DeployRequest> {
+    request: R,
     deploy: Option<Receipt>,
     confirm: Option<Receipt>,
     forward: Option<Receipt>,
     entered: bool,
 }
-impl DeployFlow {
-    pub fn new(request: DeployRequest) -> Result<Self, &'static str> {
+impl<R: DeploymentContext> DeployFlow<R> {
+    pub fn new(request: R) -> Result<Self, &'static str> {
         request.validate()?;
         Ok(Self {
             request,
@@ -113,17 +133,21 @@ impl DeployFlow {
             entered: false,
         })
     }
-    pub fn request(&self) -> &DeployRequest {
+    pub fn request(&self) -> &R {
         &self.request
     }
     pub fn completed(&self) -> bool {
         self.entered
     }
+    /// 意图保存后无法排除已经投递；等待战斗时不能重复点击出战。
+    pub fn deployment_started(&self) -> bool {
+        self.deploy.is_some()
+    }
     pub fn validate(&self) -> Result<(), &'static str> {
         self.request.validate()?;
         if (self.confirm.is_some() && self.deploy.is_none())
             || (self.forward.is_some() && self.deploy.is_none())
-            || (self.entered && self.forward.is_none())
+            || (self.entered && self.request.requires_forward() && self.forward.is_none())
         {
             return Err("模拟室出战检查点缺少投递或战斗进入证明");
         }
@@ -147,7 +171,9 @@ impl DeployFlow {
             DeployView::Battle if self.deploy.is_none() => {
                 Err("缺少本次出战意图，不能采用既有战斗")
             }
-            DeployView::Battle if self.forward.is_none() => Ok(Some(DeployAction::Forward)),
+            DeployView::Battle if self.request.requires_forward() && self.forward.is_none() => {
+                Ok(Some(DeployAction::Forward))
+            }
             DeployView::Battle => {
                 self.entered = true;
                 Ok(None)
@@ -174,6 +200,7 @@ impl DeployFlow {
         if self.completed()
             || self.receipt(a).is_some()
             || (a != DeployAction::Deploy && self.deploy.is_none())
+            || (a == DeployAction::Forward && !self.request.requires_forward())
         {
             return Err("没有待保存的出战动作");
         }
@@ -182,6 +209,7 @@ impl DeployFlow {
     }
     pub fn allows(&self, a: DeployAction, v: DeployView) -> bool {
         !self.completed()
+            && (a != DeployAction::Forward || self.request.requires_forward())
             && self.receipt(a) == Some(Receipt::Intent)
             && matches!(
                 (a, v),

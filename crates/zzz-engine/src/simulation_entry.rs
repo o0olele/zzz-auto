@@ -88,8 +88,13 @@ impl EntryRun {
         })
     }
     pub fn resume(&mut self) -> Result<()> {
+        ensure!(self.end == Some(EntryEnd::Paused), "详情推进尚未暂停");
+        self.resume_after_parent_pause()
+    }
+    pub(crate) fn resume_after_parent_pause(&mut self) -> Result<()> {
         ensure!(
-            self.end == Some(EntryEnd::Paused) && self.snapshot.inputs_released,
+            matches!(self.end, Some(EntryEnd::Paused | EntryEnd::Ready))
+                && self.snapshot.inputs_released,
             "详情推进尚未安全暂停"
         );
         let mut snapshot = self.snapshot.clone();
@@ -106,10 +111,17 @@ impl EntryRun {
     /// 消费 self，保留同一 ID、控制句柄和已编译脚本；转换本身不发送出战输入。
     pub fn into_deployment(self) -> Result<DeploymentRun> {
         ensure!(
+            self.control.requested().is_none(),
+            "仍有控制请求，不能交接出战"
+        );
+        self.into_deployment_for_parent()
+    }
+    /// 转换本身不发送输入；共享控制请求由父流程在保存交接后继续处理。
+    pub(crate) fn into_deployment_for_parent(self) -> Result<DeploymentRun> {
+        ensure!(
             self.end == Some(EntryEnd::Ready)
                 && self.snapshot.inputs_released
-                && self.snapshot.flow.completed()
-                && self.control.requested().is_none(),
+                && self.snapshot.flow.completed(),
             "详情或选队未完成，不能交接出战"
         );
         let teams = self

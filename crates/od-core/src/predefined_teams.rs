@@ -1,4 +1,4 @@
-//! 账号级预备编队。位置对应游戏中的固定槽位，识别只更新成员，不改名称或脚本。
+//! 账号级预备编队。位置对应游戏中的固定槽位，扫描可同步名称，脚本保持原下标。
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use ts_rs::TS;
@@ -53,15 +53,13 @@ impl TeamConfig {
             .into_iter()
             .map(|a| a.id)
             .collect();
-        let mut names = BTreeSet::new();
         for team in &self.teams {
             if team.name.is_empty()
                 || team.name.trim() != team.name
                 || team.name.chars().count() > 80
                 || team.name.chars().any(char::is_control)
-                || !names.insert(&team.name)
             {
-                return Err("编队名称须为 1..80 个字符，无首尾空白、控制字符或重复名称");
+                return Err("编队名称须为 1..80 个字符，无首尾空白或控制字符");
             }
             if team.auto_battle.is_empty()
                 || team.auto_battle.len() > 240
@@ -120,6 +118,9 @@ pub fn import(value: &serde_json::Value) -> Result<TeamConfig, &'static str> {
             }
         }
     }
+    for team in &mut config.teams {
+        team.name = normalize_name(&team.name);
+    }
     config.validate()?;
     Ok(config)
 }
@@ -128,12 +129,20 @@ pub fn import(value: &serde_json::Value) -> Result<TeamConfig, &'static str> {
 #[serde(deny_unknown_fields)]
 pub struct TeamMembers {
     pub index: u8,
+    /// 保留启动时的名称，绑定原配置；实际读到的名称单独保存。
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub observed_name: Option<String>,
     pub member_count: u8,
     pub agent_ids: [String; 3],
 }
 
-/// 合并已识别的队伍，未识别的槽位保持原值；不接受名称变化或相同槽位的冲突结果。
+pub fn normalize_name(name: &str) -> String {
+    name.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// 合并已识别槽位；旧回执只更新成员，新扫描可带实际名称，不修改脚本。
 pub fn apply_members(
     config: &TeamConfig,
     results: &[TeamMembers],
@@ -163,6 +172,13 @@ pub fn apply_members(
             return Err("识别出的代理人数与画面编队人数不一致");
         }
         team.agent_ids = result.agent_ids.clone();
+        if let Some(name) = &result.observed_name {
+            let name = normalize_name(name);
+            if name.is_empty() {
+                return Err("编队实际名称不能为空");
+            }
+            team.name = name;
+        }
     }
     next.validate()?;
     Ok(next)
@@ -212,8 +228,15 @@ pub fn name_similarity(candidate: &str, recognized: &str) -> f64 {
 
 /// 同分的模糊结果不选，避免重复或接近的名字覆盖错误槽位。
 pub fn match_name(config: &TeamConfig, recognized: &str) -> Option<u8> {
-    if let Some(index) = config.teams.iter().position(|team| team.name == recognized) {
-        return u8::try_from(index).ok();
+    let exact: Vec<_> = config
+        .teams
+        .iter()
+        .enumerate()
+        .filter(|(_, team)| team.name == recognized)
+        .map(|(index, _)| index)
+        .collect();
+    if !exact.is_empty() {
+        return (exact.len() == 1).then(|| exact[0] as u8);
     }
     let mut scores: Vec<_> = config
         .teams

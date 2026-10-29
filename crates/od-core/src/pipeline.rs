@@ -86,6 +86,15 @@ impl PipelineControl {
         state.paused = true;
         true
     }
+    /// 最终应用结果与暂停 / 停止共用控制锁；已有请求时保留继续处理的能力。
+    pub fn finish_if_uninterrupted(&self) -> Result<(), Interrupt> {
+        let mut state = self.state.lock().expect("Pipeline 控制锁失效");
+        if let Some(requested) = state.requested {
+            return Err(requested);
+        }
+        state.finished = true;
+        Ok(())
+    }
 
     // 与并发停止请求按同一把锁确定终态的先后。
     pub fn finish(&self) -> Option<Interrupt> {

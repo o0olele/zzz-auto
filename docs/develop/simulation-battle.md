@@ -1,6 +1,6 @@
 # 模拟室单战父流程
 
-`SimulationBattleRun` 将已完成的[详情与选队交接](simulation-entry.md)、[出战与子战斗](simulation-deploy.md)和[结算领奖](simulation-settlement.md)串成一次内部单战。`after_entry` 消费已就绪的 `EntryRun`；`new` 仅接收尚未执行、输入已释放且冻结配置一致的 `DeploymentRun`。父子共用运行 ID、取消句柄和活动预算，不建立第二个运行槽，也不直接登记体力计划次数或应用成功。
+`SimulationBattleRun` 将已完成的[详情与选队交接](simulation-entry.md)、[出战与子战斗](simulation-deploy.md)和[结算领奖](simulation-settlement.md)串成一次内部单战。`after_entry` 消费已就绪的 `EntryRun`；`new` 仅接收尚未执行、输入已释放且冻结配置一致的 `DeploymentRun`。父子共用运行 ID、取消句柄和活动预算，不建立第二个运行槽，也不直接登记体力计划次数或应用成功。现由[完整挑战父流程](simulation-challenge.md)接续卡片 / 电量准备和详情 / 选队，关卡验证前置继续保留。
 
 关卡回执仍必须明确 `selection_verified=true`。目前生产 `MissionRun` 固定提供未验证回执，本父流程没有增加证明生产者或绕过开关；体力应用、桌面和 CLI 的带输入运行入口继续关闭。测试中的已验证关卡只用于隔离回放。玩法与区域继续依据参考仓 `CombatSimulation`、`Deploy`、模拟室、通用出战和战斗画面资料，没有新增推测的颜色或按钮区域。
 

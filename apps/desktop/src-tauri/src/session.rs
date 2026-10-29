@@ -292,6 +292,32 @@ impl EngineSession {
                     .map_err(|e| ApiError::new("invalid_input", e))?;
                 mixed_combat = Some(combat);
             }
+            let charge_selected = standalone.map_or_else(
+                || {
+                    selection.map_or_else(
+                        || {
+                            group
+                                .apps
+                                .iter()
+                                .any(|a| a.enabled && a.app_id == "charge_plan")
+                        },
+                        |ids| ids.iter().any(|id| id == "charge_plan"),
+                    )
+                },
+                |id| id == "charge_plan",
+            );
+            if charge_selected
+                && mixed_combat.is_none()
+                && od_core::charge_entry::needs_combat(&group.charge_plan)
+            {
+                let mut combat = instance.combat.clone();
+                combat.dodge_only = false;
+                combat.start_delay_ms = 0;
+                combat
+                    .validate()
+                    .map_err(|e| ApiError::new("invalid_input", e))?;
+                mixed_combat = Some(combat);
+            }
         }
         let input = match &command {
             Command::StartCombat {
@@ -450,6 +476,7 @@ impl EngineSession {
                         || run.map.is_some()
                         || run.coffee.is_some()
                         || run.combat.is_some()
+                        || run.charge.is_some()
                         || !run.daily.is_empty())
             }) {
                 return Err(ApiError::new(
@@ -469,9 +496,15 @@ impl EngineSession {
                     .as_ref()
                     .and_then(|r| r.context.as_ref())
                     .is_some_and(|c| {
-                        c.app_ids
-                            .iter()
-                            .any(|id| matches!(id.as_str(), "intel_board" | "world_patrol"))
+                        c.app_ids.iter().any(|id| {
+                            matches!(id.as_str(), "intel_board" | "world_patrol")
+                                || (id == "charge_plan"
+                                    && self
+                                        .journal
+                                        .as_ref()
+                                        .and_then(|j| j.plan.as_ref())
+                                        .is_some_and(|p| p.version == 10))
+                        })
                     })
                 {
                     10

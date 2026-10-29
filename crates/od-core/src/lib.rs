@@ -1,10 +1,20 @@
 pub mod after_done;
 pub mod app_combat;
+pub mod area_patrol;
+pub mod area_patrol_pipeline;
 pub mod audio_dodge;
 pub mod basic_daily;
 pub mod battle_result;
 pub mod challenge_move;
+pub mod charge_application;
+pub mod charge_entry;
+pub mod charge_navigation;
+pub mod charge_navigation_pipeline;
 pub mod charge_plan;
+pub mod charge_resources;
+pub mod charge_run;
+pub mod charge_transport;
+pub mod charge_transport_pipeline;
 pub mod coffee;
 pub mod coffee_approach;
 pub mod coffee_run;
@@ -22,6 +32,8 @@ pub mod daily;
 pub mod dismantle;
 pub mod download_proxy;
 pub mod engagement_reward;
+pub mod expert_challenge;
+pub mod expert_challenge_pipeline;
 pub mod game_launch;
 pub mod group_run;
 pub mod intel_board;
@@ -64,6 +76,8 @@ pub mod suibian_temple_auto;
 pub mod suibian_temple_flow;
 pub mod team_check;
 pub mod team_selection;
+pub mod team_selection_slots;
+pub mod team_slots;
 pub mod world_patrol;
 pub mod world_patrol_pipeline;
 
@@ -146,13 +160,24 @@ pub struct RunRecord {
     pub combat: Option<combat::CombatProgress>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    pub charge: Option<Box<charge_application::ChargeAppProgress>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub group: Option<group_run::GroupProgress>,
 }
 
 impl RunRecord {
+    fn charge_is_current(&self) -> bool {
+        self.charge.is_some()
+            && self.group.as_ref().is_none_or(|g| {
+                g.current_index
+                    .is_some_and(|i| g.steps.get(i).is_some_and(|s| s.app_id == "charge_plan"))
+            })
+    }
     pub fn completed_group_successfully(&self) -> bool {
         use group_run::GroupStepState;
         self.state == RunState::Succeeded
+            && self.charge.as_ref().is_none_or(|p| p.completed())
             && self.finished_at.is_some_and(|at| at >= self.started_at)
             && self.matches_account_context()
             && self.inputs_released()
@@ -185,6 +210,7 @@ impl RunRecord {
     }
     pub fn inputs_released(&self) -> bool {
         self.input_probe.as_ref().is_none_or(|p| p.released)
+            && self.charge.as_ref().is_none_or(|p| p.inputs_released)
             && self
                 .input_pipeline
                 .as_ref()
@@ -204,6 +230,23 @@ impl RunRecord {
         let Some(context) = &self.context else {
             return false;
         };
+        if self.charge.is_none()
+            && (self.app_id == "charge_plan"
+                || self.group.as_ref().is_some_and(|g| {
+                    g.steps.iter().any(|s| {
+                        s.app_id == "charge_plan" && s.state == group_run::GroupStepState::Succeeded
+                    })
+                }))
+        {
+            return false;
+        }
+        if self
+            .charge
+            .as_ref()
+            .is_some_and(|p| !p.matches_record(self))
+        {
+            return false;
+        }
         if self.app_id == "application_group" {
             self.group.as_ref().is_some_and(|group| {
                 group
@@ -458,7 +501,7 @@ impl RunSlot {
         let mut schedule = group_run::GroupSchedule::new(plan)?;
         let permit = schedule.start_next(Utc::now())?.ok_or("应用组无需执行")?;
         if plan.context.app_ids.iter().any(|id| {
-            !matches!(id.as_str(), "email" | "coffee")
+            !matches!(id.as_str(), "email" | "coffee" | "charge_plan")
                 && !basic_daily::APP_IDS.contains(&id.as_str())
         }) {
             return Err("当前分项没有可用日常执行器");
@@ -466,6 +509,19 @@ impl RunSlot {
         config.validate()?;
         plan.coffee_config.validate()?;
         plan.daily_config.validate()?;
+        if plan
+            .items
+            .iter()
+            .any(|i| i.app_id == "charge_plan" && i.decision == run_plan::PlanDecision::Run)
+        {
+            charge_entry::validate(&plan.charge_plan_config)?;
+            if charge_entry::needs_combat(&plan.charge_plan_config) {
+                plan.charge_combat
+                    .as_ref()
+                    .ok_or("体力缺少冻结战斗设置")?
+                    .validate()?;
+            }
+        }
         if plan
             .items
             .iter()
@@ -525,6 +581,20 @@ impl RunSlot {
     ) -> Result<(), &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
         match self.group_schedule.as_ref().and_then(|s| s.current_app()) {
+            Some("charge_plan") => {
+                let context = run.context.as_ref().ok_or("体力缺少账号上下文")?;
+                let revision =
+                    charge_application::start_revision(run).unwrap_or(context.config_revision);
+                run.charge = Some(Box::new(charge_application::ChargeAppProgress::new(
+                    charge_run::ChargeRunContext {
+                        run_id: run.id,
+                        instance_id: context.instance_id,
+                        group_id: context.group_id.clone(),
+                        config_revision: revision,
+                        game_day: plan.game_day.clone(),
+                    },
+                )?));
+            }
             Some("email") => run.mail = Some(mail::MailProgress::new(mail)),
             Some("coffee") => {
                 let mut progress = coffee_run::CoffeeProgress::new(plan.coffee_config);
@@ -815,7 +885,8 @@ impl RunSlot {
                 && run.map.is_none()
                 && run.coffee.is_none()
                 && run.daily.is_empty()
-                && run.combat.is_none())
+                && run.combat.is_none()
+                && run.charge.is_none())
         {
             return Err("流程运行 ID 已过期");
         }
@@ -836,6 +907,11 @@ impl RunSlot {
             RunState::Pausing
         };
         run.message = "已请求暂停，正在等待队列静止与输入释放".into();
+        if run.charge_is_current()
+            && let Some(p) = &mut run.charge
+        {
+            p.state = run.state;
+        }
         Ok(run.clone())
     }
 
@@ -846,18 +922,29 @@ impl RunSlot {
                 && run.map.is_none()
                 && run.coffee.is_none()
                 && run.daily.is_empty()
-                && run.combat.is_none())
+                && run.combat.is_none()
+                && run.charge.is_none())
         {
             return Err("流程运行 ID 已过期");
         }
         if run.state != RunState::Paused {
             return Err("只有确认暂停的任务可以继续");
         }
+        if run.charge_is_current() && run.charge.as_ref().is_some_and(|p| p.outcome.is_some()) {
+            return Err("体力结果仍待保存，只能补交原结果");
+        }
         if let Some(schedule) = &mut self.group_schedule {
             schedule.resume()?;
             run.group = Some(schedule.progress().clone());
         }
         run.state = RunState::Running;
+        if run.charge_is_current()
+            && let Some(p) = &mut run.charge
+        {
+            p.state = RunState::Running;
+            p.inputs_released = false;
+            p.world_returned = false;
+        }
         if let Some(progress) = &mut run.combat {
             progress.state = RunState::Running;
             progress.inputs_released = false;
@@ -904,6 +991,17 @@ impl RunSlot {
         if schedule.current_app() != Some(progress.app_id.as_str()) {
             return Err("日常不是当前分项");
         }
+        let team_base_revision = run
+            .charge
+            .as_ref()
+            .filter(|p| {
+                p.counts_committed
+                    && p.inputs_released
+                    && p.summary.is_some()
+                    && p.matches_record(run)
+            })
+            .and_then(|p| p.config_revision_after)
+            .or_else(|| run.context.as_ref().map(|c| c.config_revision));
         let previous = run
             .daily
             .iter_mut()
@@ -988,11 +1086,7 @@ impl RunSlot {
         if let Some(scan) = &progress.team_check {
             scan.validate()?;
             if let Some(revision) = scan.saved_revision
-                && run
-                    .context
-                    .as_ref()
-                    .and_then(|c| c.config_revision.checked_add(1))
-                    != Some(revision)
+                && team_base_revision.and_then(|r| r.checked_add(1)) != Some(revision)
             {
                 return Err("编队回写修订与本次冻结配置不符");
             }
@@ -1176,6 +1270,7 @@ impl RunSlot {
             coffee: None,
             daily: Vec::new(),
             combat: None,
+            charge: None,
             group: None,
         };
         self.group_schedule = None;
@@ -1206,6 +1301,11 @@ impl RunSlot {
                 run.finished_at = Some(Utc::now());
             }
             run.message = "已请求停止，正在等待原生队列及输入释放".into();
+            if run.charge_is_current()
+                && let Some(p) = &mut run.charge
+            {
+                p.state = run.state;
+            }
         }
         Ok(run.clone())
     }
@@ -1225,6 +1325,19 @@ impl RunSlot {
         }
         if run.state.is_terminal() {
             return Err("任务已结束，不能覆盖结果");
+        }
+        if run.charge_is_current() && state == RunState::Succeeded {
+            return Err("体力成功必须经过本次专用完成证明");
+        }
+        if run.charge_is_current()
+            && let Some(p) = &mut run.charge
+        {
+            p.state = state;
+            p.outcome = Some(if state == RunState::Stopped {
+                charge_application::ChargeAppOutcome::Stopped
+            } else {
+                charge_application::ChargeAppOutcome::Failed
+            });
         }
         run.state = state;
         run.message = message;
@@ -1393,6 +1506,10 @@ pub struct Screenshot {
     #[ts(type = "number")]
     pub elapsed_ms: u64,
 }
+pub mod ether_synthesis;
+pub mod ether_synthesis_entry;
+pub mod ether_synthesis_entry_pipeline;
+pub mod ether_synthesis_pipeline;
 pub mod suibian_adventure;
 pub mod suibian_boo_box;
 pub mod suibian_boo_box_pipeline;
@@ -1405,4 +1522,15 @@ pub mod suibian_sales_pipeline;
 pub mod suibian_yum;
 pub mod suibian_yum_pipeline;
 
+pub mod agent_challenge;
+pub mod agent_goal;
+pub mod agent_goal_pipeline;
+pub mod agent_mission;
+pub mod agent_mission_pipeline;
+pub mod agent_transport;
+pub mod agent_transport_pipeline;
+pub mod charge_level;
+pub mod charge_level_pipeline;
+pub mod deep_hunt;
+pub mod deep_hunt_pipeline;
 pub mod suibian_adventure_pipeline;

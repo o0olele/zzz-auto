@@ -476,7 +476,7 @@ pub fn observe(p: &mut crate::basic_daily::DailyProgress, node: &str) -> Result<
 
 #[path = "random_play_pipeline.rs"]
 mod definition;
-pub use definition::{overrides, pipeline};
+pub use definition::{overrides, overrides_for_schema, pipeline, pipeline_for_schema};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ShopAgent {
@@ -490,9 +490,49 @@ pub fn agents() -> Vec<ShopAgent> {
     ))
     .expect("固定录像店代理人清单无效")
 }
+/// 旧资源包的固定名册不能随新代理人的加入而扩大。
+pub fn agents_for_schema(schema: u64) -> Vec<ShopAgent> {
+    if schema >= 8 {
+        agents()
+    } else {
+        serde_json::from_str(include_str!(
+            "../../../resources/source/random-play/agents-v1.json"
+        ))
+        .expect("旧代理人名册无效")
+    }
+}
+pub fn roster_sources() -> serde_json::Value {
+    serde_json::from_str(include_str!(
+        "../../../resources/daily/roster-source-lock-v2.json"
+    ))
+    .expect("固定名册来源无效")
+}
 #[path = "random_play_assets.rs"]
 mod assets;
 pub use assets::source_images;
+pub fn templates_for_schema(schema: u64) -> &'static std::collections::BTreeMap<String, Vec<u8>> {
+    if schema >= 8 {
+        return templates();
+    }
+    static LEGACY: std::sync::OnceLock<std::collections::BTreeMap<String, Vec<u8>>> =
+        std::sync::OnceLock::new();
+    LEGACY.get_or_init(|| {
+        let names: std::collections::BTreeSet<_> = agents_for_schema(7)
+            .into_iter()
+            .flat_map(|a| {
+                a.templates
+                    .into_iter()
+                    .map(|t| format!("image/random-play/avatar_{t}.png"))
+            })
+            .chain(std::iter::once("image/random-play/map.png".into()))
+            .collect();
+        templates()
+            .iter()
+            .filter(|(name, _)| names.contains(*name))
+            .map(|(name, bytes)| (name.clone(), bytes.clone()))
+            .collect()
+    })
+}
 pub fn templates() -> &'static std::collections::BTreeMap<String, Vec<u8>> {
     static CACHE: std::sync::OnceLock<std::collections::BTreeMap<String, Vec<u8>>> =
         std::sync::OnceLock::new();

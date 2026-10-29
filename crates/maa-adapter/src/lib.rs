@@ -1,8 +1,13 @@
+pub mod agent_goal;
+pub mod agent_mission;
+pub mod agent_transport;
 mod basic_daily;
 pub mod challenge_move;
 mod coffee;
 pub mod suibian_temple;
-pub use basic_daily::{validate_basic_daily_app_bundle, validate_basic_daily_bundle};
+pub use basic_daily::{
+    basic_daily_agents, validate_basic_daily_app_bundle, validate_basic_daily_bundle,
+};
 mod coffee_run;
 pub mod combat_contours;
 mod combat_input;
@@ -19,12 +24,20 @@ mod handoff;
 mod inference;
 mod input;
 pub use handoff::{GameSessionConfig, SessionHandoff};
+pub mod area_patrol;
+pub mod charge_navigation;
+pub mod charge_resources;
+pub mod charge_transport;
 pub mod compendium;
+pub mod ether_synthesis;
+pub mod ether_synthesis_entry;
+pub mod expert_challenge;
 pub mod intel_board;
 mod mail_bundle;
 mod map_transport;
 pub mod navigation;
 pub mod navigation_vision;
+mod predefined_team_slots;
 pub mod predefined_teams;
 mod random_play;
 pub mod restore_charge;
@@ -34,6 +47,7 @@ pub mod simulation_mission;
 pub mod simulation_settlement;
 pub mod simulation_teams;
 pub mod team_selection;
+mod team_selection_slots;
 pub mod world_patrol;
 pub use coffee::{CoffeeObservation, validate_coffee_bundle};
 pub use mail_bundle::validate_mail_bundle;
@@ -150,6 +164,17 @@ pub struct NativeSession {
     restore_charge_bundle: Option<PathBuf>,
     simulation_bundle: Option<PathBuf>,
     simulation_deploy_bundle: Option<PathBuf>,
+    ether_synthesis_bundle: Option<PathBuf>,
+    ether_synthesis_entry_bundle: Option<PathBuf>,
+    charge_navigation_bundle: Option<PathBuf>,
+    charge_transport_bundle: Option<PathBuf>,
+    agent_transport_bundle: Option<PathBuf>,
+    agent_goal_bundle: Option<PathBuf>,
+    agent_mission_bundle: Option<PathBuf>,
+    area_patrol_bundle: Option<PathBuf>,
+    expert_challenge_bundle: Option<PathBuf>,
+    deep_hunt_bundle: Option<PathBuf>,
+    charge_level_bundle: Option<PathBuf>,
     simulation_mission_bundle: Option<PathBuf>,
     simulation_settlement_bundle: Option<PathBuf>,
     compendium_bundle: Option<PathBuf>,
@@ -301,6 +326,17 @@ impl NativeSession {
             restore_charge_bundle: None,
             simulation_bundle: None,
             simulation_deploy_bundle: None,
+            ether_synthesis_bundle: None,
+            ether_synthesis_entry_bundle: None,
+            charge_navigation_bundle: None,
+            charge_transport_bundle: None,
+            agent_transport_bundle: None,
+            agent_goal_bundle: None,
+            agent_mission_bundle: None,
+            area_patrol_bundle: None,
+            expert_challenge_bundle: None,
+            deep_hunt_bundle: None,
+            charge_level_bundle: None,
             simulation_mission_bundle: None,
             simulation_settlement_bundle: None,
             compendium_bundle: None,
@@ -550,6 +586,16 @@ impl NativeSession {
             status.is_success() || !detail.hit,
             "Maa 识别任务失败但详情报告命中"
         );
+        // SDK 可先发布本任务的终态，随后才清除 Tasker 的运行标记。
+        // 仍持有本会话识别锁，在放行下一次识别前等待自己的任务完成收尾。
+        let idle_started = Instant::now();
+        while self.tasker.running() {
+            ensure!(
+                idle_started.elapsed() < Duration::from_secs(1),
+                "Maa 识别完成后任务器未能恢复空闲"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
         Ok(RecognitionMeasurement {
             detail: serde_json::to_value(detail)?,
             native_status: status.to_string(),
@@ -600,9 +646,13 @@ impl Drop for NativeSession {
     }
 }
 
+pub mod charge_level;
+pub mod deep_hunt;
 pub mod suibian_adventure;
 pub mod suibian_boo_box;
 pub mod suibian_craft;
 pub mod suibian_good_goods;
 pub mod suibian_sales;
 pub mod suibian_yum;
+
+pub mod agent_plan;

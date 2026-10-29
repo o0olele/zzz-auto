@@ -1,0 +1,102 @@
+[
+  {
+    "path": "src/zzz_od/operation/compendium/notorious_hunt.py",
+    "sha256": "8eef6f49a08e39ae5d6fdf2a7b0aa3ee9c58d4c777e71055555012709c839a57",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/deploy.py",
+    "sha256": "c2c48f49c5410dafd1fd9452fc0525c5d040c4ee50552a41c3b729a9b3f16172",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/choose_predefined_team.py",
+    "sha256": "5dead090505348f1980811fa98fccca27330c2453e24476c5c2ebdb7a2ca436a",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/challenge_mission/check_next_after_battle.py",
+    "sha256": "ce14b40f30ac49092cff77c1cfba316390c065e73942c223c7379f72863df398",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/notorious_hunt.yml",
+    "sha256": "e5637fbabef32e6322e54bac5428a8befcc5e8db70a3ce98443489bc4b808444",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/combat_simulation.yml",
+    "sha256": "b5739b698c3034f9c4d754a415317693236aa356eb8bba3c0d3aa83f7f61a611",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/battle.yml",
+    "sha256": "83ac6836cc40f46cfab33411ee128681f8b16f5ffe2d6869424d617c2cce2c06",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/restore_charge.yml",
+    "sha256": "49be4bab898be8e3f35b2c9a5e37f63d0b717d8441628558ebbe28e821e262ac",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/game/screens/战斗画面.md",
+    "sha256": "c196e94258a959cd98adf48a5415e48d05bdec794513f4d13356c1bfdcf817b6",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/game/screens/恢复电量.md",
+    "sha256": "02417b069f37e9cc621847dcebf07567a11730733e84b769a5a5f3111bbb105c",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/game/screens/实战模拟室.md",
+    "sha256": "f077ede1105202fcc0f07d4f390ec1a9b6418e94f1b73368ff5caed5f1e77553",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/develop/zzz/application/charge_plan.md",
+    "sha256": "27327d8cfa4dac18582876946711f8d4e915ba585cec7efcac47fa304180333e",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/notorious_hunt_move.py",
+    "sha256": "94a9bb3bd8b73b7c0319708b92a10c6dcea074d47a12f8ce8c8151c5b078f080",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/template/notorious_hunt/info/raw.png",
+    "sha256": "24434324afd006dac10ded5d122b1aee2a6aaf68fbd640b74b0310288428ebbf",
+    "encoding": "binary"
+  },
+  {
+    "path": "assets/template/notorious_hunt/info/mask.png",
+    "sha256": "30c5f7f5613aeff79ac9c6314e3953c0bcbd02aefe046e6ee02e74f6ba0062ac",
+    "encoding": "binary"
+  },
+  {
+    "path": "assets/template/notorious_hunt/info/config.yml",
+    "sha256": "9e23b665dc7e3d3d2a90085b2279967082b65f40633605f5e8dc2a87c9fa5562",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/menu.yml",
+    "sha256": "a0bb70becd7beb9e4a7b9faf6e666c5860f50d052bcae1f53a86c8e19fde1efc",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/template/menu/back/raw.png",
+    "sha256": "c89587f7ef61d7d4be2ddc143305bcd2f043d3de773f9f373a57c37576bad96c",
+    "encoding": "binary"
+  },
+  {
+    "path": "assets/template/menu/back/mask.png",
+    "sha256": "a35b702b1f98625a546d420823156bb210c0c996474ffe61191fb7abb1d4770e",
+    "encoding": "binary"
+  },
+  {
+    "path": "assets/template/menu/back/config.yml",
+    "sha256": "cc0ecbbcad71efc63f24e2302c9e2e9238bccdc11c35ef123e0abd144cc13085",
+    "encoding": "utf8-lf"
+  }
+]

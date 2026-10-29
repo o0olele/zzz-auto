@@ -17,10 +17,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-struct Sight {
-    view: V,
-    training: Option<[i32; 2]>,
-    category: Option<[i32; 2]>,
+pub(crate) struct Sight {
+    pub(crate) view: V,
+    pub(crate) training: Option<[i32; 2]>,
+    pub(crate) category: Option<[i32; 2]>,
     go: Option<[i32; 2]>,
     confirm: Option<[i32; 2]>,
     icon: Option<[i32; 2]>,
@@ -72,7 +72,7 @@ impl NativeSession {
         )?;
         Ok(())
     }
-    fn compendium_sight(
+    pub(crate) fn compendium_sight(
         &self,
         frame: &RecognitionImage,
         request: &TransportRequest,
@@ -138,8 +138,41 @@ impl NativeSession {
             s.training = point(&tabs, "训练", [708, 140, 1636, 220]);
             if tab_count >= 4 && s.training.is_some() {
                 let selected = words(&r.read("Compendium.Selected", None)?)?;
-                let training = point(&selected, "训练", [708, 140, 1636, 220]).is_some()
+                let mut training = point(&selected, "训练", [708, 140, 1636, 220]).is_some()
                     && selected.len() == 1;
+                if !training {
+                    // 黄底掩码可能破坏黑字。原色完整文字定位后，复核同位置黄底，
+                    // 不降低 OCR 阈值，也不把过滤失败当作未选中或借用邻页签的颜色。
+                    let labels: Vec<_> = tabs.iter().filter(|w| w.text == "训练").collect();
+                    if labels.len() == 1 {
+                        let [x, y, w, h] = labels[0].rect;
+                        if x >= 708
+                            && y >= 140
+                            && w > 0
+                            && h > 0
+                            && x.checked_add(w).is_some_and(|r| r <= 1636)
+                            && y.checked_add(h).is_some_and(|b| b <= 220)
+                        {
+                            let left = (x - 12).max(708);
+                            let top = (y - 10).max(140);
+                            let width = (x + w + 12).min(1636) - left;
+                            let height = (y + h + 10).min(220) - top;
+                            let mut params = r.pipeline["Compendium.TabColor"].clone();
+                            params
+                                .as_object_mut()
+                                .context("训练颜色节点无效")?
+                                .remove("recognition");
+                            params["roi"] = json!([left, top, width, height]);
+                            params["count"] = json!((width * height / 5).max(1));
+                            training = self
+                                .recognize_prepared(frame, "ColorMatch", &params)?
+                                .detail["hit"]
+                                == true;
+                            ensure!(!cancel.load(Ordering::Acquire), "快捷手册识别已取消");
+                            ensure!(started.elapsed() < timeout, "快捷手册识别超时");
+                        }
+                    }
+                }
                 s.category = point(
                     &words(&r.read("Compendium.Area.Categories", None)?)?,
                     "实战模拟室",
@@ -388,16 +421,17 @@ pub fn validate_compendium_bundle(root: &Path) -> Result<PathBuf> {
         "快捷手册传送清单过大"
     );
     let manifest: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+    let sources = match manifest["schema_version"].as_u64() {
+        Some(1) => include_str!("../../../resources/compendium/source-lock-v1.json"),
+        Some(2) => include_str!("../../../resources/compendium/source-lock.json"),
+        _ => anyhow::bail!("快捷手册传送资源版本不兼容"),
+    };
     ensure!(
-        manifest["schema_version"] == 1
-            && manifest["sdk_version"] == crate::SDK_VERSION
+        manifest["sdk_version"] == crate::SDK_VERSION
             && manifest["base_size"] == json!([1920, 1080])
             && manifest["accepted"] == false
             && manifest["capabilities"] == json!(["compendium"])
-            && manifest["sources"]
-                == serde_json::from_str::<Value>(include_str!(
-                    "../../../resources/compendium/source-lock.json"
-                ))?,
+            && manifest["sources"] == serde_json::from_str::<Value>(sources)?,
         "快捷手册传送资源版本或来源不兼容"
     );
     let lock: Value = serde_json::from_str(include_str!("../../../models.lock.json"))?;

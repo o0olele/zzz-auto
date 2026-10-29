@@ -21,7 +21,7 @@ export function TeamSettings({ settings = teamDefaultConfig, disabled, onSave }:
     teams: current.teams.map((entry, index) => index === selected ? { ...entry, ...change } : entry),
   }));
   const timeout = draft.check_timeout_ms ?? 300000;
-  const valid = Number.isSafeInteger(timeout) && timeout >= 1000 && timeout <= 900000 && draft.teams.length === 20 && new Set(draft.teams.map(entry => entry.name)).size === 20
+  const valid = Number.isSafeInteger(timeout) && timeout >= 1000 && timeout <= 900000 && draft.teams.length === 20
     && draft.teams.every(entry => entry.name.length > 0 && [...entry.name].length <= 80
       && entry.name.trim() === entry.name && !/[\u0000-\u001f\u007f-\u009f]/u.test(entry.name)
       && entry.auto_battle.length > 0 && new TextEncoder().encode(entry.auto_battle).length <= 240
@@ -32,7 +32,7 @@ export function TeamSettings({ settings = teamDefaultConfig, disabled, onSave }:
   const changed = JSON.stringify(draft) !== JSON.stringify(settings);
   return <Card aria-label="账号预备编队设置">
     <div className="card-title"><h2>预备编队</h2><Badge appearance="outline">按账号保存</Badge></div>
-    <p>20 个槽位与游戏中的编队顺序对应。名称须与游戏一致；每队保存战斗脚本和三名成员，未知成员可暂留空位。</p>
+    <p>20 个槽位与游戏中的编队顺序对应。每个槽位保存名称、战斗脚本和三名成员，未知成员可暂留空位。</p>
     <Field label="编队检查总超时（ms）"><Input type="number" min={1000} max={900000} value={String(timeout)} disabled={disabled}
       onChange={(_, data) => setDraft(current => ({ ...current, check_timeout_ms: data.value === '' ? 0 : Number(data.value) }))}/></Field>
     <Field label="编辑编队槽位"><Select value={String(selected)} disabled={disabled} onChange={(_, data) => setSelected(Number(data.value))}>
@@ -45,7 +45,7 @@ export function TeamSettings({ settings = teamDefaultConfig, disabled, onSave }:
         const ids = [...team.agent_ids] as [string, string, string]; ids[slot] = data.value; update({ agent_ids: ids });
       }}><option value="unknown">未知 / 空位</option>{agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</Select>
     </Field>)}
-    {!valid && <p role="alert">检查超时须为 1000 至 900000 ms 的整数；请使用唯一的有效队名、有效脚本名称，并避免同队重复代理人。</p>}
+    {!valid && <p role="alert">检查超时须为 1000 至 900000 ms 的整数；请使用有效队名和脚本名称，并避免同队重复代理人。</p>}
     <Button disabled={disabled || !valid || !changed} onClick={() => onSave(draft)}>保存预备编队</Button>
     <TeamSummary settings={draft}/>
   </Card>;
@@ -58,6 +58,6 @@ export function TeamCheckStatus({ progress }: { progress: TeamCheckProgress }) {
     {progress.pages_read === 0 && progress.opened && <p>正在将列表滚回顶部：{progress.top_scrolls} / 4</p>}
     {progress.conflicted.length > 0 && <p>结果冲突，保留原成员：{names(progress.conflicted)}</p>}
     {progress.unreadable.length > 0 && <p>未能识别，保留原成员：{names(progress.unreadable)}</p>}
-    <ul>{progress.members.map(member => <li key={member.index}>{member.name}：{member.agent_ids.map(agentName).join(' / ')}</li>)}</ul>
+    <ul>{progress.members.map(member => <li key={member.index}>{member.index + 1} · {member.observed_name ?? member.name}：{member.agent_ids.map(agentName).join(' / ')}</li>)}</ul>
   </section>;
 }

@@ -12,6 +12,105 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// 生成模拟室培养详情选关资源。
+    AgentMissionBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/agent-mission")]
+        output: PathBuf,
+    },
+    /// 生成代理人结算达成的独立只读资源。
+    AgentGoalBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/agent-goal")]
+        output: PathBuf,
+    },
+    /// 生成四种训练分类的代理人培养传送资源。
+    AgentTransportBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/agent-transport")]
+        output: PathBuf,
+    },
+    /// 生成深度追猎指定等级的独立只读识别资源。
+    ChargeLevelBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/charge-level")]
+        output: PathBuf,
+    },
+    /// 生成深度追猎目标、奖励状态、模式与结算资源。
+    DeepHuntBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/deep-hunt")]
+        output: PathBuf,
+    },
+    /// 生成专业挑战燃竭、电量与单次结算资源。
+    ExpertChallengeBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/expert-challenge")]
+        output: PathBuf,
+    },
+    /// 生成区域巡防单次挑战的详情和结算资源。
+    AreaPatrolBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/area-patrol")]
+        output: PathBuf,
+    },
+    /// 生成区域巡防、专业挑战与恶名狩猎的传送资源。
+    ChargeTransportBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/charge-transport")]
+        output: PathBuf,
+    },
+    /// 生成已知体力页面之间的导航资源，保留实机验收。
+    ChargeNavigationBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/charge-navigation")]
+        output: PathBuf,
+    },
+    /// 生成快捷手册到电池合成页的导航资源。
+    EtherSynthesisEntryBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/ether-synthesis-entry")]
+        output: PathBuf,
+    },
+    /// 生成单次以太电池合成资源；不开放完整体力执行。
+    EtherSynthesisBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/ether-synthesis")]
+        output: PathBuf,
+    },
     WorldPatrolCatalog {
         #[arg(long)]
         reference: PathBuf,
@@ -88,6 +187,11 @@ enum Tool {
         models: PathBuf,
         #[arg(long, default_value = "resources/generated/combat")]
         output: PathBuf,
+    },
+    /// 只读核对日常资源的全部文字来源，包含已经登记的兼容版本。
+    BasicDailySources {
+        #[arg(long)]
+        reference: PathBuf,
     },
     /// 生成当前日常及情报板共用资源，实机验收单独记录。
     BasicDailyBundle {
@@ -214,6 +318,149 @@ fn main() -> Result<()> {
             );
             Ok(())
         }
+        Tool::EtherSynthesisEntryBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::ether_synthesis_entry::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::ChargeNavigationBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::charge_navigation::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::ChargeTransportBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::charge_transport::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::AreaPatrolBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::area_patrol::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::AgentTransportBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::agent_transport::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::AgentGoalBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::agent_goal::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::AgentMissionBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::agent_mission::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::ChargeLevelBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::charge_level::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::DeepHuntBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::deep_hunt::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::ExpertChallengeBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::expert_challenge::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
+        Tool::EtherSynthesisBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::ether_synthesis::build_bundle(
+                    &reference, &models, &output
+                )?)?
+            );
+            Ok(())
+        }
         Tool::SimulationDeployBundle {
             reference,
             models,
@@ -299,6 +546,13 @@ fn main() -> Result<()> {
         } => {
             let manifest = od_tools::restore_charge::build_bundle(&reference, &models, &output)?;
             println!("{}", serde_json::to_string_pretty(&manifest)?);
+            Ok(())
+        }
+        Tool::BasicDailySources { reference } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&od_tools::basic_daily::source_audit(&reference)?)?
+            );
             Ok(())
         }
         Tool::BasicDailyBundle {
@@ -467,6 +721,10 @@ fn main() -> Result<()> {
                     serde_json::to_string(od_core::charge_plan::catalog())?
                 ),
                 format!(
+                    "const chargePlanAliases = {} as const;",
+                    serde_json::to_string(&od_core::charge_plan::MISSION_TYPE_ALIASES)?
+                ),
+                format!(
                     "const chargePlanLevels = {} as const;",
                     serde_json::to_string(&od_core::charge_plan::LEVELS)?
                 ),
@@ -493,6 +751,8 @@ fn main() -> Result<()> {
                 od_core::intel_board_flow::IntelFlow::decl(),
                 od_core::intel_board_flow::IntelOutcome::decl(),
                 od_core::team_selection::TeamSelection::decl(),
+                od_core::team_selection_slots::SlotIdentity::decl(),
+                od_core::team_selection_slots::SlotToggle::decl(),
                 od_core::team_selection::SelectionPhase::decl(),
                 od_core::team_selection::SelectionAction::decl(),
                 od_core::challenge_move::ChallengeMove::decl(),
@@ -523,6 +783,8 @@ fn main() -> Result<()> {
                 od_core::game_launch::GameLaunchSettings::decl(),
                 od_core::game_launch::GameLaunchResult::decl(),
                 od_core::config::AccountConfig::decl(),
+                od_core::config::ChargeCommit::decl(),
+                od_core::charge_run::ChargeRunContext::decl(),
                 od_core::config::ConfigBackup::decl(),
                 od_core::config::ConfigBackups::decl(),
                 od_core::config::ConfigBackupPreview::decl(),
@@ -604,6 +866,9 @@ fn main() -> Result<()> {
                 od_core::PipelineProbeResult::decl(),
                 od_core::InputPipelineResult::decl(),
                 od_core::RunRecord::decl(),
+                od_core::charge_application::ChargeAppOutcome::decl(),
+                od_core::charge_application::ChargeAppSummary::decl(),
+                od_core::charge_application::ChargeAppProgress::decl(),
                 od_core::RunEvent::decl(),
                 od_core::run_logs::LogRun::decl(),
                 od_core::run_logs::LogSession::decl(),

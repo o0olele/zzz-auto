@@ -1,0 +1,72 @@
+[
+  {
+    "path": "src/zzz_od/operation/compendium/tp_by_compendium.py",
+    "sha256": "8b5f7de5cae63875213d3e8d405e3349b914c1601e883345f6c65a2cc605a264",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/compendium_choose_category.py",
+    "sha256": "9b47e1881e78ce7a9e0841b6c18166da5b0060f370451d16cca0a8d7f6e895a2",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/compendium_choose_mission_type.py",
+    "sha256": "9f4ad56184de3744a1296c53b77520ed322bc6a9c40b61d42a7fd20465e23e02",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/area_patrol.py",
+    "sha256": "7a610d39433931164ff00989ee65449ac5dbd154a44cb259db38dd3db6e2843b",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/expert_challenge.py",
+    "sha256": "f3ab161bcda5cba73e39e75eea93da09d0646af30a287870c088bd8ab3fb961e",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/notorious_hunt.py",
+    "sha256": "8eef6f49a08e39ae5d6fdf2a7b0aa3ee9c58d4c777e71055555012709c839a57",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/compendium_data.yml",
+    "sha256": "33a28eb3ffc3b49fc19083a1fbf66873bc88c6ff8aafcc886e3d1fad321096cc",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/compendium.yml",
+    "sha256": "4653ff15c14ba24e6b6ee9556c809699fd0174fc99f39a8745f4df6e04cf4286",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/combat_simulation.yml",
+    "sha256": "b5739b698c3034f9c4d754a415317693236aa356eb8bba3c0d3aa83f7f61a611",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/area_patrol.yml",
+    "sha256": "0d109ac28f306aaa45e0e7efb7c4f167e2b95fbd045894a6f7a6a61f7223eaeb",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/expert_challenge.yml",
+    "sha256": "cc35ea8d69acb0ec5de58e90e9bae6df8372586a316c1a648659f6c853140c03",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/notorious_hunt.yml",
+    "sha256": "e5637fbabef32e6322e54bac5428a8befcc5e8db70a3ce98443489bc4b808444",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/game/screens/快捷手册.md",
+    "sha256": "3c9a22676fc7bbd724c05c91d9e38e0419af0fbcae37d3edd36f2cd222cc8936",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/game/screens/实战模拟室.md",
+    "sha256": "f077ede1105202fcc0f07d4f390ec1a9b6418e94f1b73368ff5caed5f1e77553",
+    "encoding": "utf8-lf"
+  }
+]

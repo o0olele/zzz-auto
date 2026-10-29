@@ -155,6 +155,7 @@ enum Work {
     Map(MapWork),
     Coffee(CoffeeWork),
     PipelineControl(Uuid, bool),
+    RetryChargeSave(Uuid),
     Attach(
         String,
         CaptureMethod,
@@ -238,6 +239,7 @@ enum InputOutcome {
 
 #[derive(Clone)]
 pub struct Engine {
+    execution_root: Arc<PathBuf>,
     combat_root: Arc<PathBuf>,
     combat_data: Arc<PathBuf>,
     game_launcher: Arc<Mutex<Box<dyn od_platform::game_launch::GameLauncher>>>,
@@ -305,6 +307,20 @@ impl Engine {
     ) -> anyhow::Result<Self> {
         Self::for_mail_fixture(paths, callback)
     }
+    /// 独立测试仓通过公开试运行命令验证体力入口；只创建自定义控制器。
+    pub fn for_charge_fixture(
+        paths: EnginePaths,
+        callback: impl maa_adapter::CustomControllerCallback + 'static,
+    ) -> anyhow::Result<Self> {
+        let resources = paths.resources.join("generated/compendium");
+        Self::with_factory(
+            paths,
+            Some(Box::new(move || {
+                NativeSession::for_custom_controller(callback, &resources, InputMode::Foreground)
+            })),
+            true,
+        )
+    }
 
     pub fn for_combat_fixture(
         paths: EnginePaths,
@@ -364,6 +380,7 @@ impl Engine {
             None
         };
         config.read_for_startup()?;
+        let charge_recovery = config.recover_charge_runs()?;
         let history = RunStore::new(&paths.data)?;
         std::fs::create_dir_all(paths.data.join("runs"))?;
         let state = Arc::new(Mutex::new(State {
@@ -396,9 +413,16 @@ impl Engine {
                 format!("使用显式运行资源目录：{}", paths.resources.display()),
             );
         }
+        if charge_recovery.recovered > 0 || charge_recovery.stale > 0 {
+            state.lock().expect("运行状态锁失效").event(None, "info", format!(
+                "体力运行历史检查：补交 {} 个运行的已确认次数；{} 个旧配置分支仅保留历史，不重放游戏输入。",
+                charge_recovery.recovered, charge_recovery.stale,
+            ));
+        }
         let (sender, receiver) = mpsc::sync_channel(8);
         let combat_root = Arc::new(paths.resources.join("generated/combat"));
         let combat_data = Arc::new(paths.data.clone());
+        let execution_root = Arc::new(paths.resources.clone());
         let worker_state = state.clone();
         let worker_owner = config_owner.clone();
         std::thread::Builder::new()
@@ -408,6 +432,7 @@ impl Engine {
                 worker(paths, worker_state, receiver, factory, resource_id);
             })?;
         Ok(Self {
+            execution_root,
             combat_root,
             combat_data,
             game_launcher: Arc::new(Mutex::new(Box::new(
@@ -546,6 +571,26 @@ impl Engine {
                         "info",
                         "运行记录已重新保存，未执行游戏动作".into(),
                     );
+                }
+                if let Some(id) = state
+                    .slot
+                    .current()
+                    .filter(|r| {
+                        r.charge.as_ref().is_some_and(|p| {
+                            p.outcome
+                                == Some(od_core::charge_application::ChargeAppOutcome::AwaitingSave)
+                        })
+                    })
+                    .map(|r| r.id)
+                {
+                    if state.native_pending {
+                        return Err(ApiError::new("busy", "体力结果正在补交"));
+                    }
+                    self.sender
+                        .try_send(Work::RetryChargeSave(id))
+                        .map_err(|_| ApiError::new("worker_unavailable", "无法补交体力结果"))?;
+                    state.native_pending = true;
+                    state.record_error = Some("正在补交原体力结果，不执行游戏动作".into());
                 }
                 Ok(Payload::Snapshot(Box::new(state.snapshot())))
             }
@@ -772,6 +817,7 @@ impl Engine {
                                 || run.map.is_some()
                                 || run.coffee.is_some()
                                 || run.combat.is_some()
+                                || run.charge.is_some()
                                 || !run.daily.is_empty())
                     })
                     .ok_or_else(|| {
@@ -1008,6 +1054,7 @@ impl Engine {
             .app_combat
             .as_ref()
             .or(plan.world_patrol_combat.as_ref())
+            .or(plan.charge_combat.as_ref())
             .map(|p| &p.script_revision)
             != combat_revision.as_ref()
         {
@@ -1036,7 +1083,7 @@ impl Engine {
                 item.enabled
                     && matches!(
                         item.app_id.as_str(),
-                        "redemption_code" | "intel_board" | "world_patrol"
+                        "redemption_code" | "intel_board" | "world_patrol" | "charge_plan"
                     )
             })
         {
@@ -1052,6 +1099,13 @@ impl Engine {
             let mut plan = selection
                 .plan(&config, instance_id, &group_id, now, Some(&completed))
                 .map_err(|error| ApiError::new("invalid_group", error))?;
+            if plan.items.iter().any(|i| {
+                i.app_id == "charge_plan" && i.decision == od_core::run_plan::PlanDecision::Run
+            }) {
+                plan.charge_combat =
+                    crate::charge_entry::combat_preview(&config, &plan, &combat_root, &combat_data)
+                        .map_err(native_error)?;
+            }
             if plan
                 .items
                 .iter()
@@ -1750,9 +1804,11 @@ impl Engine {
                 return Err(ApiError::new("history_error", "请先重试保存运行记录"));
             }
             if state.slot.current().is_some_and(|run| {
-                run.combat
-                    .as_ref()
-                    .is_some_and(|value| !value.inputs_released)
+                run.charge.as_ref().is_some_and(|p| !p.inputs_released)
+                    || run
+                        .combat
+                        .as_ref()
+                        .is_some_and(|value| !value.inputs_released)
                     || !run.daily.iter().all(|value| value.inputs_released)
                     || run
                         .mail
@@ -2047,13 +2103,29 @@ fn worker(
     let mut paused_map: Option<MapWork> = None;
     let mut paused_coffee: Option<CoffeeWork> = None;
     let mut paused_group: Option<Box<GroupWork>> = None;
+    // 原生句柄只存在于此线程；GroupWork 投递消息只携带冻结数据。
+    let mut charge_worker: Option<crate::charge_worker::ChargeWorker> = None;
     let mut paused_combat: Option<Box<CombatWork>> = None;
     for command in receiver {
         match command {
             Work::Combat(work) => {
                 paused_combat = run_combat_work(work, &paths, &state, &mut native)
             }
-            Work::Group(work) => paused_group = run_group_work(work, &paths, &state, &mut native),
+            Work::Group(work) => {
+                paused_group = run_group_work(work, &paths, &state, &mut native, &mut charge_worker)
+            }
+            Work::RetryChargeSave(id) => {
+                if paused_group.as_ref().is_some_and(|work| work.id() == id) {
+                    let mut work = paused_group.take().expect("已有待补交的应用组");
+                    if work.retry_charge_save() {
+                        paused_group =
+                            run_group_work(work, &paths, &state, &mut native, &mut charge_worker);
+                    } else {
+                        paused_group = Some(work);
+                    }
+                }
+                state.lock().expect("运行状态锁失效").native_pending = false;
+            }
             Work::Mail(work) => {
                 paused_mail = run_mail_work(work, &paths, &state, &mut native);
             }
@@ -2078,8 +2150,9 @@ fn worker(
                 }
                 if paused_group.as_ref().is_some_and(|work| work.id() == id) {
                     let mut work = paused_group.take().expect("已有暂停应用组");
-                    work.control(resume);
-                    paused_group = run_group_work(work, &paths, &state, &mut native);
+                    work.control(resume, &mut charge_worker);
+                    paused_group =
+                        run_group_work(work, &paths, &state, &mut native, &mut charge_worker);
                 }
                 if paused_coffee.as_ref().is_some_and(|work| work.run.id == id) {
                     let mut work = paused_coffee.take().expect("已有暂停咖啡任务");
@@ -2425,8 +2498,8 @@ fn worker(
                     let _ = run_combat_work(work, &paths, &state, &mut native);
                 }
                 if let Some(mut work) = paused_group.take() {
-                    work.control(false);
-                    let _ = run_group_work(work, &paths, &state, &mut native);
+                    work.control(false, &mut charge_worker);
+                    let _ = run_group_work(work, &paths, &state, &mut native, &mut charge_worker);
                 }
                 if let Some(work) = paused_coffee.take() {
                     work.run.control().stop();
@@ -2447,8 +2520,8 @@ fn worker(
         }
     }
     if let Some(mut work) = paused_group.take() {
-        work.control(false);
-        let _ = run_group_work(work, &paths, &state, &mut native);
+        work.control(false, &mut charge_worker);
+        let _ = run_group_work(work, &paths, &state, &mut native, &mut charge_worker);
     }
     if let Some(work) = paused_combat.take() {
         work.run.control().stop();

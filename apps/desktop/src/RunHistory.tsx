@@ -10,7 +10,7 @@ import { errorMessage, request } from './bridge';
 
 const emptyQuery = (): HistoryQuery => ({ group_id: null, app_id: null, game_day: null, outcome: null, before: null });
 const outcomes = { active: '运行中', succeeded: '完成', failed: '失败', timed_out: '超时', stopped: '已停止', interrupted: '异常中断' };
-const stepNames = { pending: '等待执行', running: '执行中', skipped: '已跳过', succeeded: '执行完成', failed: '执行失败', stopped: '执行停止' };
+const stepNames = { ended: '已结束（未完成）', pending: '等待执行', running: '执行中', skipped: '已跳过', succeeded: '执行完成', failed: '执行失败', stopped: '执行停止' };
 const appName = (id: string) => trialAppOptions.find(app => app.id === id)?.label ?? id;
 
 function outcome(item: HistoryItem) {

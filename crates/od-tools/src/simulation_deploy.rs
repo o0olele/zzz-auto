@@ -58,7 +58,7 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
             files.insert(destination.clone(), bytes);
         }
     }
-    let manifest = json!({"schema_version":1,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"accepted":false,
+    let manifest = json!({"schema_version":2,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"accepted":false,
         "capabilities":["simulation_deploy"],"sources":sources,
         "files":files.iter().map(|(name, bytes)| json!({"path":name,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>(),
         "limitations":["仅提供出战与战斗进入，不单独开放体力执行","关卡选中证明仍无生产者，不能采用现有未验证回执","队员数量少缺少独立弹窗标识，暂不自动确认","真实出战、前移及战斗交接待实机验收"]});

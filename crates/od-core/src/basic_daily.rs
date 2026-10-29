@@ -582,6 +582,41 @@ pub use definition::pipeline as legacy_pipeline;
 pub fn current_pipeline() -> serde_json::Value {
     super::intel_board::pipeline()
 }
+/// schema 8 只增加新头像节点，旧版各节点保持原义。
+pub fn pipeline_for_schema(schema: u64) -> serde_json::Value {
+    let mut pipeline = current_pipeline();
+    if schema >= 8 {
+        for (name, node) in crate::random_play::pipeline_for_schema(schema)
+            .as_object()
+            .expect("固定节点对象")
+        {
+            pipeline
+                .as_object_mut()
+                .expect("固定节点对象")
+                .entry(name)
+                .or_insert_with(|| node.clone());
+        }
+    }
+    if schema >= 9 {
+        let down = pipeline["Teams.Drag"]
+            .as_object_mut()
+            .expect("固定编队翻页节点");
+        for key in ["begin", "end", "duration"] {
+            down.remove(key);
+        }
+        down.extend(serde_json::json!({"action":"TouchDown","contact":0,"target":[960,715],"auto_up":true,"pre_delay":0,"post_delay":600,"next":["Teams.DragMove0"]}).as_object().expect("固定触点").clone());
+        for step in 0..=10 {
+            pipeline[format!("Teams.DragMove{step}")] = serde_json::json!({
+                "recognition":"DirectHit","action":"TouchMove","contact":0,
+                "target":[960,715-565*step/10],"pre_delay":0,"post_delay":if step==10 {1000} else {10},
+                "rate_limit":0,"timeout":10_000,"on_error":[],
+                "next":[if step==10 {"Teams.DragUp".into()} else {format!("Teams.DragMove{}",step+1)}]
+            });
+        }
+        pipeline["Teams.DragUp"] = serde_json::json!({"recognition":"DirectHit","action":"TouchUp","contact":0,"pre_delay":0,"post_delay":1000,"rate_limit":0,"timeout":10_000,"on_error":[],"next":["Teams.WaitScrolled"]});
+    }
+    pipeline
+}
 
 pub fn templates() -> [(&'static str, &'static [u8]); 7] {
     [

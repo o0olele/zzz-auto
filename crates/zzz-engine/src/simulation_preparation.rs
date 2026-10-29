@@ -62,7 +62,17 @@ impl PreparationRun {
     }
     pub fn resume(&mut self) -> Result<()> {
         ensure!(
-            self.end == Some(PreparationEnd::Paused) && self.snapshot.inputs_released,
+            self.end == Some(PreparationEnd::Paused),
+            "模拟室准备尚未暂停"
+        );
+        self.resume_after_parent_pause()
+    }
+    pub(crate) fn resume_after_parent_pause(&mut self) -> Result<()> {
+        ensure!(
+            matches!(
+                self.end,
+                Some(PreparationEnd::Paused | PreparationEnd::Completed)
+            ) && self.snapshot.inputs_released,
             "模拟室准备尚未安全暂停"
         );
         let mut flow = self.snapshot.flow.clone();

@@ -27,6 +27,7 @@ use std::{
 };
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub enum BattleTarget {
     Game {
         window: WindowInfo,
@@ -70,7 +71,7 @@ pub struct BattleProof {
     pub charge_after: CardsCharge,
 }
 
-struct Resources {
+pub(crate) struct Resources {
     root: PathBuf,
     simulation: PathBuf,
     deployment: PathBuf,
@@ -79,7 +80,7 @@ struct Resources {
     manifests: Vec<(PathBuf, Vec<u8>)>,
 }
 impl Resources {
-    fn load(root: &Path, combat: &Path) -> Result<Self> {
+    pub(crate) fn load(root: &Path, combat: &Path) -> Result<Self> {
         od_core::config::reject_links(root)?;
         let root = root.canonicalize()?;
         let simulation = maa_adapter::simulation::validate_simulation_bundle(
@@ -110,7 +111,7 @@ impl Resources {
             manifests,
         })
     }
-    fn verify(&self) -> Result<()> {
+    pub(crate) fn verify(&self) -> Result<()> {
         for (path, hash) in &self.manifests {
             od_core::config::reject_links(path)?;
             ensure!(
@@ -208,20 +209,26 @@ impl SimulationBattleRun {
         self.control.requester()
     }
     pub fn proof(&self) -> Option<BattleProof> {
-        (self.end == Some(BattleEnd::Completed)
-            && self.snapshot.inputs_released
-            && self.control.requested().is_none())
-        .then(|| BattleProof {
-            run_id: self.snapshot.id,
-            mission: self.snapshot.deployment.flow.request().mission.clone(),
-            charge_after: self
-                .snapshot
-                .settlement
-                .as_ref()
-                .unwrap()
-                .flow
-                .charge()
-                .unwrap(),
+        if self.control.requested().is_some() {
+            return None;
+        }
+        self.proof_for_parent()
+    }
+    /// 父流程随后仍须保存结果并处理共享请求；读取本身不会发送输入。
+    pub(crate) fn proof_for_parent(&self) -> Option<BattleProof> {
+        (self.end == Some(BattleEnd::Completed) && self.snapshot.inputs_released).then(|| {
+            BattleProof {
+                run_id: self.snapshot.id,
+                mission: self.snapshot.deployment.flow.request().mission.clone(),
+                charge_after: self
+                    .snapshot
+                    .settlement
+                    .as_ref()
+                    .unwrap()
+                    .flow
+                    .charge()
+                    .unwrap(),
+            }
         })
     }
     fn interrupted(&self) -> Option<BattleEnd> {
@@ -231,8 +238,13 @@ impl SimulationBattleRun {
         })
     }
     pub fn resume(&mut self) -> Result<()> {
+        ensure!(self.end == Some(BattleEnd::Paused), "模拟室父流程尚未暂停");
+        self.resume_after_parent_pause()
+    }
+    pub(crate) fn resume_after_parent_pause(&mut self) -> Result<()> {
         ensure!(
-            self.end == Some(BattleEnd::Paused) && self.snapshot.inputs_released,
+            matches!(self.end, Some(BattleEnd::Paused | BattleEnd::Completed))
+                && self.snapshot.inputs_released,
             "模拟室父流程尚未安全暂停"
         );
         if !self.child_started {

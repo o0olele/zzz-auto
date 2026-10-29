@@ -1,0 +1,37 @@
+[
+  {
+    "path": "src/zzz_od/operation/exchange_ether_battery.py",
+    "sha256": "985e8ea1512bb3b71e455fb20645eb55dd7b483780817cbf0667e0abae64d1a8",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/compendium.yml",
+    "sha256": "4653ff15c14ba24e6b6ee9556c809699fd0174fc99f39a8745f4df6e04cf4286",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/template/compendium/battery/config.yml",
+    "sha256": "88ce8894e3649be7da8a21461532cec657fa9904d7cc193add664daf076ca1a4",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/template/compendium/battery/raw.png",
+    "sha256": "d61a0cd7ef3d721658becbfa80732108b037be342f468af710765c9688a6a94e",
+    "encoding": "binary"
+  },
+  {
+    "path": "assets/template/compendium/battery/mask.png",
+    "sha256": "786bbee170329fde20dbadf13d500b2c6504692c727c92e94fe189ed1ba67042",
+    "encoding": "binary"
+  },
+  {
+    "path": "docs/game/screens/道具处理.md",
+    "sha256": "67a74a4a52c1ebcd098530d111eaa94b4f5c8c2789fd02b9569b9a38a31c0fce",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/game/screens/快捷手册.md",
+    "sha256": "3c9a22676fc7bbd724c05c91d9e38e0419af0fbcae37d3edd36f2cd222cc8936",
+    "encoding": "utf8-lf"
+  }
+]

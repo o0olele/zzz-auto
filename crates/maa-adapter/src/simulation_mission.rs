@@ -299,16 +299,17 @@ pub fn validate_simulation_mission_bundle(root: &Path) -> Result<PathBuf> {
         "模拟室关卡选择清单过大"
     );
     let manifest: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+    let sources = match manifest["schema_version"].as_u64() {
+        Some(1) => include_str!("../../../resources/simulation-mission/source-lock-v1.json"),
+        Some(2) => include_str!("../../../resources/simulation-mission/source-lock.json"),
+        _ => anyhow::bail!("模拟室关卡资源版本不兼容"),
+    };
     ensure!(
-        manifest["schema_version"] == 1
-            && manifest["sdk_version"] == crate::SDK_VERSION
+        manifest["sdk_version"] == crate::SDK_VERSION
             && manifest["base_size"] == json!([1920, 1080])
             && manifest["accepted"] == false
             && manifest["capabilities"] == json!(["simulation_mission"])
-            && manifest["sources"]
-                == serde_json::from_str::<Value>(include_str!(
-                    "../../../resources/simulation-mission/source-lock.json"
-                ))?,
+            && manifest["sources"] == serde_json::from_str::<Value>(sources)?,
         "模拟室关卡选择资源版本或来源不兼容"
     );
     let lock: Value = serde_json::from_str(include_str!("../../../models.lock.json"))?;

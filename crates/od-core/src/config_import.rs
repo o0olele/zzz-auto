@@ -773,7 +773,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v19\0");
+    hash.update(b"zzz-auto-config-import-v20\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());
@@ -808,6 +808,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let preview_id = hex::encode(hash.finalize());
     let config = AccountConfig {
+        charge_commits: Vec::new(),
         redemption,
         reserved_instance_ids: Vec::new(),
         schema: CONFIG_SCHEMA,

@@ -1,6 +1,6 @@
 // 固定参考头像与地图按钮；来源及更新规则见 random-play-source-lock.json。
 pub type SourceImage = (&'static str, &'static [u8], &'static [u8]);
-pub fn source_images() -> [SourceImage; 85] {
+pub fn source_images() -> [SourceImage; 88] {
     [
         (
             "map",
@@ -516,6 +516,29 @@ pub fn source_images() -> [SourceImage; 85] {
             "avatar_zhu_yuan",
             include_bytes!("../../../resources/source/random-play/avatar_zhu_yuan-raw.png"),
             include_bytes!("../../../resources/source/random-play/avatar_zhu_yuan-mask.png"),
+        ),
+        (
+            "avatar_phoenix",
+            include_bytes!("../../../resources/source/random-play/avatar_phoenix-raw.png"),
+            include_bytes!("../../../resources/source/random-play/avatar_phoenix-mask.png"),
+        ),
+        (
+            "avatar_phoenix_daydream_complex",
+            include_bytes!(
+                "../../../resources/source/random-play/avatar_phoenix_daydream_complex-raw.png"
+            ),
+            include_bytes!(
+                "../../../resources/source/random-play/avatar_phoenix_daydream_complex-mask.png"
+            ),
+        ),
+        (
+            "avatar_phoenix_the_illness_called_life",
+            include_bytes!(
+                "../../../resources/source/random-play/avatar_phoenix_the_illness_called_life-raw.png"
+            ),
+            include_bytes!(
+                "../../../resources/source/random-play/avatar_phoenix_the_illness_called_life-mask.png"
+            ),
         ),
     ]
 }

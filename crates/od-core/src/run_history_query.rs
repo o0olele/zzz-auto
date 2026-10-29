@@ -113,6 +113,9 @@ impl HistoryItem {
                 .coffee
                 .as_ref()
                 .is_some_and(|p| p.state == crate::coffee_run::CoffeeState::TimedOut)
+            || self.record.charge.as_ref().is_some_and(|p| {
+                p.outcome == Some(crate::charge_application::ChargeAppOutcome::TimedOut)
+            })
         {
             return HistoryOutcome::TimedOut;
         }

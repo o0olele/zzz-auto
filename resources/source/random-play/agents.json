@@ -442,5 +442,14 @@
     "templates": [
       "roxy"
     ]
+  },
+  {
+    "id": "phoenix",
+    "name": "菲欧妮",
+    "templates": [
+      "phoenix",
+      "phoenix_daydream_complex",
+      "phoenix_the_illness_called_life"
+    ]
   }
 ]

@@ -6,6 +6,15 @@ use std::{collections::BTreeSet, sync::OnceLock};
 use ts_rs::TS;
 
 pub const MAX_PLANS: usize = 64;
+// 仅在执行与展示时解析；保存值参与历史前缀指纹，不能在反序列化时改写。
+pub const MISSION_TYPE_ALIASES: [(&str, &str, &str); 1] =
+    [("区域巡防", "迅雷与裂爪", "迅脊与裂爪")];
+pub fn execution_mission_type<'a>(category: &str, name: &'a str) -> &'a str {
+    MISSION_TYPE_ALIASES
+        .iter()
+        .find(|(c, old, _)| *c == category && *old == name)
+        .map_or(name, |(_, _, current)| *current)
+}
 pub const LEVELS: [&str; 6] = [
     "默认等级",
     "等级Lv.65",
@@ -100,6 +109,9 @@ impl Default for ChargePlanItem {
     }
 }
 impl ChargePlanItem {
+    pub fn execution_mission_type(&self) -> &str {
+        execution_mission_type(&self.category_name, &self.mission_type_name)
+    }
     pub fn validate(&self) -> Result<(), &'static str> {
         if uuid::Uuid::parse_str(&self.plan_id).is_err()
             || self.tab_name != "训练"
@@ -131,7 +143,7 @@ impl ChargePlanItem {
             let mission = category
                 .mission_type_list
                 .iter()
-                .find(|m| m.mission_type_name == self.mission_type_name)
+                .find(|m| m.mission_type_name == self.execution_mission_type())
                 .ok_or("体力计划副本类型不在所属分类中")?;
             if mission.mission_list.is_empty() {
                 if self.mission_name.is_some() {

@@ -63,7 +63,7 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
             files.insert(destination.clone(), bytes);
         }
     }
-    let manifest = json!({"schema_version":1,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"accepted":false,
+    let manifest = json!({"schema_version":2,"sdk_version":lock.sdk_version,"base_size":[1920,1080],"accepted":false,
         "capabilities":["compendium"],"sources":sources,
         "files":files.iter().map(|(name, bytes)| json!({"path":name,"bytes":bytes.len(),"sha256":hex::encode(Sha256::digest(bytes))})).collect::<Vec<_>>(),
         "limitations":["仅提供模拟室快捷手册传送，不单独开放体力执行","真实传送和异常收尾待实机验收"]});

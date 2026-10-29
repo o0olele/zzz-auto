@@ -10,7 +10,11 @@ use uuid::Uuid;
 
 #[path = "config_backups.rs"]
 mod backups;
+#[path = "charge_history.rs"]
+mod charge_history;
 pub use backups::{ConfigBackup, ConfigBackupPreview, ConfigBackups};
+pub(crate) use charge_history::read_checkpoint as read_charge_checkpoint;
+pub use charge_history::{ChargeCommit, ChargeCommitResult, ChargeRecovery};
 #[path = "config_recovery.rs"]
 mod recovery;
 pub use recovery::{
@@ -149,6 +153,9 @@ pub struct AccountInstance {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AccountConfig {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<ChargeCommit>>", optional)]
+    pub charge_commits: Vec<ChargeCommit>,
     #[serde(default)]
     #[ts(as = "Option<crate::redemption::RedemptionConfig>", optional)]
     pub redemption: crate::redemption::RedemptionConfig,
@@ -343,6 +350,7 @@ pub fn default_group() -> AppGroup {
 impl Default for AccountConfig {
     fn default() -> Self {
         Self {
+            charge_commits: Vec::new(),
             schema: CONFIG_SCHEMA,
             redemption: Default::default(),
             revision: 0,
@@ -371,6 +379,7 @@ impl AccountConfig {
         if self.schema != CONFIG_SCHEMA {
             return Err(invalid("账号配置版本不支持"));
         }
+        charge_history::validate_commits(&self.charge_commits, self.revision)?;
         self.general.validate()?;
         self.redemption.validate().map_err(invalid)?;
         for instance in &self.instances {
@@ -526,10 +535,20 @@ impl AccountConfig {
             }
             ConfigChange::SaveTeams {
                 instance_id,
-                settings,
+                mut settings,
             } => {
+                let instance = self.instance_mut(instance_id)?;
+                for (team, previous) in settings
+                    .teams
+                    .iter_mut()
+                    .zip(&instance.predefined_teams.teams)
+                {
+                    if team.name != previous.name {
+                        team.name = crate::predefined_teams::normalize_name(&team.name);
+                    }
+                }
                 settings.validate().map_err(invalid)?;
-                self.instance_mut(instance_id)?.predefined_teams = settings;
+                instance.predefined_teams = settings;
             }
             ConfigChange::SaveCombat {
                 instance_id,
@@ -886,7 +905,7 @@ pub fn reject_links(path: &Path) -> Result<(), ConfigError> {
 }
 
 impl ConfigStore {
-    pub(crate) fn data_directory(&self) -> &Path {
+    pub fn data_directory(&self) -> &Path {
         self.directory.parent().expect("配置目录位于数据目录内")
     }
 
@@ -1013,6 +1032,7 @@ impl ConfigStore {
             .revision
             .checked_add(1)
             .ok_or_else(|| invalid("配置修订号已用尽"))?;
+        config.validate()?;
         let path = self.directory.join("accounts.yml");
         reject_links(&path)?;
         let temporary = self

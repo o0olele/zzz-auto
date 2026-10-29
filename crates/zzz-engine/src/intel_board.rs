@@ -413,7 +413,7 @@ impl IntelRun {
                             &mut selection,
                             !options.fixture,
                             self.control.cancellation(),
-                            remaining.min(Duration::from_secs(120)),
+                            remaining.min(Duration::from_secs(300)),
                             |selection| {
                                 self.progress.intel_flow.as_mut().unwrap().selection =
                                     Some(selection);

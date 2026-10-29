@@ -1,6 +1,10 @@
 use super::*;
+#[path = "charge_group.rs"]
+mod charge_group;
+use charge_group::{ChargeWork, run_charge_work};
 
 enum GroupAppWork {
+    Charge(Box<ChargeWork>),
     Patrol(Box<PatrolWork>),
     Temple(Box<TempleWork>),
     Intel(Box<IntelWork>),
@@ -47,6 +51,7 @@ pub(super) struct GroupWork {
     current: Option<GroupAppWork>,
     intel: Option<crate::intel_board::PreparedIntel>,
     patrol: Option<crate::intel_board::PreparedIntel>,
+    charge: Option<crate::charge_entry::PreparedCharge>,
 }
 
 impl GroupWork {
@@ -64,6 +69,24 @@ impl GroupWork {
             .and_then(|g| g.current_index.map(|i| g.steps[i].app_id.as_str()))
             .ok_or_else(|| anyhow::anyhow!("缺少当前分项"))?;
         let (work, control) = match app {
+            "charge_plan" => {
+                let control = od_core::pipeline::PipelineControl::default();
+                let requester = control.requester();
+                (
+                    GroupAppWork::Charge(Box::new(ChargeWork::new(
+                        record.id,
+                        self.charge
+                            .take()
+                            .ok_or_else(|| anyhow::anyhow!("体力预检缺失"))?
+                            .after_team_scan(record)?,
+                        control,
+                        self.window.clone(),
+                        self.capture,
+                        self.fixture,
+                    ))),
+                    requester,
+                )
+            }
             "world_patrol" => {
                 let progress = record
                     .daily
@@ -199,8 +222,13 @@ impl GroupWork {
         Ok(control)
     }
 
-    pub(super) fn control(&mut self, resume: bool) {
+    pub(super) fn control(
+        &mut self,
+        resume: bool,
+        charge: &mut Option<crate::charge_worker::ChargeWorker>,
+    ) {
         match &mut self.current {
+            Some(GroupAppWork::Charge(work)) => work.control(resume, charge),
             Some(GroupAppWork::Patrol(work)) => {
                 if resume
                     && work.run.interrupt_requested() != Some(od_core::pipeline::Interrupt::Stop)
@@ -276,6 +304,14 @@ impl GroupWork {
             None => {}
         }
     }
+    pub(super) fn retry_charge_save(&mut self) -> bool {
+        if let Some(GroupAppWork::Charge(work)) = &mut self.current {
+            work.retry_save = true;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl Engine {
@@ -317,6 +353,29 @@ impl Engine {
         } else {
             None
         };
+        let charge = if plan.items.iter().any(|i| {
+            i.app_id == "charge_plan" && i.decision == od_core::run_plan::PlanDecision::Run
+        }) {
+            let target = if self.fixture {
+                crate::simulation_battle::BattleTarget::Fixture
+            } else {
+                crate::simulation_battle::BattleTarget::Game {
+                    window: window.clone(),
+                    capture: state.capture_method.unwrap_or_default(),
+                }
+            };
+            Some(
+                crate::charge_entry::PreparedCharge::load(
+                    &plan,
+                    &self.config,
+                    &self.execution_root,
+                    target,
+                )
+                .map_err(native_error)?,
+            )
+        } else {
+            None
+        };
         let record = state
             .slot
             .begin_group_plan(plan.mail_config, &plan)
@@ -331,6 +390,7 @@ impl Engine {
             current: None,
             intel,
             patrol,
+            charge,
         });
         let control = work.prepare(&record).map_err(native_error)?;
         if let Err(error) = self.history.save(&record) {
@@ -374,6 +434,12 @@ fn fail_current(state: &mut State, message: String) -> Option<RunRecord> {
         .current_index
         .map(|i| record.group.as_ref().unwrap().steps[i].app_id.as_str());
     let result = match app {
+        Some("charge_plan") => {
+            let mut p = (**record.charge.as_ref()?).clone();
+            p.state = RunState::Failed;
+            p.outcome = Some(od_core::charge_application::ChargeAppOutcome::Failed);
+            state.slot.update_charge(record.id, p, message)
+        }
         Some("email") => {
             let mut p = record.mail?;
             p.state = MailState::Failed;
@@ -402,6 +468,7 @@ pub(super) fn run_group_work(
     paths: &EnginePaths,
     shared: &Arc<Mutex<State>>,
     native: &mut Option<NativeSession>,
+    charge: &mut Option<crate::charge_worker::ChargeWorker>,
 ) -> Option<Box<GroupWork>> {
     if !work.checked {
         let preflight = (|| -> anyhow::Result<()> {
@@ -410,6 +477,14 @@ pub(super) fn run_group_work(
                     continue;
                 }
                 match item.app_id.as_str() {
+                    "charge_plan" => match &work.current {
+                        Some(GroupAppWork::Charge(c)) => c.verify()?,
+                        _ => work
+                            .charge
+                            .as_ref()
+                            .ok_or_else(|| anyhow::anyhow!("体力资源预检缺失"))?
+                            .verify()?,
+                    },
                     "world_patrol" => {
                         maa_adapter::world_patrol::validate_bundle(
                             &paths.resources.join("generated/world-patrol"),
@@ -459,6 +534,9 @@ pub(super) fn run_group_work(
     loop {
         if let Some(current) = work.current.take() {
             work.current = match current {
+                GroupAppWork::Charge(app) => {
+                    run_charge_work(app, paths, shared, native, charge).map(GroupAppWork::Charge)
+                }
                 GroupAppWork::Patrol(app) => {
                     run_patrol_work(app, paths, shared, native).map(GroupAppWork::Patrol)
                 }
@@ -917,10 +995,12 @@ fn run_daily_work(
                 .team_check
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("缺少编队扫描结果"))?;
+            let config_store = ConfigStore::new(&paths.data)?;
+            let expected_revision = charge_group::revision_after_charge(&record, &config_store)?;
             let revision = od_core::team_check::save_members(
-                &ConfigStore::new(&paths.data)?,
+                &config_store,
                 context.instance_id,
-                context.config_revision,
+                expected_revision,
                 scan,
             )?;
             work.run.finish_team_save(revision)?;

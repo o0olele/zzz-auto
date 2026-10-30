@@ -17,7 +17,7 @@
   },
   {
     "path": "src/zzz_od/operation/compendium/tp_by_compendium.py",
-    "sha256": "17369c12f8c7f3e8992766f448564e5ba281e313e3abe20d85254b167b730cb2"
+    "sha256": "8b5f7de5cae63875213d3e8d405e3349b914c1601e883345f6c65a2cc605a264"
   },
   {
     "path": "src/zzz_od/operation/compendium/compendium_choose_tab.py",
@@ -37,7 +37,7 @@
   },
   {
     "path": "assets/game_data/screen_info/compendium_training.yml",
-    "sha256": "fd3a5c9a43dd941211ffb04877b4032df124708701fe8ea3c1809385c71f11ef"
+    "sha256": "9c7d2aac843b35e59b55ffb46ceae0fa45a8aec0e72b3170627cfd82373f6660"
   },
   {
     "path": "assets/game_data/screen_info/normal_world.yml",
@@ -45,10 +45,10 @@
   },
   {
     "path": "docs/game/screens/快捷手册.md",
-    "sha256": "72285cc3866d01ab3dc58a721ac756bbac65cc558a3baae746bb71b1fb4c180f"
+    "sha256": "3c9a22676fc7bbd724c05c91d9e38e0419af0fbcae37d3edd36f2cd222cc8936"
   },
   {
     "path": "assets/game_data/compendium_data.yml",
-    "sha256": "c806b626b96f5d019dbfdbd4910a2315721523873c5087d7a005208392e0ea7e"
+    "sha256": "33a28eb3ffc3b49fc19083a1fbf66873bc88c6ff8aafcc886e3d1fad321096cc"
   }
 ]

@@ -1,7 +1,15 @@
 use super::*;
+#[path = "charge_group.rs"]
+mod charge_group;
+use charge_group::{ChargeWork, run_charge_work};
+#[path = "lost_void_group.rs"]
+mod lost_void_group;
+use lost_void_group::{LostVoidWork, run_lost_void_work};
 
 enum GroupAppWork {
     Exploration(Box<ExplorationWork>),
+    LostVoid(Box<LostVoidWork>),
+    Charge(Box<ChargeWork>),
     Patrol(Box<PatrolWork>),
     Temple(Box<TempleWork>),
     Intel(Box<IntelWork>),
@@ -45,6 +53,7 @@ struct DailyWork {
 }
 
 pub(super) struct GroupWork {
+    data: PathBuf,
     id: Uuid,
     plan: GroupPlan,
     window: WindowInfo,
@@ -55,6 +64,8 @@ pub(super) struct GroupWork {
     intel: Option<crate::intel_board::PreparedIntel>,
     patrol: Option<crate::intel_board::PreparedIntel>,
     exploration: Option<crate::intel_board::PreparedIntel>,
+    charge: Option<crate::charge_entry::PreparedCharge>,
+    lost_void: Option<crate::lost_void_run_plan::PreparedLostVoidApp>,
 }
 
 impl GroupWork {
@@ -96,6 +107,43 @@ impl GroupWork {
                         fixture: self.fixture,
                     })),
                     control,
+                )
+            }
+            "lost_void" => {
+                let control = od_core::pipeline::PipelineControl::default();
+                let requester = control.requester();
+                let run = self
+                    .lost_void
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("迷失之地预检缺失"))?
+                    .create(record, &self.data, control.clone())?;
+                (
+                    GroupAppWork::LostVoid(Box::new(LostVoidWork::new(
+                        run,
+                        control,
+                        self.window.clone(),
+                        self.capture,
+                        self.fixture,
+                    ))),
+                    requester,
+                )
+            }
+            "charge_plan" => {
+                let control = od_core::pipeline::PipelineControl::default();
+                let requester = control.requester();
+                (
+                    GroupAppWork::Charge(Box::new(ChargeWork::new(
+                        record.id,
+                        self.charge
+                            .take()
+                            .ok_or_else(|| anyhow::anyhow!("体力预检缺失"))?
+                            .after_team_scan(record)?,
+                        control,
+                        self.window.clone(),
+                        self.capture,
+                        self.fixture,
+                    ))),
+                    requester,
                 )
             }
             "world_patrol" => {
@@ -233,7 +281,11 @@ impl GroupWork {
         Ok(control)
     }
 
-    pub(super) fn control(&mut self, resume: bool) {
+    pub(super) fn control(
+        &mut self,
+        resume: bool,
+        charge: &mut Option<crate::charge_worker::ChargeWorker>,
+    ) {
         match &mut self.current {
             Some(GroupAppWork::Exploration(work)) => {
                 if resume
@@ -247,6 +299,8 @@ impl GroupWork {
                     work.run.control().stop();
                 }
             }
+            Some(GroupAppWork::LostVoid(work)) => work.control(resume),
+            Some(GroupAppWork::Charge(work)) => work.control(resume, charge),
             Some(GroupAppWork::Patrol(work)) => {
                 if resume
                     && work.run.interrupt_requested() != Some(od_core::pipeline::Interrupt::Stop)
@@ -322,6 +376,14 @@ impl GroupWork {
             None => {}
         }
     }
+    pub(super) fn retry_charge_save(&mut self) -> bool {
+        if let Some(GroupAppWork::Charge(work)) = &mut self.current {
+            work.retry_save = true;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl Engine {
@@ -331,6 +393,21 @@ impl Engine {
         plan: GroupPlan,
         window: WindowInfo,
     ) -> Result<Payload, ApiError> {
+        let lost_void =
+            if plan.items.iter().any(|i| {
+                i.app_id == "lost_void" && i.decision == od_core::run_plan::PlanDecision::Run
+            }) {
+                Some(
+                    crate::lost_void_run_plan::PreparedLostVoidApp::load(
+                        &plan,
+                        &self.execution_root,
+                        &self.combat_data,
+                    )
+                    .map_err(native_error)?,
+                )
+            } else {
+                None
+            };
         let intel = if plan.items.iter().any(|i| {
             i.app_id == "intel_board" && i.decision == od_core::run_plan::PlanDecision::Run
         }) {
@@ -379,6 +456,29 @@ impl Engine {
         } else {
             None
         };
+        let charge = if plan.items.iter().any(|i| {
+            i.app_id == "charge_plan" && i.decision == od_core::run_plan::PlanDecision::Run
+        }) {
+            let target = if self.fixture {
+                crate::simulation_battle::BattleTarget::Fixture
+            } else {
+                crate::simulation_battle::BattleTarget::Game {
+                    window: window.clone(),
+                    capture: state.capture_method.unwrap_or_default(),
+                }
+            };
+            Some(
+                crate::charge_entry::PreparedCharge::load(
+                    &plan,
+                    &self.config,
+                    &self.execution_root,
+                    target,
+                )
+                .map_err(native_error)?,
+            )
+        } else {
+            None
+        };
         let record = state
             .slot
             .begin_group_plan(plan.mail_config, &plan)
@@ -394,8 +494,24 @@ impl Engine {
             intel,
             patrol,
             exploration,
+            charge,
+            lost_void,
+            data: (*self.combat_data).clone(),
         });
-        let control = work.prepare(&record).map_err(native_error)?;
+        let control = match work.prepare(&record) {
+            Ok(control) => control,
+            Err(error) => {
+                let message = format!("分项创建失败，未投递输入：{error:#}");
+                if let Some(failed) = fail_current(state, message.clone())
+                    && let Err(error) = self.history.save(&failed)
+                {
+                    state.failed_save = Some(failed);
+                    state.record_error = Some(error.to_string());
+                }
+                state.event(Some(record.id), "error", message);
+                return Err(native_error(error));
+            }
+        };
         if let Err(error) = self.history.save(&record) {
             let message = format!("启动记录保存失败，未投递游戏动作：{error}");
             let failed = fail_current(state, message.clone());
@@ -437,6 +553,12 @@ fn fail_current(state: &mut State, message: String) -> Option<RunRecord> {
         .current_index
         .map(|i| record.group.as_ref().unwrap().steps[i].app_id.as_str());
     let result = match app {
+        Some("charge_plan") => {
+            let mut p = (**record.charge.as_ref()?).clone();
+            p.state = RunState::Failed;
+            p.outcome = Some(od_core::charge_application::ChargeAppOutcome::Failed);
+            state.slot.update_charge(record.id, p, message)
+        }
         Some("email") => {
             let mut p = record.mail?;
             p.state = MailState::Failed;
@@ -465,6 +587,7 @@ pub(super) fn run_group_work(
     paths: &EnginePaths,
     shared: &Arc<Mutex<State>>,
     native: &mut Option<NativeSession>,
+    charge: &mut Option<crate::charge_worker::ChargeWorker>,
 ) -> Option<Box<GroupWork>> {
     if !work.checked {
         let preflight = (|| -> anyhow::Result<()> {
@@ -473,6 +596,22 @@ pub(super) fn run_group_work(
                     continue;
                 }
                 match item.app_id.as_str() {
+                    "lost_void" => match &work.current {
+                        Some(GroupAppWork::LostVoid(w)) => w.verify()?,
+                        _ => work
+                            .lost_void
+                            .as_ref()
+                            .ok_or_else(|| anyhow::anyhow!("迷失之地资源预检缺失"))?
+                            .verify()?,
+                    },
+                    "charge_plan" => match &work.current {
+                        Some(GroupAppWork::Charge(c)) => c.verify()?,
+                        _ => work
+                            .charge
+                            .as_ref()
+                            .ok_or_else(|| anyhow::anyhow!("体力资源预检缺失"))?
+                            .verify()?,
+                    },
                     "world_patrol" | "map_exploration" => {
                         maa_adapter::world_patrol::validate_bundle(
                             &paths.resources.join("generated/world-patrol"),
@@ -524,6 +663,12 @@ pub(super) fn run_group_work(
             work.current = match current {
                 GroupAppWork::Exploration(app) => {
                     run_exploration_work(app, paths, shared, native).map(GroupAppWork::Exploration)
+                }
+                GroupAppWork::LostVoid(app) => {
+                    run_lost_void_work(app, paths, shared, native).map(GroupAppWork::LostVoid)
+                }
+                GroupAppWork::Charge(app) => {
+                    run_charge_work(app, paths, shared, native, charge).map(GroupAppWork::Charge)
                 }
                 GroupAppWork::Patrol(app) => {
                     run_patrol_work(app, paths, shared, native).map(GroupAppWork::Patrol)
@@ -1068,10 +1213,12 @@ fn run_daily_work(
                 .team_check
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("缺少编队扫描结果"))?;
+            let config_store = ConfigStore::new(&paths.data)?;
+            let expected_revision = charge_group::revision_after_charge(&record, &config_store)?;
             let revision = od_core::team_check::save_members(
-                &ConfigStore::new(&paths.data)?,
+                &config_store,
                 context.instance_id,
-                context.config_revision,
+                expected_revision,
                 scan,
             )?;
             work.run.finish_team_save(revision)?;

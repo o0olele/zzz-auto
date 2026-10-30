@@ -35,6 +35,9 @@ impl StateBook {
     pub fn reset(&mut self) {
         self.values.clear();
     }
+    pub(super) fn reset_observation(&mut self) {
+        self.values.retain(|name, _| name.starts_with("自定义-"));
+    }
     pub fn add_mutex(&mut self, names: &[String]) {
         for name in names {
             self.mutex

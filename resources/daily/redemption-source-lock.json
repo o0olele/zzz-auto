@@ -9,6 +9,9 @@
   },
   {
     "path": "config/redemption_codes.sample.yml",
-    "sha256": "ca0de4cbe2ac6d9028f4455b97cc3502098e64d9b9d437d9b84a27c144ee30b9"
+    "sha256": "ca0de4cbe2ac6d9028f4455b97cc3502098e64d9b9d437d9b84a27c144ee30b9",
+    "compatible_sha256": [
+      "e2fc0928e9dbfd3537178dd9aa186f61a6b4e68cfd090b623c2082f34aa8a8aa"
+    ]
   }
 ]

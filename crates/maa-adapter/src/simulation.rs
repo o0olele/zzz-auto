@@ -313,16 +313,57 @@ impl NativeSession {
         timeout: Duration,
         game: bool,
     ) -> Result<CardsInputEnd> {
+        self.act_simulation_next(
+            cancel,
+            timeout,
+            game,
+            |view| {
+                matches!(view, V::Challenge { current_charge, required_charge }
+                if flow.allows_open(CardsCharge {
+                    current_charge: *current_charge, required_charge: *required_charge,
+                }))
+            },
+            |session| {
+                flow.validate().map_err(anyhow::Error::msg)?;
+                session.require_restore_charge()
+            },
+        )
+    }
+
+    /// 足额详情推进与恢复弹窗共用输入入口，冻结条件各自复验。
+    pub fn act_simulation_entry_next(
+        &mut self,
+        flow: &od_core::simulation_entry::EntryFlow,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<CardsInputEnd> {
+        self.act_simulation_next(
+            cancel,
+            timeout,
+            game,
+            |view| flow.allows_next(view),
+            |_| flow.validate().map_err(anyhow::Error::msg),
+        )
+    }
+
+    fn act_simulation_next(
+        &mut self,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        game: bool,
+        allows: impl Fn(&V) -> bool,
+        validate: impl FnOnce(&Self) -> Result<()>,
+    ) -> Result<CardsInputEnd> {
         let started = Instant::now();
         let result = (|| -> Result<CardsInputEnd> {
-            flow.validate().map_err(anyhow::Error::msg)?;
+            validate(self)?;
             ensure!(
                 self.game_window.is_some() == game
                     && self.input_mode == Some(crate::InputMode::Foreground),
                 "模拟室准备控制器模式不匹配"
             );
             self.require_simulation()?;
-            self.require_restore_charge()?;
             if cancel.load(Ordering::Acquire) {
                 return Ok(CardsInputEnd::NotPosted);
             }
@@ -353,19 +394,7 @@ impl NativeSession {
             let Some(sight) = sight? else {
                 return Ok(CardsInputEnd::NotPosted);
             };
-            let V::Challenge {
-                current_charge,
-                required_charge,
-            } = sight.view
-            else {
-                return Ok(CardsInputEnd::Changed);
-            };
-            if frame.age() > Duration::from_millis(1500)
-                || !flow.allows_open(CardsCharge {
-                    current_charge,
-                    required_charge,
-                })
-            {
+            if frame.age() > Duration::from_millis(1500) || !allows(&sight.view) {
                 return Ok(CardsInputEnd::Changed);
             }
             let Some([x, y]) = sight.next else {

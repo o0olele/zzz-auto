@@ -9,7 +9,10 @@
   },
   {
     "path": "src/zzz_od/game_data/agent.py",
-    "sha256": "9e10212ee7d9925e6ac00493b59f2e86ca2db5d4ac8df6836f95a0180814e3c0"
+    "sha256": "9e10212ee7d9925e6ac00493b59f2e86ca2db5d4ac8df6836f95a0180814e3c0",
+    "compatible_sha256": [
+      "5c42209d512c3092ba53a537d8968a7f921d1ca4ecc26833c02d3a207309f92c"
+    ]
   },
   {
     "path": "src/zzz_od/application/random_play/random_play_app.py",

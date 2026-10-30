@@ -9,7 +9,7 @@ use od_core::{
     app_combat::AppCombatPlan,
     conditional::Script,
     pipeline::{Interrupt, PipelineControl},
-    simulation_deploy::{DeployFlow, DeployRequest},
+    simulation_deploy::{DeployAction, DeployFlow, DeployRequest, DeploymentContext},
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -19,6 +19,7 @@ use std::{
 };
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct PreparedDeployment {
     plan: AppCombatPlan,
     script: Script,
@@ -26,6 +27,27 @@ pub struct PreparedDeployment {
     manifest_hash: Vec<u8>,
 }
 impl PreparedDeployment {
+    pub(crate) fn resource_root(&self) -> Result<&Path> {
+        od_core::config::reject_links(&self.root)?;
+        ensure!(
+            Sha256::digest(std::fs::read(self.root.join("combat-manifest.json"))?).as_slice()
+                == self.manifest_hash,
+            "准备期间冻结战斗资源已变化"
+        );
+        CombatBundle::load(&self.root)?;
+        Ok(&self.root)
+    }
+    pub(crate) fn plan(&self) -> &AppCombatPlan {
+        &self.plan
+    }
+    /// 只克隆首次输入前的编译结果，不重新读取当前脚本导入选择。
+    pub(crate) fn frozen_segment(&self, id: Uuid, control: PipelineControl) -> Result<CombatRun> {
+        self.resource_root()?;
+        let mut run =
+            CombatRun::new_segment(id, self.plan.config.clone(), self.script.clone(), control)?;
+        run.progress.script_revision = self.plan.script_revision.clone();
+        Ok(run)
+    }
     pub fn load(plan: AppCombatPlan, root: &Path, data: &Path) -> Result<Self> {
         plan.validate().map_err(anyhow::Error::msg)?;
         let bundle = CombatBundle::load(root)?;
@@ -71,23 +93,39 @@ pub enum DeploymentEnd {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DeploymentSnapshot {
-    pub flow: DeployFlow,
+pub struct DeploymentSnapshot<R = DeployRequest> {
+    pub flow: DeployFlow<R>,
     pub combat: AppCombatPlan,
     pub active_ms: u64,
     pub inputs_released: bool,
 }
-pub struct DeploymentRun {
+pub struct DeploymentRun<R = DeployRequest> {
     pub id: Uuid,
-    pub snapshot: DeploymentSnapshot,
+    pub snapshot: DeploymentSnapshot<R>,
     prepared: PreparedDeployment,
     control: PipelineControl,
     end: Option<DeploymentEnd>,
 }
-impl DeploymentRun {
+impl<R: DeploymentContext> DeploymentRun<R> {
+    pub(crate) fn parent_context(&self) -> Result<(&Path, &AppCombatPlan, PipelineControl)> {
+        self.snapshot.flow.validate().map_err(anyhow::Error::msg)?;
+        ensure!(
+            self.end.is_none()
+                && self.snapshot.active_ms == 0
+                && self.snapshot.inputs_released
+                && !self.snapshot.flow.completed()
+                && self.snapshot.combat == self.prepared.plan,
+            "模拟室父任务只能接收尚未执行的冻结出战流程"
+        );
+        Ok((
+            &self.prepared.root,
+            &self.prepared.plan,
+            self.control.clone(),
+        ))
+    }
     pub fn after_teams(
         id: Uuid,
-        request: DeployRequest,
+        request: R,
         teams_end: TeamsEnd,
         teams: &TeamsSnapshot,
         prepared: PreparedDeployment,
@@ -97,11 +135,11 @@ impl DeploymentRun {
         ensure!(
             teams_end == TeamsEnd::Prepared
                 && teams.inputs_released
-                && teams.flow.result().as_ref() == Some(&request.team),
+                && teams.flow.result().as_ref() == Some(request.team()),
             "选队未完成、输入未释放或目标与出战不一致"
         );
         ensure!(
-            prepared.plan.config.script == request.team.script_name,
+            prepared.plan.config.script == request.team().script_name,
             "冻结战斗脚本与选队不一致"
         );
         let flow = DeployFlow::new(request).map_err(anyhow::Error::msg)?;
@@ -126,7 +164,11 @@ impl DeploymentRun {
     }
     pub fn resume(&mut self) -> Result<()> {
         ensure!(
-            self.end == Some(DeploymentEnd::Paused) && self.snapshot.inputs_released,
+            matches!(
+                self.end,
+                Some(DeploymentEnd::Paused | DeploymentEnd::Entered)
+            ) && self.snapshot.inputs_released
+                && self.control.requested() == Some(Interrupt::Pause),
             "出战尚未安全暂停"
         );
         let mut flow = self.snapshot.flow.clone();
@@ -142,11 +184,18 @@ impl DeploymentRun {
     }
     pub fn into_combat(self) -> Result<CombatRun> {
         ensure!(
+            self.control.requested().is_none(),
+            "仍有控制请求，不能交接子战斗"
+        );
+        self.into_combat_for_parent()
+    }
+    /// 父流程转换不发送输入；转换与请求并发时由父流程在交接检查点后处理请求。
+    pub(crate) fn into_combat_for_parent(self) -> Result<CombatRun> {
+        ensure!(
             self.end == Some(DeploymentEnd::Entered)
                 && self.snapshot.inputs_released
-                && self.snapshot.flow.completed()
-                && self.control.requested().is_none(),
-            "出战未完成或仍有控制请求，不能交接子战斗"
+                && self.snapshot.flow.completed(),
+            "出战未完成或输入未释放，不能交接子战斗"
         );
         ensure!(
             self.snapshot.combat == self.prepared.plan,
@@ -164,7 +213,7 @@ impl DeploymentRun {
         session: &mut NativeSession,
         game: bool,
         parent_remaining: Duration,
-        mut publish: impl FnMut(DeploymentSnapshot) -> Result<()>,
+        mut publish: impl FnMut(DeploymentSnapshot<R>) -> Result<()>,
     ) -> Result<DeploymentEnd> {
         ensure!(
             self.end.is_none()
@@ -180,14 +229,28 @@ impl DeploymentRun {
         let started = Instant::now();
         let initial = self.snapshot.active_ms;
         let budget = Duration::from_millis(
-            u64::from(self.snapshot.flow.request().timeout_ms).saturating_sub(initial),
+            u64::from(self.snapshot.flow.request().timeout_ms()).saturating_sub(initial),
         )
         .min(parent_remaining);
-        let remaining = || budget.saturating_sub(started.elapsed());
+        let remaining = |deploy_started: bool| {
+            let total = budget.saturating_sub(started.elapsed());
+            if deploy_started {
+                total
+            } else {
+                // 上游出战按钮节点限时 60 秒，暂停前已消耗时间也计入。
+                total.min(
+                    Duration::from_millis(60_000u64.saturating_sub(initial))
+                        .saturating_sub(started.elapsed()),
+                )
+            }
+        };
         let result = (|| -> Result<DeploymentEnd> {
             session.check_combat_input_mode(od_core::InputMode::Foreground)?;
             session.require_simulation_deploy()?;
             session.release_inputs()?;
+            if remaining(self.snapshot.flow.deployment_started()).is_zero() {
+                return Ok(self.interrupted().unwrap_or(DeploymentEnd::TimedOut));
+            }
             ensure!(
                 Sha256::digest(std::fs::read(
                     self.prepared.root.join("combat-manifest.json")
@@ -201,7 +264,7 @@ impl DeploymentRun {
                 if let Some(end) = self.interrupted() {
                     return Ok(end);
                 }
-                if remaining().is_zero() {
+                if remaining(self.snapshot.flow.deployment_started()).is_zero() {
                     return Ok(DeploymentEnd::TimedOut);
                 }
                 if self.snapshot.flow.completed() {
@@ -210,14 +273,14 @@ impl DeploymentRun {
                 let read = session.read_simulation_deploy(
                     &recognizer,
                     &self.control.cancellation(),
-                    remaining(),
+                    remaining(self.snapshot.flow.deployment_started()),
                 );
                 self.snapshot.inputs_released = session.release_inputs().is_ok();
                 ensure!(self.snapshot.inputs_released, "出战读帧后输入未释放");
                 if let Some(end) = self.interrupted() {
                     return Ok(end);
                 }
-                if remaining().is_zero() {
+                if remaining(self.snapshot.flow.deployment_started()).is_zero() {
                     return Ok(DeploymentEnd::TimedOut);
                 }
                 let Some(view) = read? else {
@@ -241,7 +304,8 @@ impl DeploymentRun {
                     self.snapshot.flow = before;
                     return Err(error);
                 }
-                if self.interrupted().is_some() || remaining().is_zero() {
+                let deploy_started = action != DeployAction::Deploy;
+                if self.interrupted().is_some() || remaining(deploy_started).is_zero() {
                     self.snapshot
                         .flow
                         .not_posted(action)
@@ -254,7 +318,7 @@ impl DeploymentRun {
                     action,
                     &recognizer,
                     &self.control.cancellation(),
-                    remaining(),
+                    remaining(deploy_started),
                     game,
                 );
                 self.snapshot.inputs_released = session.release_inputs().is_ok();
@@ -281,7 +345,7 @@ impl DeploymentRun {
                         if let Some(end) = self.interrupted() {
                             return Ok(end);
                         }
-                        if remaining().is_zero() {
+                        if remaining(deploy_started).is_zero() {
                             return Ok(DeploymentEnd::TimedOut);
                         }
                         return Err(error);
@@ -300,7 +364,7 @@ impl DeploymentRun {
         publish(self.snapshot.clone())?;
         if let Some(i) = self.interrupted() {
             end = i;
-        } else if remaining().is_zero() {
+        } else if remaining(self.snapshot.flow.deployment_started()).is_zero() {
             end = DeploymentEnd::TimedOut;
         }
         self.snapshot.active_ms = initial.saturating_add(started.elapsed().as_millis() as u64);

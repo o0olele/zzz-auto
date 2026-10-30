@@ -8,7 +8,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const TRIAL_APP_IDS: [&str; 16] = [
+pub const TRIAL_APP_IDS: [&str; 18] = [
+    "lost_void",
+    "charge_plan",
     "map_exploration",
     "world_patrol",
     "email",
@@ -86,6 +88,8 @@ impl RunContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum AppAvailability {
+    LostVoidTrial,
+    ChargeTrial,
     MailTrial,
     CoffeeTrial,
     DailyTrial,
@@ -118,6 +122,18 @@ pub struct GroupPlan {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub exploration_combat: Option<crate::app_combat::AppCombatPlan>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub lost_void_combat: Option<crate::app_combat::AppCombatPlan>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub lost_void_planning: Option<crate::lost_void_record_store::LostVoidApplicationPlanning>,
+    #[serde(default)]
+    #[ts(as = "Option<crate::lost_void::LostVoidConfig>", optional)]
+    pub lost_void_config: crate::lost_void::LostVoidConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub charge_combat: Option<crate::app_combat::AppCombatPlan>,
     #[serde(default)]
     #[ts(as = "Option<crate::world_patrol::WorldPatrolConfig>", optional)]
     pub world_patrol_config: crate::world_patrol::WorldPatrolConfig,
@@ -318,6 +334,8 @@ fn plan_account_at(
         let availability = match (definition.is_some(), item.app_id.as_str()) {
             (true, "email") => AppAvailability::MailTrial,
             (true, "coffee") => AppAvailability::CoffeeTrial,
+            (true, "charge_plan") => AppAvailability::ChargeTrial,
+            (true, "lost_void") => AppAvailability::LostVoidTrial,
             (true, id) if crate::basic_daily::APP_IDS.contains(&id) => AppAvailability::DailyTrial,
             (true, _) => AppAvailability::Unmigrated,
             (false, _) => AppAvailability::Unknown,
@@ -329,21 +347,28 @@ fn plan_account_at(
             match availability {
                 AppAvailability::MailTrial
                 | AppAvailability::CoffeeTrial
+                | AppAvailability::ChargeTrial
+                | AppAvailability::LostVoidTrial
                 | AppAvailability::DailyTrial => {
                     completed_run_id = completed
                         .and_then(|index| index.apps.get(&item.app_id))
                         .copied();
-                    decision =
-                        if !matches!(item.app_id.as_str(), "world_patrol" | "map_exploration")
-                            && group.run_policy == RunPolicy::SkipDailySuccess
-                            && !options.rerun_completed
-                            && !standalone
-                            && completed_run_id.is_some()
-                        {
-                            PlanDecision::AlreadyDone
-                        } else {
-                            PlanDecision::Run
-                        };
+                    decision = if ![
+                        "world_patrol",
+                        "map_exploration",
+                        "charge_plan",
+                        "lost_void",
+                    ]
+                    .contains(&item.app_id.as_str())
+                        && group.run_policy == RunPolicy::SkipDailySuccess
+                        && !options.rerun_completed
+                        && !standalone
+                        && completed_run_id.is_some()
+                    {
+                        PlanDecision::AlreadyDone
+                    } else {
+                        PlanDecision::Run
+                    };
                 }
                 AppAvailability::Unmigrated => {
                     decision = PlanDecision::Blocked;
@@ -395,11 +420,28 @@ fn plan_account_at(
             PlanDecision::Run
         };
     }
+    if let Some(item) = items
+        .iter_mut()
+        .find(|i| i.app_id == "charge_plan" && i.enabled)
+    {
+        if let Err(error) = crate::charge_entry::validate(&group.charge_plan) {
+            item.decision = PlanDecision::Blocked;
+            blockers.push(format!("体力刷本：{error}"));
+        } else if !crate::charge_entry::has_work(&group.charge_plan) {
+            item.decision = PlanDecision::NoWork;
+        } else {
+            warnings.push("体力每次运行，已验证次数会保存；资源或周常阻挡不作为计划完成。".into());
+        }
+    }
     let has_pending = items.iter().any(|item| item.decision == PlanDecision::Run);
     let executable = blockers.is_empty() && has_pending;
     let all_done = blockers.is_empty() && !has_pending;
     Ok(GroupPlan {
         exploration_combat: None,
+        lost_void_combat: None,
+        lost_void_planning: None,
+        lost_void_config: (*group.lost_void).clone(),
+        charge_combat: None,
         world_patrol_config: group.world_patrol.clone(),
         world_patrol_combat: None,
         world_patrol_checkpoint: None,

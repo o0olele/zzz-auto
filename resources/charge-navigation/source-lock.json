@@ -1,0 +1,32 @@
+[
+  {
+    "path": "src/zzz_od/operation/back_to_normal_world.py",
+    "sha256": "7ec0c1fac5b12b131fe464cc5b9e21e4b961d34623ae3f11e0bbf40f11bf0d7b",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/common_screen.yml",
+    "sha256": "6cbeb0f60ecd9b9fcc729b7bd5bcd28849b5cdcd997c9fada29e60014d6ab31f",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/compendium.yml",
+    "sha256": "4653ff15c14ba24e6b6ee9556c809699fd0174fc99f39a8745f4df6e04cf4286",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/item_processing.yml",
+    "sha256": "7a44a0f06f85db352f9f6d5bc5b191c92ad3b90a7b2566649b0c3d13f87dce09",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/combat_simulation.yml",
+    "sha256": "b5739b698c3034f9c4d754a415317693236aa356eb8bba3c0d3aa83f7f61a611",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/normal_world.yml",
+    "sha256": "b9b6be9ca171ea50bd02752ca5a9c32b30f7dfc151f3c2672e34e444f5b64950",
+    "encoding": "utf8-lf"
+  }
+]

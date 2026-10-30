@@ -1,0 +1,54 @@
+[
+  {
+    "path": "src/zzz_od/operation/compendium/combat_simulation.py",
+    "sha256": "3becd49b870b4d53e41feb6181630370d127524b27a6bfa4e4a3994918286207"
+  },
+  {
+    "path": "assets/game_data/screen_info/combat_simulation.yml",
+    "sha256": "b5739b698c3034f9c4d754a415317693236aa356eb8bba3c0d3aa83f7f61a611"
+  },
+  {
+    "path": "assets/game_data/screen_info/battle.yml",
+    "sha256": "83ac6836cc40f46cfab33411ee128681f8b16f5ffe2d6869424d617c2cce2c06"
+  },
+  {
+    "path": "docs/game/screens/实战模拟室.md",
+    "sha256": "f077ede1105202fcc0f07d4f390ec1a9b6418e94f1b73368ff5caed5f1e77553"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/tp_by_compendium.py",
+    "sha256": "17369c12f8c7f3e8992766f448564e5ba281e313e3abe20d85254b167b730cb2"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/compendium_choose_tab.py",
+    "sha256": "1daccb002c44e2354c5d3a5867d85ff9075201a3db639be5e89f5b3270631a7e"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/compendium_choose_category.py",
+    "sha256": "9b47e1881e78ce7a9e0841b6c18166da5b0060f370451d16cca0a8d7f6e895a2"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/compendium_choose_mission_type.py",
+    "sha256": "9f4ad56184de3744a1296c53b77520ed322bc6a9c40b61d42a7fd20465e23e02"
+  },
+  {
+    "path": "assets/game_data/screen_info/compendium.yml",
+    "sha256": "4653ff15c14ba24e6b6ee9556c809699fd0174fc99f39a8745f4df6e04cf4286"
+  },
+  {
+    "path": "assets/game_data/screen_info/compendium_training.yml",
+    "sha256": "fd3a5c9a43dd941211ffb04877b4032df124708701fe8ea3c1809385c71f11ef"
+  },
+  {
+    "path": "assets/game_data/screen_info/normal_world.yml",
+    "sha256": "b9b6be9ca171ea50bd02752ca5a9c32b30f7dfc151f3c2672e34e444f5b64950"
+  },
+  {
+    "path": "docs/game/screens/快捷手册.md",
+    "sha256": "72285cc3866d01ab3dc58a721ac756bbac65cc558a3baae746bb71b1fb4c180f"
+  },
+  {
+    "path": "assets/game_data/compendium_data.yml",
+    "sha256": "c806b626b96f5d019dbfdbd4910a2315721523873c5087d7a005208392e0ea7e"
+  }
+]

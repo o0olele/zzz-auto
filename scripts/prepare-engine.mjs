@@ -7,7 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const release = process.argv.includes('--release');
 const targetDir = process.env.CARGO_TARGET_DIR ? path.resolve(root, process.env.CARGO_TARGET_DIR) : path.join(root, 'target');
 const cargo = (args) => {
-  const result = spawnSync('cargo', args, { cwd: root, stdio: 'inherit', shell: false });
+  const result = spawnSync('cargo', [args[0], '--target-dir', targetDir, ...args.slice(1)], { cwd: root, stdio: 'inherit', shell: false });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 };
@@ -26,12 +26,21 @@ cargo(['run', '--locked', '-p', 'od-tools', '--', 'coffee-run-bundle', '--refere
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'basic-daily-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+cargo(['run', '--locked', '-p', 'od-tools', '--', 'lost-void-scene-bundle', '--reference',
+  process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'suibian-temple-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'world-patrol-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'combat-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+// 体力试运行共用模拟训练的编队与恢复资源；模拟室消费仍由整组预检阻挡。
+for (const command of ['compendium', 'simulation', 'simulation-deploy', 'restore-charge',
+  'charge-navigation', 'charge-transport', 'area-patrol', 'expert-challenge', 'deep-hunt',
+  'charge-level', 'agent-transport', 'agent-goal', 'ether-synthesis-entry', 'ether-synthesis']) {
+  cargo(['run', '--locked', '-p', 'od-tools', '--', `${command}-bundle`, '--reference',
+    process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+}
 cargo(['build', '--locked', '-p', 'zzz-engine', ...(release ? ['--release'] : [])]);
 if (release) {
   const check = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),
@@ -62,6 +71,10 @@ if (release) {
     ['--root', root, 'combat-bundle-check', '--bundle', path.join(root, 'resources/generated/combat')], { cwd: root, stdio: 'inherit', shell: false });
   if (combatCheck.error) throw combatCheck.error;
   if (combatCheck.status !== 0) process.exit(combatCheck.status ?? 1);
+  const lostVoidCheck = spawnSync(path.join(targetDir, 'release/zzz-engine.exe'),
+    ['--root', root, 'lost-void-resources-check'], { cwd: root, stdio: 'inherit', shell: false });
+  if (lostVoidCheck.error) throw lostVoidCheck.error;
+  if (lostVoidCheck.status !== 0) process.exit(lostVoidCheck.status ?? 1);
 }
 const destination = path.join(root, 'apps/desktop/src-tauri/binaries');
 mkdirSync(destination, { recursive: true });

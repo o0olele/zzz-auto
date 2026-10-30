@@ -1,19 +1,31 @@
 [
   {
     "path": "src/zzz_od/config/team_config.py",
-    "sha256": "99b410c8cd450a007dd121cccea351a32ca41515ad47c56b1b7d21f777a5e9c3"
+    "sha256": "99b410c8cd450a007dd121cccea351a32ca41515ad47c56b1b7d21f777a5e9c3",
+    "compatible_sha256": [
+      "b762dbb1a1866df3d56914db4d10ea968a980216ef1e4e62f540393ef1bdc390"
+    ]
   },
   {
     "path": "src/zzz_od/application/game_config_checker/predefined_team_checker/predefined_team_checker.py",
-    "sha256": "5a60f292721cf4ebc42ee0f0f43a969c3024824c707abd9eea1648d3a41d6041"
+    "sha256": "5a60f292721cf4ebc42ee0f0f43a969c3024824c707abd9eea1648d3a41d6041",
+    "compatible_sha256": [
+      "1a3798f923c603f5b47b5fb4e82fae8739e06fe8ffdcdc6d991203c772d57c08"
+    ]
   },
   {
     "path": "src/zzz_od/operation/agent_template_matcher.py",
-    "sha256": "e128b4122b021b441f98f023e7ded2cf34ea2a720f688c87fa249140cbb3694f"
+    "sha256": "e128b4122b021b441f98f023e7ded2cf34ea2a720f688c87fa249140cbb3694f",
+    "compatible_sha256": [
+      "07345f59ce9acf4ecf267f9deaa9f29bb650829efa73d46cd11cc064c08dbfa1"
+    ]
   },
   {
     "path": "src/zzz_od/operation/choose_predefined_team.py",
-    "sha256": "60275717bb18a5421a4b4c25eb307d054258d2a6c2bf547c26477e55f6a8c28d"
+    "sha256": "60275717bb18a5421a4b4c25eb307d054258d2a6c2bf547c26477e55f6a8c28d",
+    "compatible_sha256": [
+      "5dead090505348f1980811fa98fccca27330c2453e24476c5c2ebdb7a2ca436a"
+    ]
   },
   {
     "path": "assets/game_data/screen_info/menu_more.yml",

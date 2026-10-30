@@ -1,0 +1,30 @@
+[
+  {
+    "path": "src/zzz_od/game_data/agent.py",
+    "sha256": "5c42209d512c3092ba53a537d8968a7f921d1ca4ecc26833c02d3a207309f92c"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix/raw.png",
+    "sha256": "a997a94da344806c333e4499e4d23d55ec953a1cabafa50dd95184921f980553"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix/mask.png",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix_daydream_complex/raw.png",
+    "sha256": "4f7140acdcc89208acba549259f472fe6390f3bbd929d66cc27ab86a968d5d6d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix_daydream_complex/mask.png",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix_the_illness_called_life/raw.png",
+    "sha256": "7d73053dea7e1e5d650991ae37f48a996cf8665b632bf0ef6bcd0d0c0d5e49b6"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix_the_illness_called_life/mask.png",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  }
+]

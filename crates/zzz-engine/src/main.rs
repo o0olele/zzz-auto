@@ -90,6 +90,47 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    /// 不加载 SDK，校验迷失之地场景、普通选队、战斗和共享导航模型。
+    LostVoidResourcesCheck {
+        #[arg(long)]
+        directory: Option<PathBuf>,
+    },
+    /// 校验迷失之地全画面只读识别资源。
+    LostVoidSceneBundleCheck {
+        #[arg(long, default_value = "resources/generated/lost-void-scene")]
+        bundle: PathBuf,
+    },
+    /// 从留档图片识别迷失之地画面和完整悬赏进度。
+    LostVoidSceneInspect {
+        #[arg(long, default_value = "resources/generated/lost-void-scene")]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+        /// 同时读取通用选择候选与选择状态，仍不发送输入。
+        #[arg(long)]
+        choices: bool,
+        #[arg(long,conflicts_with_all=["choices","store","events","strategy","matrix","npc","navigation","roster"])]
+        gear: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","events","strategy","matrix","npc","navigation","roster"])]
+        store: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","strategy","matrix","npc","navigation","roster"])]
+        events: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","matrix","npc","navigation","roster"])]
+        strategy: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","strategy","npc","navigation","roster"])]
+        matrix: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","strategy","matrix","navigation","roster"])]
+        npc: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","strategy","matrix","npc","roster"])]
+        navigation: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","strategy","matrix","npc","navigation"])]
+        roster: bool,
+    },
+    /// 无 SDK、无游戏输入的迷失之地配置和藏品决策预览。
+    LostVoidPreview {
+        #[arg(long)]
+        input: Option<PathBuf>,
+    },
     #[command(flatten)]
     ResourceDiagnostics(ResourceDiagnostics),
     /// 按保存计划和人工资源数估算下一项，不初始化 SDK 或写入配置。
@@ -482,6 +523,52 @@ struct InputProbeArgs {
 
 #[derive(Subcommand)]
 enum ResourceDiagnostics {
+    /// 校验培养详情选关包，不加载 SDK。
+    AgentMissionBundleCheck(AgentMissionBundleArgs),
+    /// 固定图识别培养详情目标，不发送输入或证明选中。
+    AgentMissionInspect(AgentMissionInspectArgs),
+    /// 校验培养达成只读资源，不加载 SDK。
+    AgentGoalBundleCheck(AgentGoalBundleArgs),
+    /// 固定图读取结算达成文字，不证明本次挑战完成。
+    AgentGoalInspect(AgentGoalInspectArgs),
+    /// 校验代理人培养传送资源，不加载 SDK。
+    AgentTransportBundleCheck(AgentTransportBundleArgs),
+    /// 固定图核对标记、实际目标与前往，不发送游戏输入。
+    AgentTransportInspect(AgentTransportInspectArgs),
+    /// 校验指定等级资源，不加载 SDK。
+    ChargeLevelBundleCheck(LevelBundleArgs),
+    /// 固定图只读识别等级入口及列表，不证明选中或消费。
+    ChargeLevelInspect(LevelInspectArgs),
+    /// 使用固定截图检查培养标记，不加载 SDK 或发送输入。
+    AgentMarkersInspect(AgentMarkersArgs),
+    /// 校验深度追猎资源，不加载 SDK。
+    DeepHuntBundleCheck(HuntBundleArgs),
+    /// 固定图只读识别目标、周常与深度状态，不证明消费或成功。
+    DeepHuntInspect(HuntInspectArgs),
+    /// 校验专业挑战资源，不加载 SDK。
+    ExpertChallengeBundleCheck(ExpertBundleArgs),
+    /// 固定图只读识别专业挑战与燃竭状态，不证明消费成功。
+    ExpertChallengeInspect(ExpertInspectArgs),
+    /// 校验区域巡防资源，不加载 SDK。
+    AreaPatrolBundleCheck(PatrolBundleArgs),
+    /// 固定图只读检查区域巡防详情或结算，不能证明本次成功。
+    AreaPatrolInspect(PatrolInspectArgs),
+    /// 校验其他训练副本的传送资源，不加载 SDK。
+    ChargeTransportBundleCheck(TrainingTransportBundleArgs),
+    /// 固定图识别分类、条目与入口，不提供消费或运行成功证明。
+    ChargeTransportInspect(TrainingTransportInspectArgs),
+    /// 仅校验体力页面导航资源，不加载 SDK 或游戏。
+    ChargeNavigationBundleCheck(ChargeNavigationBundleArgs),
+    /// 离线识别已知体力页面，不能作为到达证明。
+    ChargeNavigationInspect(ChargeNavigationInspectArgs),
+    /// 校验合成入口资源，不加载 SDK。
+    EtherSynthesisEntryBundleCheck(SynthesisEntryBundleArgs),
+    /// 固定图只读检查入口，不提供实际导航或消费证明。
+    EtherSynthesisEntryInspect(SynthesisEntryInspectArgs),
+    /// 校验电池合成资源，不加载 SDK 或发送输入。
+    EtherSynthesisBundleCheck(SynthesisBundleArgs),
+    /// 固定图只读检查合成页面，不证明本次兑换成功。
+    EtherSynthesisInspect(SynthesisInspectArgs),
     /// 校验模拟室出战资源，不加载 SDK 或开放游戏输入。
     SimulationDeployBundleCheck {
         #[arg(long, default_value = "resources/generated/simulation-deploy")]
@@ -527,6 +614,227 @@ enum ResourceDiagnostics {
 
 // 子命令参数单独派生，限制大型枚举的 Clap 调试版解析栈占用。
 #[derive(clap::Args)]
+struct AgentTransportBundleArgs {
+    #[arg(long, default_value = "resources/generated/agent-transport")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct AgentGoalBundleArgs {
+    #[arg(long, default_value = "resources/generated/agent-goal")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct AgentMissionBundleArgs {
+    #[arg(long, default_value = "resources/generated/agent-mission")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct AgentMissionInspectArgs {
+    #[arg(long, default_value = "resources/generated/agent-mission")]
+    bundle: PathBuf,
+    #[arg(long)]
+    mission_type: String,
+    #[arg(long)]
+    image: PathBuf,
+}
+impl AgentMissionInspectArgs {
+    fn request(&self) -> Result<od_core::agent_mission::AgentMissionRequest> {
+        let r = od_core::agent_mission::AgentMissionRequest {
+            mission_type: self.mission_type.clone(),
+            timeout_ms: 30_000,
+        };
+        r.validate().map_err(anyhow::Error::msg)?;
+        Ok(r)
+    }
+}
+#[derive(clap::Args)]
+struct AgentGoalInspectArgs {
+    #[arg(long, default_value = "resources/generated/agent-goal")]
+    bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+}
+#[derive(clap::Args)]
+struct AgentTransportInspectArgs {
+    #[arg(long, default_value = "resources/generated/agent-transport")]
+    bundle: PathBuf,
+    #[arg(long)]
+    category: String,
+    #[arg(long)]
+    image: PathBuf,
+}
+impl AgentTransportInspectArgs {
+    fn request(&self) -> Result<od_core::agent_transport::AgentTransportRequest> {
+        let request = od_core::agent_transport::AgentTransportRequest {
+            plan: od_core::charge_plan::ChargePlanItem {
+                category_name: self.category.clone(),
+                mission_type_name: "代理人方案培养".into(),
+                mission_name: (self.category == "实战模拟室").then(|| "代理人方案培养".into()),
+                ..Default::default()
+            },
+            timeout_ms: 30_000,
+        };
+        request.validate().map_err(anyhow::Error::msg)?;
+        Ok(request)
+    }
+}
+#[derive(clap::Args)]
+struct LevelBundleArgs {
+    #[arg(long, default_value = "resources/generated/charge-level")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct LevelInspectArgs {
+    #[arg(long, default_value = "resources/generated/charge-level")]
+    bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+}
+#[derive(Clone, Copy, ValueEnum)]
+enum MarkerArea {
+    Training,
+    Hunt,
+    Simulation,
+}
+impl From<MarkerArea> for maa_adapter::agent_plan::AgentMarkerArea {
+    fn from(area: MarkerArea) -> Self {
+        match area {
+            MarkerArea::Training => Self::Training,
+            MarkerArea::Hunt => Self::Hunt,
+            MarkerArea::Simulation => Self::Simulation,
+        }
+    }
+}
+#[derive(clap::Args)]
+struct AgentMarkersArgs {
+    #[arg(long)]
+    image: PathBuf,
+    #[arg(long, value_enum)]
+    area: MarkerArea,
+}
+#[derive(clap::Args)]
+struct PatrolBundleArgs {
+    #[arg(long, default_value = "resources/generated/area-patrol")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct ExpertBundleArgs {
+    #[arg(long, default_value = "resources/generated/expert-challenge")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct HuntBundleArgs {
+    #[arg(long, default_value = "resources/generated/deep-hunt")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct HuntInspectArgs {
+    #[arg(long, default_value = "resources/generated/deep-hunt")]
+    bundle: PathBuf,
+    #[arg(long)]
+    mission_type: String,
+    #[arg(long)]
+    image: PathBuf,
+}
+#[derive(clap::Args)]
+struct ExpertInspectArgs {
+    #[arg(long, default_value = "resources/generated/expert-challenge")]
+    bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+}
+#[derive(clap::Args)]
+struct PatrolInspectArgs {
+    #[arg(long, default_value = "resources/generated/area-patrol")]
+    bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+}
+#[derive(clap::Args)]
+struct SynthesisBundleArgs {
+    #[arg(long, default_value = "resources/generated/ether-synthesis")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct ChargeNavigationBundleArgs {
+    #[arg(long, default_value = "resources/generated/charge-navigation")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct TrainingTransportBundleArgs {
+    #[arg(long, default_value = "resources/generated/charge-transport")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct TrainingTransportInspectArgs {
+    #[arg(long, default_value = "resources/generated/charge-transport")]
+    bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+    #[arg(long)]
+    category: String,
+    #[arg(long)]
+    mission_type: String,
+}
+impl TrainingTransportInspectArgs {
+    fn request(&self) -> Result<od_core::charge_transport::TrainingTransportRequest> {
+        let request = od_core::charge_transport::TrainingTransportRequest {
+            plan: od_core::charge_plan::ChargePlanItem {
+                category_name: self.category.clone(),
+                mission_type_name: self.mission_type.clone(),
+                mission_name: None,
+                ..Default::default()
+            },
+            timeout_ms: 30_000,
+        };
+        request.validate().map_err(anyhow::Error::msg)?;
+        Ok(request)
+    }
+}
+#[derive(clap::Args)]
+struct ChargeNavigationInspectArgs {
+    #[arg(long, default_value = "resources/generated/charge-navigation")]
+    bundle: PathBuf,
+    #[arg(long, default_value = "resources/generated/compendium")]
+    compendium_bundle: PathBuf,
+    #[arg(long, default_value = "resources/generated/ether-synthesis-entry")]
+    entry_bundle: PathBuf,
+    #[arg(long, default_value = "resources/generated/ether-synthesis")]
+    synthesis_bundle: PathBuf,
+    /// 显式增加区域详情返回识别能力，旧导航资源保持原定义。
+    #[arg(long)]
+    area_patrol_bundle: Option<PathBuf>,
+    #[arg(long)]
+    expert_challenge_bundle: Option<PathBuf>,
+    #[arg(long)]
+    deep_hunt_bundle: Option<PathBuf>,
+    #[arg(long)]
+    image: PathBuf,
+}
+#[derive(clap::Args)]
+struct SynthesisEntryBundleArgs {
+    #[arg(long, default_value = "resources/generated/ether-synthesis-entry")]
+    bundle: PathBuf,
+}
+#[derive(clap::Args)]
+struct SynthesisEntryInspectArgs {
+    #[arg(long, default_value = "resources/generated/ether-synthesis-entry")]
+    bundle: PathBuf,
+    #[arg(long, default_value = "resources/generated/compendium")]
+    compendium_bundle: PathBuf,
+    #[arg(long, default_value = "resources/generated/ether-synthesis")]
+    synthesis_bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+}
+#[derive(clap::Args)]
+struct SynthesisInspectArgs {
+    #[arg(long, default_value = "resources/generated/ether-synthesis")]
+    bundle: PathBuf,
+    #[arg(long)]
+    image: PathBuf,
+}
+#[derive(clap::Args)]
 struct SettlementBundleArgs {
     #[arg(long, default_value = "resources/generated/simulation-settlement")]
     bundle: PathBuf,
@@ -567,6 +875,8 @@ struct CompendiumInspectArgs {
     image: PathBuf,
     #[arg(long, default_value = "基础材料")]
     mission_type: String,
+    #[arg(long)]
+    read_resources: bool,
 }
 
 #[derive(clap::Args)]
@@ -655,6 +965,35 @@ async fn run() -> Result<()> {
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
                 | Action::ChargePlanPreview(_)
+                | Action::LostVoidPreview { .. }
+                | Action::LostVoidSceneBundleCheck { .. }
+                | Action::LostVoidResourcesCheck { .. }
+                | Action::LostVoidSceneInspect { .. }
+                | Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisEntryBundleCheck(
+                    ..
+                ))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisEntryInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::ChargeNavigationBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::ChargeNavigationInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::ChargeTransportBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::AreaPatrolBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::ExpertChallengeBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::AgentTransportBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::AgentGoalBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::AgentMissionBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::AgentMissionInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::AgentGoalInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::AgentTransportInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::ChargeLevelBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::ChargeLevelInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::AgentMarkersInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntBundleCheck(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::ExpertChallengeInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::AreaPatrolInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::ChargeTransportInspect(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::RestoreChargeBundleCheck { .. })
                 | Action::ResourceDiagnostics(ResourceDiagnostics::RestoreChargeInspect { .. })
                 | Action::ResourceDiagnostics(ResourceDiagnostics::SimulationBundleCheck { .. })
@@ -670,6 +1009,28 @@ async fn run() -> Result<()> {
         paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
     }
     match args.command {
+        Action::LostVoidResourcesCheck { ref directory } => {
+            return print(zzz_engine::lost_void_resources::validate(
+                directory.as_deref().unwrap_or(&paths.resources),
+            )?);
+        }
+        Action::LostVoidSceneBundleCheck { ref bundle } => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"bundle":maa_adapter::lost_void_scene::validate_lost_void_scene_bundle(bundle)?}),
+            );
+        }
+        Action::LostVoidSceneInspect { ref bundle, .. } => {
+            maa_adapter::lost_void_scene::validate_lost_void_scene_bundle(bundle)?;
+        }
+        Action::LostVoidPreview { input } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&zzz_engine::lost_void::preview_file(
+                    input.as_deref()
+                )?)?
+            );
+            return Ok(());
+        }
         Action::ChargePlanPreview(ChargePlanPreviewArgs {
             instance_id,
             group_id,
@@ -1091,6 +1452,172 @@ async fn run() -> Result<()> {
                 "bundle":maa_adapter::simulation_settlement::validate_simulation_settlement_bundle(bundle)?}),
             );
         }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ChargeTransportBundleCheck(
+            TrainingTransportBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"selection_verified":false,"navigation_verified":false,"completion_verified":false,
+                "bundle":maa_adapter::charge_transport::validate_charge_transport_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ChargeTransportInspect(ref args)) => {
+            args.request()?;
+            maa_adapter::charge_transport::validate_charge_transport_bundle(&args.bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AreaPatrolBundleCheck(
+            PatrolBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,
+                "completion_verified":false,"bundle":maa_adapter::area_patrol::validate_area_patrol_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AreaPatrolInspect(ref args)) => {
+            maa_adapter::area_patrol::validate_area_patrol_bundle(&args.bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentTransportBundleCheck(
+            AgentTransportBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"navigation_verified":false,"selection_verified":false,"completion_verified":false,"bundle":maa_adapter::agent_transport::validate_agent_transport_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentTransportInspect(ref args)) => {
+            args.request()?;
+            maa_adapter::agent_transport::validate_agent_transport_bundle(&args.bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentGoalBundleCheck(
+            AgentGoalBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"completion_verified":false,
+                "bundle":maa_adapter::agent_goal::validate_agent_goal_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentGoalInspect(ref args)) => {
+            maa_adapter::agent_goal::validate_agent_goal_bundle(&args.bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentMissionBundleCheck(
+            AgentMissionBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"selection_verified":false,"completion_verified":false,"bundle":maa_adapter::agent_mission::validate_agent_mission_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentMissionInspect(ref args)) => {
+            args.request()?;
+            maa_adapter::agent_mission::validate_agent_mission_bundle(&args.bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ChargeLevelBundleCheck(
+            LevelBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"selection_verified":false,"completion_verified":false,"bundle":maa_adapter::charge_level::validate_charge_level_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ChargeLevelInspect(ref args)) => {
+            maa_adapter::charge_level::validate_charge_level_bundle(&args.bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentMarkersInspect(ref args)) => {
+            let area = args.area.into();
+            return print(
+                serde_json::json!({"accepted":false,"input_sent":false,"navigation_verified":false,"selection_verified":false,"completion_verified":false,"area":area,"sources":maa_adapter::agent_plan::sources()?,"markers":maa_adapter::agent_plan::inspect_agent_markers_file(&args.image, area)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntBundleCheck(HuntBundleArgs {
+            ref bundle,
+        })) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"completion_verified":false,"bundle":maa_adapter::deep_hunt::validate_deep_hunt_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntInspect(ref args)) => {
+            anyhow::ensure!(
+                od_core::charge_transport::canonical_name("恶名狩猎", &args.mission_type).is_some(),
+                "未知的恶名狩猎目标"
+            );
+            maa_adapter::deep_hunt::validate_deep_hunt_bundle(&args.bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ExpertChallengeBundleCheck(
+            ExpertBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"completion_verified":false,
+                "bundle":maa_adapter::expert_challenge::validate_expert_challenge_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ExpertChallengeInspect(ref args)) => {
+            maa_adapter::expert_challenge::validate_expert_challenge_bundle(&args.bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ChargeNavigationBundleCheck(
+            ChargeNavigationBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"navigation_verified":false,"completion_verified":false,
+                "bundle":maa_adapter::charge_navigation::validate_charge_navigation_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ChargeNavigationInspect(
+            ChargeNavigationInspectArgs {
+                ref bundle,
+                ref compendium_bundle,
+                ref entry_bundle,
+                ref synthesis_bundle,
+                ref area_patrol_bundle,
+                ref expert_challenge_bundle,
+                ref deep_hunt_bundle,
+                ..
+            },
+        )) => {
+            maa_adapter::charge_navigation::validate_charge_navigation_bundle(bundle)?;
+            maa_adapter::compendium::validate_compendium_bundle(compendium_bundle)?;
+            maa_adapter::ether_synthesis_entry::validate_ether_synthesis_entry_bundle(
+                entry_bundle,
+            )?;
+            maa_adapter::ether_synthesis::validate_ether_synthesis_bundle(synthesis_bundle)?;
+            if let Some(p) = area_patrol_bundle {
+                maa_adapter::area_patrol::validate_area_patrol_bundle(p)?;
+            }
+            if let Some(p) = expert_challenge_bundle {
+                maa_adapter::expert_challenge::validate_expert_challenge_bundle(p)?;
+            }
+            if let Some(p) = deep_hunt_bundle {
+                maa_adapter::deep_hunt::validate_deep_hunt_bundle(p)?;
+            }
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisEntryBundleCheck(
+            SynthesisEntryBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"navigation_verified":false,
+                "bundle":maa_adapter::ether_synthesis_entry::validate_ether_synthesis_entry_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisEntryInspect(
+            SynthesisEntryInspectArgs {
+                ref bundle,
+                ref compendium_bundle,
+                ref synthesis_bundle,
+                ..
+            },
+        )) => {
+            maa_adapter::ether_synthesis_entry::validate_ether_synthesis_entry_bundle(bundle)?;
+            maa_adapter::compendium::validate_compendium_bundle(compendium_bundle)?;
+            maa_adapter::ether_synthesis::validate_ether_synthesis_bundle(synthesis_bundle)?;
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisBundleCheck(
+            SynthesisBundleArgs { ref bundle },
+        )) => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"completion_verified":false,
+                "bundle":maa_adapter::ether_synthesis::validate_ether_synthesis_bundle(bundle)?}),
+            );
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisInspect(
+            SynthesisInspectArgs { ref bundle, .. },
+        )) => {
+            maa_adapter::ether_synthesis::validate_ether_synthesis_bundle(bundle)?;
+        }
         Action::ResourceDiagnostics(ResourceDiagnostics::SimulationDeployBundleCheck {
             ref bundle,
         }) => {
@@ -1287,6 +1814,331 @@ async fn run() -> Result<()> {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_engagement_reward_fixture(&image)?)
         }
+        Action::LostVoidSceneInspect {
+            bundle,
+            image,
+            choices,
+            gear,
+            store,
+            events,
+            strategy,
+            matrix,
+            npc,
+            navigation,
+            roster,
+        } => {
+            let mut native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            if roster {
+                let recognizer =
+                    native.load_combat_bundle(&paths.resources.join("generated/combat"))?;
+                let mut reader =
+                    maa_adapter::lost_void_roster::LostVoidHudReader::new(&recognizer)?;
+                let frame = native
+                    .combat_frame(&AtomicBool::new(false))?
+                    .context("离线 HUD 截图被取消")?;
+                let observation = native.inspect_lost_void_roster(
+                    &frame,
+                    &mut reader,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation,"candidates":reader.diagnostics()}),
+                );
+            }
+            if navigation {
+                let mut recognizer =
+                    native.load_combat_bundle(&paths.resources.join("generated/combat"))?;
+                native.load_challenge_detector(&paths.resources.join("generated/basic-daily"))?;
+                let frame = native
+                    .combat_frame(&AtomicBool::new(false))?
+                    .context("导航留档读取被取消")?;
+                let observation = native.inspect_lost_void_navigation(
+                    &frame,
+                    &mut recognizer,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if npc {
+                native.load_challenge_detector(&paths.resources.join("generated/basic-daily"))?;
+                let observation = native.inspect_lost_void_npc(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    true,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if matrix {
+                let request = od_core::lost_void_matrix::LostVoidMatrixRequest {
+                    run_id: uuid::Uuid::new_v4(),
+                    challenge: Default::default(),
+                    teams: Default::default(),
+                    timeout_ms: 120_000,
+                };
+                let observation = native.inspect_lost_void_matrix(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    request,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if strategy {
+                let observation = native.inspect_lost_void_strategy(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if events {
+                let observation = native.inspect_lost_void_event(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(30),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if gear {
+                let observation = native.inspect_lost_void_gear(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(30),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if store {
+                let observation = native.inspect_lost_void_store(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(30),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if choices {
+                let observation = native.inspect_lost_void_choice(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(30),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            let observation = native.inspect_lost_void_scene(
+                &maa_adapter::RecognitionImage::load(&image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ChargeTransportInspect(args)) => {
+            let request = args.request()?;
+            let native =
+                NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_charge_transport(
+                &maa_adapter::RecognitionImage::load(&args.image)?,
+                &request,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"navigation_verified":false,"selection_verified":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AreaPatrolInspect(args)) => {
+            let native =
+                NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_area_patrol(
+                &maa_adapter::RecognitionImage::load(&args.image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"completion_verified":false,
+                "observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentTransportInspect(args)) => {
+            let request = args.request()?;
+            let native =
+                NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_agent_transport(
+                &maa_adapter::RecognitionImage::load(&args.image)?,
+                &request,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"navigation_verified":false,"selection_verified":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentTransportBundleCheck(..)) => {
+            unreachable!("只读校验已完成")
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentGoalBundleCheck(..)) => {
+            unreachable!("只读校验已完成")
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentMissionBundleCheck(..)) => {
+            unreachable!("只读校验已完成")
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentMissionInspect(args)) => {
+            let native =
+                NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_agent_mission(
+                &maa_adapter::RecognitionImage::load(&args.image)?,
+                &args.request()?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"selection_verified":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::AgentGoalInspect(args)) => {
+            let native =
+                NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_agent_goal(
+                &maa_adapter::RecognitionImage::load(&args.image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ChargeLevelInspect(args)) => {
+            let mut native =
+                NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;
+            native.load_charge_level_bundle(&args.bundle)?;
+            let observation = native.inspect_charge_level(
+                &maa_adapter::RecognitionImage::load(&args.image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"selection_verified":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(
+            ResourceDiagnostics::AgentMarkersInspect(..)
+            | ResourceDiagnostics::ChargeLevelBundleCheck(..),
+        ) => unreachable!("只读诊断已完成"),
+        Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntInspect(args)) => {
+            let native =
+                NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_deep_hunt(
+                &maa_adapter::RecognitionImage::load(&args.image)?,
+                &args.mission_type,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ExpertChallengeInspect(args)) => {
+            let native =
+                NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_expert_challenge(
+                &maa_adapter::RecognitionImage::load(&args.image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::ChargeNavigationInspect(
+            ChargeNavigationInspectArgs {
+                bundle,
+                compendium_bundle,
+                entry_bundle,
+                synthesis_bundle,
+                area_patrol_bundle,
+                expert_challenge_bundle,
+                deep_hunt_bundle,
+                image,
+            },
+        )) => {
+            let mut native =
+                NativeSession::for_fixture(&image, &compendium_bundle, InferenceDevice::Cpu)?;
+            native.load_compendium_bundle(&compendium_bundle)?;
+            native.load_charge_navigation_bundle(&bundle)?;
+            native.load_ether_synthesis_entry_bundle(&entry_bundle)?;
+            native.load_ether_synthesis_bundle(&synthesis_bundle)?;
+            if let Some(p) = area_patrol_bundle {
+                native.load_area_patrol_bundle(&p)?;
+            }
+            if let Some(p) = expert_challenge_bundle {
+                native.load_expert_challenge_bundle(&p)?;
+            }
+            if let Some(p) = deep_hunt_bundle {
+                native.load_deep_hunt_bundle(&p)?;
+            }
+            let observation = native.inspect_charge_navigation(
+                &maa_adapter::RecognitionImage::load(&image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"navigation_verified":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisEntryInspect(
+            SynthesisEntryInspectArgs {
+                bundle,
+                compendium_bundle,
+                synthesis_bundle,
+                image,
+            },
+        )) => {
+            let mut native =
+                NativeSession::for_fixture(&image, &compendium_bundle, InferenceDevice::Cpu)?;
+            native.load_compendium_bundle(&compendium_bundle)?;
+            native.load_ether_synthesis_entry_bundle(&bundle)?;
+            native.load_ether_synthesis_bundle(&synthesis_bundle)?;
+            let observation = native.inspect_ether_synthesis_entry(
+                &maa_adapter::RecognitionImage::load(&image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"navigation_verified":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisInspect(
+            SynthesisInspectArgs { bundle, image },
+        )) => {
+            let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_ether_synthesis(
+                &maa_adapter::RecognitionImage::load(&image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"completion_verified":false,"observation":observation}),
+            )
+        }
         Action::ResourceDiagnostics(ResourceDiagnostics::SimulationSettlementInspect(
             SettlementInspectArgs { bundle, image },
         )) => {
@@ -1339,9 +2191,16 @@ async fn run() -> Result<()> {
                 bundle,
                 image,
                 mission_type,
+                read_resources,
             },
         )) => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            if read_resources {
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":
+                    native.inspect_charge_resources(&maa_adapter::RecognitionImage::load(&image)?, &AtomicBool::new(false), Duration::from_secs(30))?}),
+                );
+            }
             let observation = native.inspect_compendium(
                 &maa_adapter::RecognitionImage::load(&image)?,
                 &od_core::compendium::TransportRequest {

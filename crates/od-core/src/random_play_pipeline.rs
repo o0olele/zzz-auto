@@ -2,6 +2,9 @@ use super::{RandomPlayProgress, THEMES};
 use serde_json::{Value, json};
 
 pub fn pipeline() -> Value {
+    pipeline_for_schema(7)
+}
+pub fn pipeline_for_schema(schema: u64) -> Value {
     let mut p = crate::redemption::pipeline();
     for name in [
         "World",
@@ -214,7 +217,7 @@ pub fn pipeline() -> Value {
             "Shop.PromoterSelected",
         );
     }
-    for agent in super::agents() {
+    for agent in super::agents_for_schema(schema) {
         for id in agent.templates {
             let name = format!("Shop.Avatar_{id}");
             p[&name] = json!({"recognition":"FeatureMatch","template":format!("random-play/avatar_{id}.png"),
@@ -337,6 +340,9 @@ pub fn pipeline() -> Value {
 }
 
 pub fn overrides(progress: &RandomPlayProgress) -> Value {
+    overrides_for_schema(progress, 7)
+}
+pub fn overrides_for_schema(progress: &RandomPlayProgress, schema: u64) -> Value {
     let mut value = json!({
         "Shop.AreaText":{"expected":[format!("^{}$",progress.config.transport_point.area())]},
         "Shop.PointText":{"expected":[format!("^{}$",progress.config.transport_point.point())]},
@@ -352,7 +358,10 @@ pub fn overrides(progress: &RandomPlayProgress) -> Value {
             value[&text] = json!({"expected":[format!("^{}$",escape(name))]});
             let select = format!("Shop.SelectByName{i}");
             candidates.push(select);
-            if let Some(agent) = super::agents().into_iter().find(|a| a.name == name) {
+            if let Some(agent) = super::agents_for_schema(schema)
+                .into_iter()
+                .find(|a| a.name == name)
+            {
                 candidates.extend(
                     agent
                         .templates

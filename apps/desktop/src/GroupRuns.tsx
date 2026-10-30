@@ -1,6 +1,7 @@
 import { WorldPatrolPlan } from './WorldPatrolSettings';
 import { SuibianTempleSummary } from './SuibianTempleSettings';
 import { ChargePlanSummary } from './ChargePlanSettings';
+import { LostVoidSummary } from './LostVoidSettings';
 import { RedemptionResults, RedemptionStatus } from './RedemptionSettings';
 import { IntelBoardPlan, IntelBoardStatus } from './IntelBoardSettings';
 import { dismantleSummary } from './DismantleSettings';
@@ -16,7 +17,7 @@ import { dailySummary } from './DailySettings';
 import { afterDoneName } from './AfterDoneBanner';
 import { GroupRunStatus, isRunActive, RunSaveRecovery, RunSteps, runStateNames as stateNames } from './GroupRunStatus';
 
-const availability = { mail_trial: '邮件试运行', coffee_trial: '咖啡试运行（待实机验收）', daily_trial: '日常试运行（待实机验收）', unmigrated: '尚无执行器', unknown: '未注册' };
+const availability = { lost_void_trial: '迷失之地试运行（待实机验收）', charge_trial: '体力试运行（待实机验收）', mail_trial: '邮件试运行', coffee_trial: '咖啡试运行（待实机验收）', daily_trial: '日常试运行（待实机验收）', unmigrated: '尚无执行器', unknown: '未注册' };
 
 export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, blocked, onCommand, showStatus = true, appIds, rerunCompleted = false, standaloneAppId }: {
   instanceId: number; groupId: string; revision: number; snapshot: Snapshot | null;
@@ -24,6 +25,7 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
 }) {
   const standalone = standaloneAppId !== undefined;
   const [plan, setPlan] = useState<GroupPlan | null>(null);
+  const appCombat = plan?.app_combat ?? plan?.world_patrol_combat ?? plan?.exploration_combat ?? plan?.charge_combat ?? plan?.lost_void_combat;
   const [history, setHistory] = useState<RunHistory | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [planning, setPlanning] = useState(false);
@@ -109,6 +111,9 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
         {plan.items.some(item => item.app_id === 'coffee' && item.enabled) && <p>咖啡：{coffeeSummary(plan.coffee_config)} · 澄辉坪 → 汀曼咖啡</p>}
         {plan.items.some(item => item.app_id === 'charge_plan' && item.enabled) && <ChargePlanSummary settings={plan.charge_plan_config}/>}
         {plan.items.some(item => item.app_id === 'map_exploration' && item.enabled) && <section aria-label="空洞探索运行计划"><p>空洞探索：从当前区域开始，自动将地图缩放至最小并拖图扫描，先解锁观测奇点，再开启小卡格车；沿小地图绿色引导点行走，遇战先战斗。完成须由区域信息中的小卡格车计数确认。</p><p>战斗脚本：{plan.exploration_combat?.config.script} · 输入方式：{plan.exploration_combat?.config.mode} · 总超时 30 分钟。战斗配置在自动战斗页保存。</p></section>}
+        {plan.items.some(item => item.app_id === 'lost_void' && item.enabled) && <LostVoidSummary settings={plan.lost_void_config}/>}
+        {plan.lost_void_planning && <p>迷失之地只读进度：当日通关 {plan.lost_void_planning.progress.daily_run_times} 次 · 本周通关 {plan.lost_void_planning.progress.weekly_run_times} 次 · 待领取结算 {plan.lost_void_planning.pending_claims.length} 份。启动后会补交原记录并重新核对。</p>}
+        {plan.charge_combat && <p>体力战斗采用账号输入设置：{plan.charge_combat.config.mode} · {plan.charge_combat.config.directml_device == null ? 'CPU' : `DirectML ${plan.charge_combat.config.directml_device}`}。全部启用计划的脚本已预检，按各计划或预备编队选择。</p>}
         {plan.items.some(item => item.app_id === 'world_patrol' && item.enabled) && <WorldPatrolPlan plan={plan}/>}
         {plan.items.some(item => item.app_id === 'intel_board' && item.enabled) && <IntelBoardPlan plan={plan}/>}
         {plan.items.some(item => item.app_id === 'suibian_temple' && item.enabled) && <><SuibianTempleSummary settings={plan.suibian_temple_config}/><p>澄辉坪 → 随便观 · 总活动时间包括全部经营子流程。已开启的购买将消耗玩法货币。</p></>}
@@ -124,14 +129,14 @@ export function GroupRuns({ instanceId, groupId, revision, snapshot, connected, 
           <ul>{plan.redemption_codes?.map(code => <li key={code.code}>{code.code} · 有效至 {code.expires_on}</li>)}</ul>
           {!!plan.redemption_history?.results.length && <details><summary>已有明确结果</summary><RedemptionResults results={plan.redemption_history.results}/></details>}
         </section>}
-        <ol className="group-plan">{plan.items.filter(item => !standalone || item.enabled).map(item => <li key={item.app_id}><span>{item.name}</span><Badge appearance="outline">{item.decision === 'no_work' ? '没有待兑换的有效码' : item.decision === 'already_done' ? (item.app_id === 'intel_board' ? '本周目标已完成，跳过' : '本游戏日已完成，跳过') : item.app_id === 'redemption_code' && item.decision === 'run' ? '有待兑换的有效码' : item.app_id === 'intel_board' && item.decision === 'run' ? '本周目标待完成' : item.decision === 'run' && item.completed_run_id ? '本游戏日已完成，本次重跑' : item.enabled ? availability[item.availability] : appIds === undefined ? '未启用' : '本次未选择'}</Badge></li>)}</ol>
+        <ol className="group-plan">{plan.items.filter(item => !standalone || item.enabled).map(item => <li key={item.app_id}><span>{item.name}</span><Badge appearance="outline">{item.decision === 'no_work' ? (item.app_id === 'charge_plan' ? '无启用体力计划' : '没有待执行内容') : item.decision === 'already_done' ? (item.app_id === 'intel_board' ? '本周目标已完成，跳过' : '本游戏日已完成，跳过') : item.app_id === 'redemption_code' && item.decision === 'run' ? '有待兑换的有效码' : item.app_id === 'intel_board' && item.decision === 'run' ? '本周目标待完成' : item.decision === 'run' && item.completed_run_id ? '本游戏日已完成，本次重跑' : item.enabled ? availability[item.availability] : appIds === undefined ? '未启用' : '本次未选择'}</Badge></li>)}</ol>
         {plan.warnings.map((message, index) => <MessageBar key={index} intent="warning"><MessageBarBody>{message}</MessageBarBody></MessageBar>)}
-        {plan.all_done && <MessageBar intent="info"><MessageBarBody>{plan.items.some(item => item.decision === 'no_work') ? '本次没有待执行应用；兑换码已按有效期和逐码记录筛选。' : plan.items.some(item => item.app_id === 'intel_board' && item.enabled) ? '本次应用已按每日与每周记录完成，无需运行。' : appIds === undefined ? '本游戏日的启用应用均已完成，无需运行。' : '本游戏日的本次所选应用均已完成，无需运行。'}</MessageBarBody></MessageBar>}
+        {plan.all_done && <MessageBar intent="info"><MessageBarBody>{plan.items.some(item => item.decision === 'no_work') ? '本次没有待执行内容。体力计划及逐项记录已按保存设置筛选。' : plan.items.some(item => item.app_id === 'intel_board' && item.enabled) ? '本次应用已按每日与每周记录完成，无需运行。' : appIds === undefined ? '本游戏日的启用应用均已完成，无需运行。' : '本游戏日的本次所选应用均已完成，无需运行。'}</MessageBarBody></MessageBar>}
         {plan.blockers.map((message, index) => <p className="group-blocker" key={index}>{message}</p>)}
-        <Checkbox label={`我确认游戏登录账号为“${plan.context.instance_name}”，并允许本次前台输入${plan.items.some(item => item.app_id === 'drive_disc_dismantle' && item.decision === 'run') ? '；按预览规则拆解驱动盘' : ''}${plan.app_combat || plan.world_patrol_combat || plan.exploration_combat ? '；应用内自动战斗将采用上述输入设置' : ''}${standalone && standaloneAppId !== 'world_patrol' ? '；本游戏日已完成的应用也会执行' : ''}${plan.context.rerun_completed ? '；包括本游戏日已完成的应用' : ''}${plan.after_done && plan.after_done !== 'none' ? `；正常完成后${afterDoneName(plan.after_done)}，60 秒内可取消` : ''}`} checked={confirmed} disabled={disabled || active || !plan.executable || !snapshot?.window || !!snapshot.record_error} onChange={(_, data) => setConfirmed(data.checked === true)}/>
+        <Checkbox label={`我确认游戏登录账号为“${plan.context.instance_name}”，并允许本次前台输入${plan.items.some(item => item.app_id === 'drive_disc_dismantle' && item.decision === 'run') ? '；按预览规则拆解驱动盘' : ''}${appCombat ? '；应用内自动战斗将采用上述输入设置' : ''}${standalone && standaloneAppId !== 'world_patrol' ? '；本游戏日已完成的应用也会执行' : ''}${plan.context.rerun_completed ? '；包括本游戏日已完成的应用' : ''}${plan.after_done && plan.after_done !== 'none' ? `；正常完成后${afterDoneName(plan.after_done)}，60 秒内可取消` : ''}`} checked={confirmed} disabled={disabled || active || !plan.executable || !snapshot?.window || !!snapshot.record_error} onChange={(_, data) => setConfirmed(data.checked === true)}/>
         <Button appearance="primary" disabled={disabled || active || !plan.executable || !confirmed || !snapshot?.window || !!snapshot.record_error} onClick={async () => {
           setConfirmed(false); setPlan(null);
-          await onCommand(standalone ? { type: 'start_standalone_trial', params: { instance_id: instanceId, group_id: groupId, app_id: standaloneAppId, revision: plan.context.config_revision, game_day: plan.game_day.date, ...((plan.app_combat ?? plan.world_patrol_combat ?? plan.exploration_combat) ? { combat_revision: (plan.app_combat ?? plan.world_patrol_combat ?? plan.exploration_combat)!.script_revision } : {}), allow_input: true, confirm_account: true } } : { type: 'start_group_trial', params: { instance_id: instanceId, group_id: groupId, revision: plan.context.config_revision, game_day: plan.game_day.date, ...((plan.app_combat ?? plan.world_patrol_combat ?? plan.exploration_combat) ? { combat_revision: (plan.app_combat ?? plan.world_patrol_combat ?? plan.exploration_combat)!.script_revision } : {}), allow_input: true, confirm_account: true, ...(appIds === undefined ? {} : { app_ids: plan.context.app_ids }), ...(plan.context.rerun_completed ? { rerun_completed: true } : {}) } });
+          await onCommand(standalone ? { type: 'start_standalone_trial', params: { instance_id: instanceId, group_id: groupId, app_id: standaloneAppId, revision: plan.context.config_revision, game_day: plan.game_day.date, ...(appCombat ? { combat_revision: appCombat.script_revision } : {}), allow_input: true, confirm_account: true } } : { type: 'start_group_trial', params: { instance_id: instanceId, group_id: groupId, revision: plan.context.config_revision, game_day: plan.game_day.date, ...(appCombat ? { combat_revision: appCombat.script_revision } : {}), allow_input: true, confirm_account: true, ...(appIds === undefined ? {} : { app_ids: plan.context.app_ids }), ...(plan.context.rerun_completed ? { rerun_completed: true } : {}) } });
         }}>{standalone ? '开始独立应用试运行' : '开始应用组试运行'}</Button>
       </div>}
       {showStatus && <RunSaveRecovery error={snapshot?.record_error} disabled={disabled} onCommand={onCommand}/>}

@@ -1,0 +1,27 @@
+[
+  {
+    "path": "src/zzz_od/operation/compendium/notorious_hunt.py",
+    "sha256": "8eef6f49a08e39ae5d6fdf2a7b0aa3ee9c58d4c777e71055555012709c839a57",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/notorious_hunt.yml",
+    "sha256": "e5637fbabef32e6322e54bac5428a8befcc5e8db70a3ce98443489bc4b808444",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/application/notorious_hunt/notorious_hunt_config.py",
+    "sha256": "6c44fb2f9fb49c712687086e93c1e81f719d492d6b65290fb1782ec10693c4f0",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/application/charge_plan/charge_plan_config.py",
+    "sha256": "dfb8624f20e767aad79d0a022dce8d52472d1795b012bd70f474f87de36312c4",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/develop/zzz/application/charge_plan.md",
+    "sha256": "27327d8cfa4dac18582876946711f8d4e915ba585cec7efcac47fa304180333e",
+    "encoding": "utf8-lf"
+  }
+]

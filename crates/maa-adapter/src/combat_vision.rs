@@ -196,6 +196,10 @@ pub struct CombatFrame {
     pub captured: Instant,
 }
 impl CombatFrame {
+    pub fn recognition_image(&self) -> &RecognitionImage {
+        &self.image
+    }
+
     pub fn age_ms(&self) -> u32 {
         self.captured.elapsed().as_millis().min(u32::MAX as u128) as u32
     }
@@ -288,6 +292,7 @@ pub struct CombatRecognizer {
     patrol_avatar_cache: BTreeMap<[i32; 4], usize>,
     patrol_avatar_scan: BTreeMap<[i32; 4], usize>,
     patrol_portrait_template: BTreeMap<[i32; 4], (usize, String)>,
+    agent_scope: Option<Vec<usize>>,
 }
 impl CombatRecognizer {
     /// 只读取同一截图中的固定普通结算区域；调用方须确认已进入战斗，
@@ -363,10 +368,39 @@ impl CombatRecognizer {
             patrol_avatar_cache: BTreeMap::new(),
             patrol_avatar_scan: BTreeMap::new(),
             patrol_portrait_template: BTreeMap::new(),
+            agent_scope: None,
         }
     }
     pub fn cancellation_handle(&self) -> Arc<Mutex<Option<crate::RawRecognitionControl>>> {
         self.raw.clone()
+    }
+    /// 本次完整实际队伍已确认后限制正常前后台头像候选；None 恢复通用识别。
+    /// 重置状态或暂停不改变冻结名单，不能用这个设置补齐未识别的成员。
+    pub fn set_agent_scope(&mut self, ids: Option<&[String]>) -> Result<()> {
+        let scope = ids
+            .map(|ids| {
+                ensure!(
+                    (1..=3).contains(&ids.len()),
+                    "战斗头像候选须为完整 1..3 名成员"
+                );
+                let mut found = Vec::new();
+                for id in ids {
+                    let index = self
+                        .bundle
+                        .spec
+                        .agents
+                        .iter()
+                        .position(|a| &a.id == id)
+                        .context("战斗头像候选不在冻结目录")?;
+                    ensure!(!found.contains(&index), "战斗头像候选不能重复");
+                    found.push(index);
+                }
+                Ok(found)
+            })
+            .transpose()?;
+        self.agent_scope = scope;
+        self.reset();
+        Ok(())
     }
     pub fn reset(&mut self) {
         self.candidates.clear();
@@ -535,7 +569,8 @@ impl CombatRecognizer {
         rect: [i32; 4],
         cancel: &AtomicBool,
     ) -> Result<Option<usize>> {
-        let patrol = self.patrol_hud_offset.is_some();
+        let scoped = self.agent_scope.is_some() && matches!(prefix, "avatar_1_" | "avatar_2_");
+        let patrol = self.patrol_hud_offset.is_some() && !scoped;
         if patrol {
             if let Some((index, key)) = self.patrol_portrait_template.get(&rect)
                 && self.matched(session, frame, key, rect, 0.9)?.is_some()
@@ -561,7 +596,11 @@ impl CombatRecognizer {
             }
             self.patrol_avatar_cache.remove(&rect);
         }
-        let candidates: Vec<usize> = if patrol {
+        let candidates: Vec<usize> = if let Some(scope) = &self.agent_scope
+            && matches!(prefix, "avatar_1_" | "avatar_2_")
+        {
+            scope.clone()
+        } else if patrol {
             let count = self.bundle.spec.agents.len();
             if count == 0 {
                 return Ok(None);

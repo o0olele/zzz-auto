@@ -1,0 +1,57 @@
+[
+  {
+    "path": "src/zzz_od/operation/compendium/area_patrol.py",
+    "sha256": "7a610d39433931164ff00989ee65449ac5dbd154a44cb259db38dd3db6e2843b",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/deploy.py",
+    "sha256": "c2c48f49c5410dafd1fd9452fc0525c5d040c4ee50552a41c3b729a9b3f16172",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/choose_predefined_team.py",
+    "sha256": "5dead090505348f1980811fa98fccca27330c2453e24476c5c2ebdb7a2ca436a",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/challenge_mission/check_next_after_battle.py",
+    "sha256": "ce14b40f30ac49092cff77c1cfba316390c065e73942c223c7379f72863df398",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/area_patrol.yml",
+    "sha256": "0d109ac28f306aaa45e0e7efb7c4f167e2b95fbd045894a6f7a6a61f7223eaeb",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/combat_simulation.yml",
+    "sha256": "b5739b698c3034f9c4d754a415317693236aa356eb8bba3c0d3aa83f7f61a611",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/battle.yml",
+    "sha256": "83ac6836cc40f46cfab33411ee128681f8b16f5ffe2d6869424d617c2cce2c06",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/restore_charge.yml",
+    "sha256": "49be4bab898be8e3f35b2c9a5e37f63d0b717d8441628558ebbe28e821e262ac",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/game/screens/战斗画面.md",
+    "sha256": "c196e94258a959cd98adf48a5415e48d05bdec794513f4d13356c1bfdcf817b6",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/game/screens/恢复电量.md",
+    "sha256": "02417b069f37e9cc621847dcebf07567a11730733e84b769a5a5f3111bbb105c",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "docs/game/screens/实战模拟室.md",
+    "sha256": "f077ede1105202fcc0f07d4f390ec1a9b6418e94f1b73368ff5caed5f1e77553",
+    "encoding": "utf8-lf"
+  }
+]

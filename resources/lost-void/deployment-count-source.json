@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "id": "ordinary-deployment-party-count",
+  "base_size": [
+    1920,
+    1080
+  ],
+  "roi": [
+    1640,
+    10,
+    220,
+    90
+  ],
+  "meaning": "ability_activation_numerator_and_actual_agent_count_denominator",
+  "accepted": false,
+  "actual_game": false,
+  "sources": [
+    {
+      "file": "ordinary-deploy-20241217.png",
+      "page": "https://www.miyoushe.com/zzz/article/60251445",
+      "url": "https://upload-bbs.miyoushe.com/upload/2024/12/17/7615585/7f2182f0025844bd94ac9bbfc5c21dee_120035136161049461.png",
+      "sha256": "9b78b0bd4aba1b47ec403f6f50b4b3b28be932e5ca4fab9830149cc154c8979a",
+      "size": [
+        2796,
+        1290
+      ],
+      "actual_agents": 3
+    },
+    {
+      "file": "ordinary-deploy-20260207.png",
+      "page": "https://www.miyoushe.com/zzz/article/73013050",
+      "url": "https://upload-bbs.miyoushe.com/upload/2026/02/07/339349186/a5c09e40e97d25ce3943166a0f0ba087_1396075632201334844.png",
+      "sha256": "f24145606d1ef3467ada32363df23dffc977723002738c3a0b1ebf0f9a6340ce",
+      "size": [
+        2532,
+        1170
+      ],
+      "actual_agents": 3
+    },
+    {
+      "file": "one-agent-gamewith.jpg",
+      "page": "https://gamewith.jp/zenless/456804",
+      "url": "https://img.gamewith.jp/img/original_dc58a7da3bc8d233db5a3da41cab191d.png",
+      "sha256": "0e0465a88e5378d25aadf603269622b9481836ce9f5b69717e544748fcd06930",
+      "size": [
+        1920,
+        1080
+      ],
+      "actual_agents": 1
+    },
+    {
+      "file": "two-agents-taptap.jpg",
+      "page": "https://www.taptap.cn/moment/576089696594036674",
+      "url": "https://img2-tc.tapimg.com/moment/etag/c7fe9d67b45690d6bed921f3d0dd66ac.png/_tap_ugc.jpg",
+      "sha256": "dae5015d19dcd3e5ae5b59c6ac7f6b4cba3c420f5007eac9d7342376ddcb4919",
+      "size": [
+        865,
+        480
+      ],
+      "actual_agents": 2
+    }
+  ],
+  "limitations": [
+    "Public reference screenshots; one-agent image is Japanese, two-agent image is an older version; current Chinese one/two-agent Lost Void gameplay remains unaccepted.",
+    "Mobile wide-aspect references demonstrate semantics only; runtime requires the existing 1920x1080 native frame."
+  ],
+  "ocr_separator_alias": {
+    "printed": "/",
+    "recognized": "1",
+    "observed_words": [
+      "313",
+      "\u7701\u6d41"
+    ],
+    "observed_source": "ordinary-deploy-20260207.png",
+    "recognizer": "Maa PP-OCRv5 CPU; normalized 1920x1080; fixed ROI",
+    "reference": "src/zzz_od/operation/choose_predefined_team.py::_get_team_count_text"
+  }
+}

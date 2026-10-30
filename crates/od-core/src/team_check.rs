@@ -1,4 +1,4 @@
-//! 预备编队检查的冻结配置和分页证据。识别结果只更新成员，不能修改名称或脚本。
+//! 预备编队检查的冻结配置和分页证据。新扫描按槽位同步名称与成员，脚本保持。
 use crate::predefined_teams::{self, TeamConfig, TeamMembers};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -59,6 +59,9 @@ pub fn observe(
 #[serde(deny_unknown_fields)]
 pub struct TeamCheckProgress {
     pub config: TeamConfig,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub by_slot: bool,
     pub pages_read: u8,
     pub opened: bool,
     pub top_scrolls: u8,
@@ -73,6 +76,7 @@ impl TeamCheckProgress {
         config.validate()?;
         Ok(Self {
             config,
+            by_slot: false,
             pages_read: 0,
             opened: false,
             top_scrolls: 0,
@@ -85,6 +89,11 @@ impl TeamCheckProgress {
 
     pub fn validate(&self) -> Result<(), &'static str> {
         self.config.validate()?;
+        if (self.by_slot && self.pages_read == 0)
+            || (!self.by_slot && self.members.iter().any(|m| m.observed_name.is_some()))
+        {
+            return Err("编队名称回执与扫描方式不符");
+        }
         if self.pages_read > SCAN_PAGES
             || self.top_scrolls > 4
             || (self.pages_read > 0 && self.top_scrolls != 4)
@@ -116,6 +125,18 @@ impl TeamCheckProgress {
         {
             return Err("编队有效成员不能同时标记为未识别或冲突");
         }
+        if self.by_slot {
+            let expected: BTreeSet<_> = (0..(self.pages_read * 4 + 2).min(20)).collect();
+            let actual: BTreeSet<_> = self
+                .members
+                .iter()
+                .map(|m| m.index)
+                .chain(self.unreadable.iter().copied())
+                .collect();
+            if !self.conflicted.is_empty() || actual != expected {
+                return Err("编队槽位检查点缺少已读页面覆盖证明");
+            }
+        }
         if !self.members.is_empty() {
             predefined_teams::apply_members(&self.config, &self.members)?;
         }
@@ -144,6 +165,9 @@ impl TeamCheckProgress {
         unreadable: &[String],
     ) -> Result<(), &'static str> {
         self.validate()?;
+        if self.by_slot || members.iter().any(|m| m.observed_name.is_some()) {
+            return Err("旧版名称扫描不能混入槽位回执");
+        }
         if !self.opened
             || self.top_scrolls != 4
             || page != self.pages_read
@@ -205,6 +229,68 @@ impl TeamCheckProgress {
             return Err("已经回写的编队不能重新扫描");
         }
         *self = Self::new(self.config.clone())?;
+        Ok(())
+    }
+
+    /// 翻页后的前两槽须与上一页末两槽一致，避免未翻页或到达底部后误写下标。
+    pub fn record_slot_page(
+        &mut self,
+        page: u8,
+        members: Vec<TeamMembers>,
+        unreadable: &[u8],
+    ) -> Result<(), &'static str> {
+        self.validate()?;
+        if !self.opened
+            || self.top_scrolls != 4
+            || page != self.pages_read
+            || page >= SCAN_PAGES
+            || self.saved_revision.is_some()
+            || (page > 0 && !self.by_slot)
+        {
+            return Err("编队槽位读页次序无效");
+        }
+        let expected: BTreeSet<_> = (0..6)
+            .filter_map(|card| crate::team_slots::index(page, card))
+            .collect();
+        let supplied: Vec<_> = members
+            .iter()
+            .map(|m| m.index)
+            .chain(unreadable.iter().copied())
+            .collect();
+        if supplied.len() != expected.len()
+            || supplied.iter().copied().collect::<BTreeSet<_>>() != expected
+        {
+            return Err("编队槽位读页缺失或重复");
+        }
+        if !members.is_empty() {
+            predefined_teams::apply_members(&self.config, &members)?;
+        }
+        if page > 0 {
+            for index in page * 4..page * 4 + 2 {
+                let old = self
+                    .members
+                    .iter()
+                    .find(|m| m.index == index)
+                    .ok_or("前页缺少重叠编队证明")?;
+                if members.iter().find(|m| m.index == index) != Some(old) {
+                    return Err("编队重叠卡片不一致，不能确认翻页位置");
+                }
+            }
+        }
+        let mut next = self.clone();
+        next.by_slot = true;
+        for member in members {
+            if !next.members.iter().any(|m| m.index == member.index) {
+                next.members.push(member);
+            }
+        }
+        next.unreadable.extend_from_slice(unreadable);
+        next.unreadable.sort_unstable();
+        next.unreadable.dedup();
+        next.members.sort_by_key(|m| m.index);
+        next.pages_read += 1;
+        next.validate()?;
+        *self = next;
         Ok(())
     }
 

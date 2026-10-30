@@ -17,6 +17,8 @@ pub struct TeamPage {
     pub mode: TeamPageMode,
     pub members: Vec<TeamMembers>,
     pub unreadable: Vec<String>,
+    pub by_slot: bool,
+    pub unreadable_slots: Vec<u8>,
 }
 
 impl NativeSession {
@@ -27,20 +29,39 @@ impl NativeSession {
         cancel: &AtomicBool,
         timeout: Duration,
     ) -> Result<Option<TeamPage>> {
+        self.read_team_page_at(config, 0, game, cancel, timeout)
+    }
+
+    pub fn read_team_page_at(
+        &self,
+        config: &TeamConfig,
+        page_index: u8,
+        game: bool,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<TeamPage>> {
         ensure!(
             self.game_window.is_some() == game
                 && self.input_mode == Some(crate::InputMode::Foreground),
             "编队检查控制器模式不匹配"
         );
-        crate::validate_basic_daily_app_bundle(
+        let bundle = crate::validate_basic_daily_app_bundle(
             self.daily_bundle.as_deref().unwrap_or(&self.resource_root),
             "predefined_team_checker",
         )?;
         let Some(frame) = self.navigation_frame(cancel)? else {
             return Ok(None);
         };
-        let page =
-            self.inspect_predefined_teams_with_timeout(&frame.image, config, cancel, timeout)?;
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(bundle.join("basic-daily-manifest.json"))?)?;
+        let page = if manifest["schema_version"]
+            .as_u64()
+            .is_some_and(|schema| schema >= 9)
+        {
+            self.inspect_predefined_team_slots(&frame.image, config, page_index, cancel, timeout)?
+        } else {
+            self.inspect_predefined_teams_with_timeout(&frame.image, config, cancel, timeout)?
+        };
         Ok((!cancel.load(Ordering::Acquire)).then_some(page))
     }
     /// 只读识别，同一张固定画面上的名称、人数及头像共同构成结果。
@@ -75,6 +96,8 @@ impl NativeSession {
             mode: TeamPageMode::Unknown,
             members: vec![],
             unreadable: vec![],
+            by_slot: false,
+            unreadable_slots: vec![],
         };
         if !ready()? {
             return Ok(page);
@@ -153,7 +176,9 @@ impl NativeSession {
                 }
             }
         }
-        let agents = od_core::random_play::agents();
+        let agents = crate::basic_daily::basic_daily_agents(
+            self.daily_bundle.as_deref().unwrap_or(&self.resource_root),
+        )?;
         for (index, [x, y, _, _]) in names {
             if !ready()? {
                 page.members.clear();
@@ -195,63 +220,13 @@ impl NativeSession {
                 continue;
             }
             let count = *counts.first().unwrap();
-            let mut matches = Vec::new();
-            for slot in 0..3 {
-                // 名称框与头像边缘有数像素差异，保留余量；限定到单个头像，
-                // 既避免扫描整张卡片，也不会把邦布或邻队头像算作当前代理人。
-                let roi = [x - 10 + 194 * slot, y + 70, 208, 150];
-                for agent in &agents {
-                    if !ready()? {
-                        page.members.clear();
-                        return Ok(page);
-                    }
-                    // 管理卡片在固定 1080p 下与头像素材同尺寸。先用宽松的相关性
-                    // 筛掉无关素材，再用旧版同样的 SIFT 参数验证，避免逐队重复
-                    // 提取全部 84 份素材的特征而耗尽应用超时。
-                    let templates: Vec<_> = agent
-                        .templates
-                        .iter()
-                        .map(|template| format!("random-play/avatar_{template}.png"))
-                        .collect();
-                    let candidate = self.recognize_prepared(
-                        frame,
-                        "TemplateMatch",
-                        &json!({
-                            "template":templates,
-                            "roi":roi,"green_mask":true,"threshold":0.6
-                        }),
-                    )?;
-                    if candidate.detail["hit"] != true {
-                        continue;
-                    }
-                    if !ready()? {
-                        page.members.clear();
-                        return Ok(page);
-                    }
-                    let detected = self.recognize_prepared(frame, "FeatureMatch", &json!({
-                        "template":templates,
-                        "roi":roi,"detector":"SIFT","ratio":0.5,"count":4,"green_mask":true,"order_by":"Score"
-                    }))?;
-                    if detected.detail["hit"] != true {
-                        continue;
-                    }
-                    for hit in detected.detail["detail"]["filtered"]
-                        .as_array()
-                        .context("头像特征匹配缺少结果")?
-                    {
-                        matches.push(AvatarMatch {
-                            agent_id: agent.id.clone(),
-                            rect: serde_json::from_value(hit["box"].clone())
-                                .context("头像匹配框无效")?,
-                            score: hit["count"].as_f64().context("头像匹配缺少特征点数量")?,
-                        });
-                    }
-                }
-            }
-            if let Some(agent_ids) = predefined_teams::resolve_members(x, y, count, &matches) {
+            if let Some(agent_ids) =
+                self.recognize_team_agents(frame, x, y, count, &agents, &ready)?
+            {
                 page.members.push(TeamMembers {
                     index,
                     name: name.clone(),
+                    observed_name: None,
                     member_count: count,
                     agent_ids,
                 });
@@ -267,5 +242,67 @@ impl NativeSession {
             predefined_teams::apply_members(config, &page.members).map_err(anyhow::Error::msg)?;
         }
         Ok(page)
+    }
+    pub(super) fn recognize_team_agents(
+        &self,
+        frame: &RecognitionImage,
+        x: i32,
+        y: i32,
+        count: u8,
+        agents: &[od_core::random_play::ShopAgent],
+        ready: &impl Fn() -> Result<bool>,
+    ) -> Result<Option<[String; 3]>> {
+        let mut matches = Vec::new();
+        for slot in 0..3 {
+            // 名称框与头像边缘有数像素差异，保留余量；限定到单个头像，
+            // 既避免扫描整张卡片，也不会把邦布或邻队头像算作当前代理人。
+            let roi = [x - 10 + 194 * slot, y + 70, 208, 150];
+            for agent in agents {
+                if !ready()? {
+                    return Ok(None);
+                }
+                // 管理卡片在固定 1080p 下与头像素材同尺寸。先用宽松的相关性
+                // 筛掉无关素材，再用旧版同样的 SIFT 参数验证，避免逐队重复
+                // 提取全部头像素材的特征而耗尽应用超时。
+                let templates: Vec<_> = agent
+                    .templates
+                    .iter()
+                    .map(|template| format!("random-play/avatar_{template}.png"))
+                    .collect();
+                let candidate = self.recognize_prepared(
+                    frame,
+                    "TemplateMatch",
+                    &json!({
+                        "template":templates,
+                        "roi":roi,"green_mask":true,"threshold":0.6
+                    }),
+                )?;
+                if candidate.detail["hit"] != true {
+                    continue;
+                }
+                if !ready()? {
+                    return Ok(None);
+                }
+                let detected = self.recognize_prepared(frame, "FeatureMatch", &json!({
+                    "template":templates,
+                    "roi":roi,"detector":"SIFT","ratio":0.5,"count":4,"green_mask":true,"order_by":"Score"
+                }))?;
+                if detected.detail["hit"] != true {
+                    continue;
+                }
+                for hit in detected.detail["detail"]["filtered"]
+                    .as_array()
+                    .context("头像特征匹配缺少结果")?
+                {
+                    matches.push(AvatarMatch {
+                        agent_id: agent.id.clone(),
+                        rect: serde_json::from_value(hit["box"].clone())
+                            .context("头像匹配框无效")?,
+                        score: hit["count"].as_f64().context("头像匹配缺少特征点数量")?,
+                    });
+                }
+            }
+        }
+        Ok(predefined_teams::resolve_members(x, y, count, &matches))
     }
 }

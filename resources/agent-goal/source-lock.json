@@ -1,0 +1,42 @@
+[
+  {
+    "path": "src/zzz_od/operation/challenge_mission/check_next_after_battle.py",
+    "sha256": "ce14b40f30ac49092cff77c1cfba316390c065e73942c223c7379f72863df398",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/battle.yml",
+    "sha256": "83ac6836cc40f46cfab33411ee128681f8b16f5ffe2d6869424d617c2cce2c06",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/application/charge_plan/charge_plan_app.py",
+    "sha256": "c60cd7da5897c73f3891181608bc1cbacf534d06be084a253d92944c3cc69203",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/application/charge_plan/charge_plan_config.py",
+    "sha256": "dfb8624f20e767aad79d0a022dce8d52472d1795b012bd70f474f87de36312c4",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/combat_simulation.py",
+    "sha256": "3becd49b870b4d53e41feb6181630370d127524b27a6bfa4e4a3994918286207",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/area_patrol.py",
+    "sha256": "7a610d39433931164ff00989ee65449ac5dbd154a44cb259db38dd3db6e2843b",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/expert_challenge.py",
+    "sha256": "f3ab161bcda5cba73e39e75eea93da09d0646af30a287870c088bd8ab3fb961e",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/notorious_hunt.py",
+    "sha256": "8eef6f49a08e39ae5d6fdf2a7b0aa3ee9c58d4c777e71055555012709c839a57",
+    "encoding": "utf8-lf"
+  }
+]

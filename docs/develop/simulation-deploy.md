@@ -16,6 +16,8 @@
 
 独立 schema 1 `simulation-deploy` 包固定六份来源、OCR 模型及全部只读节点；原模拟室、结算、日常和战斗包不修改定义。协议 v45、导入预览 v18 及既有输入恢复版本保持不变；界面输入的 W 已包含在共用混合恢复清单中。完整父任务接入前仍不开放体力应用。
 
+2026 年 10 月 26 日继续接通[详情推进与选队交接](simulation-entry.md)：`EntryRun` 在首次下一步前接收已编译的战斗脚本，确认实际出战页和选队后，通过 `into_deployment` 一次性传入本执行器。关卡未验证的回执仍被拒绝，完整体力父任务和实际控制器切换继续待接入；当前协议沿用锄大地阶段的 v46、导入预览 v19。
+
 ```powershell
 target/m4/debug/od-tools.exe simulation-deploy-bundle --reference E:/Code/ZenlessZoneZero-OneDragon
 target/m4/debug/zzz-engine.exe --root E:/Code/zzz-auto --sdk E:/Code/zzz-auto/artifacts/deploy-no-sdk --data E:/Code/zzz-auto/artifacts/deploy-unused-data simulation-deploy-bundle-check

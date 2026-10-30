@@ -1,0 +1,32 @@
+[
+  {
+    "path": "src/one_dragon/utils/cv2_utils.py",
+    "sha256": "c6a9a081c396642e66c54316c770fc345c3635be5be644e945aebd6e71fb0c6d",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/compendium_choose_mission_type.py",
+    "sha256": "9f4ad56184de3744a1296c53b77520ed322bc6a9c40b61d42a7fd20465e23e02",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/operation/compendium/combat_simulation.py",
+    "sha256": "3becd49b870b4d53e41feb6181630370d127524b27a6bfa4e4a3994918286207",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/compendium.yml",
+    "sha256": "4653ff15c14ba24e6b6ee9556c809699fd0174fc99f39a8745f4df6e04cf4286",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "assets/game_data/screen_info/combat_simulation.yml",
+    "sha256": "b5739b698c3034f9c4d754a415317693236aa356eb8bba3c0d3aa83f7f61a611",
+    "encoding": "utf8-lf"
+  },
+  {
+    "path": "src/zzz_od/game_data/compendium.py",
+    "sha256": "7b020cc2e30a9da12796e90601e681923a2d392bdc5283dc1a3ced1c81aa60b4",
+    "encoding": "utf8-lf"
+  }
+]

@@ -251,7 +251,9 @@ fn scan(source: &Path, data: &Path) -> Result<Vec<SourceFile>> {
         }
         let name = entry.file_name().to_string_lossy().to_lowercase();
         if !(name.ends_with(".yml") || name.ends_with(".yaml"))
-            || (name.ends_with(".sample.yml") && name != "redemption_codes.sample.yml")
+            || (name.ends_with(".sample.yml")
+                && name != "redemption_codes.sample.yml"
+                && entry.path().parent() != Some(config.join("lost_void_challenge").as_path()))
             || name.ends_with(".sample.yaml")
         {
             continue;
@@ -478,6 +480,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             if parts.len() == 2 && parts[1] == "_group.yml" {
                 let group: LegacyGroup = parse(file)?;
                 groups.push(AppGroup {
+                    lost_void: Default::default(),
                     world_patrol: Default::default(),
                     charge_plan: Default::default(),
                     suibian_temple: Default::default(),
@@ -503,6 +506,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         }
         if !groups.iter().any(|g| g.id == "one_dragon") {
             let mut group = AppGroup {
+                lost_void: Default::default(),
                 world_patrol: Default::default(),
                 charge_plan: Default::default(),
                 suibian_temple: Default::default(),
@@ -580,6 +584,41 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             }
         }
         for group in &mut groups {
+            let grouped_lost = format!("{prefix}{}/lost_void.yml", group.id);
+            let old_lost = format!("{prefix}lost_void.yml");
+            let lost_file = files
+                .iter()
+                .find(|f| f.relative == grouped_lost)
+                .or_else(|| files.iter().find(|f| f.relative == old_lost));
+            if lost_file.is_some() || group.apps.iter().any(|app| app.app_id == "lost_void") {
+                let value = lost_file
+                    .map(parse::<serde_json::Value>)
+                    .transpose()?
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let preliminary =
+                    crate::lost_void::import(&value, None).map_err(anyhow::Error::msg)?;
+                let name = &preliminary.challenge_config;
+                let path = format!("lost_void_challenge/{name}.yml");
+                let sample = format!("lost_void_challenge/{name}.sample.yml");
+                let source = files
+                    .iter()
+                    .find(|f| f.relative == path)
+                    .or_else(|| files.iter().find(|f| f.relative == sample));
+                ensure!(
+                    source.is_some() || name == "默认-成就模式",
+                    "迷失之地引用的挑战方案不存在：{name}"
+                );
+                let challenge = source.map(parse::<serde_json::Value>).transpose()?;
+                *group.lost_void = crate::lost_void::import(&value, challenge.as_ref())
+                    .map_err(anyhow::Error::msg)?;
+                if let Some(file) = lost_file {
+                    converted.insert(file.relative.clone());
+                }
+                if let Some(source) = source {
+                    converted.insert(source.relative.clone());
+                }
+                warnings.push(format!("账号 {} 的 {} 组迷失之地及挑战方案已转换；旧日周次数和奖励标记仅归档，完整游戏执行仍在开发。", item.idx, group.id));
+            }
             let grouped_charge = format!("{prefix}{}/charge_plan.yml", group.id);
             let old_charge = format!("{prefix}charge_plan.yml");
             if let Some(file) = files
@@ -773,7 +812,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v19\0");
+    hash.update(b"zzz-auto-config-import-v21\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());
@@ -808,6 +847,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let preview_id = hex::encode(hash.finalize());
     let config = AccountConfig {
+        charge_commits: Vec::new(),
         redemption,
         reserved_instance_ids: Vec::new(),
         schema: CONFIG_SCHEMA,

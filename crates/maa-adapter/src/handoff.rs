@@ -22,6 +22,14 @@ pub enum SessionHandoff {
 }
 
 impl NativeSession {
+    /// 只读冻结已连接会话的目标，不能用它切换到另一个窗口。
+    pub fn game_capture_target(&self) -> Result<Option<(WindowInfo, CaptureMethod)>> {
+        match (&self.game_window, self.capture_method) {
+            (Some(window), Some(capture)) => Ok(Some((window.clone(), capture))),
+            (None, None) => Ok(None),
+            _ => anyhow::bail!("原生会话的窗口与截图方式不完整"),
+        }
+    }
     /// 停止并等候 Tasker 和控制器队列；释放失败时保留原实例，不可交给下个执行器。
     pub fn quiesce(&mut self) -> Result<()> {
         let stopped = if self.tasker.running() {

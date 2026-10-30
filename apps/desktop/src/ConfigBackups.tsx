@@ -1,4 +1,5 @@
 import { SuibianTempleSummary } from './SuibianTempleSettings';
+import { LostVoidSummary } from './LostVoidSettings';
 import { ChargePlanSummary } from './ChargePlanSettings';
 import { RedemptionConfigSummary } from './RedemptionSettings';
 import { dismantleSummary } from './DismantleSettings';
@@ -72,6 +73,7 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     <p>情报板设置：{oldGroup ? intelBoardSummary(oldGroup.intel_board) : '无此组'} → {newGroup ? intelBoardSummary(newGroup.intel_board) : '无此组'}。</p>
     <div aria-label="体力计划恢复差异">{oldGroup && <><p>当前体力计划</p><ChargePlanSummary settings={oldGroup.charge_plan}/></>}{newGroup && <><p>恢复后体力计划</p><ChargePlanSummary settings={newGroup.charge_plan}/></>}</div>
     <div aria-label="随便观恢复差异">{oldGroup && <><p>当前配置</p><SuibianTempleSummary settings={oldGroup.suibian_temple}/></>}{newGroup && <><p>恢复后配置</p><SuibianTempleSummary settings={newGroup.suibian_temple}/></>}</div>
+    <div aria-label="迷失之地恢复差异">{oldGroup && <><p>当前配置</p><LostVoidSummary settings={oldGroup.lost_void}/></>}{newGroup && <><p>恢复后配置</p><LostVoidSummary settings={newGroup.lost_void}/></>}</div>
     <div className="input-fields">{[{ group: oldGroup, title: '当前应用顺序' }, { group: newGroup, title: '恢复后应用顺序' }].map(({ group, title }) => {
       return <div role="group" aria-label={title} key={title}><h3>{title}</h3>{group ? <ol className="group-plan">{group.apps.map(item => <li key={item.app_id}>{apps.find(app => app.id === item.app_id)?.name ?? item.app_id} · {item.enabled ? '启用' : '禁用'}</li>)}</ol> : <p>无此组</p>}</div>;
     })}</div>

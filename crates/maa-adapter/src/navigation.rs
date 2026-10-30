@@ -57,13 +57,18 @@ impl NativeSession {
                 && buffer.image_type() == 16,
             "导航截图须为连续 1080p BGR8"
         );
-        Ok(Some(NavigationFrame {
+        let frame = NavigationFrame {
             image: RecognitionImage {
                 buffer,
                 prepare_us: captured.elapsed().as_micros() as u64,
             },
             captured,
-        }))
+        };
+        self.observe_lost_void_exit_frame(&frame, cancel)?;
+        if cancel.load(Ordering::Acquire) {
+            return Ok(None);
+        }
+        Ok(Some(frame))
     }
 
     /// 模板由受校验的业务资源包提供；定位及角度识别共用同一张截图。

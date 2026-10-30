@@ -18,6 +18,85 @@ use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 const MANIFEST: &str = "resource-manifest.json";
 const MAX_MANIFEST: u64 = 1024 * 1024;
 const MAX_FILE: u64 = 128 * 1024 * 1024;
+const CHARGE_DIRS: &[&str] = &[
+    "compendium",
+    "simulation",
+    "simulation-deploy",
+    "restore-charge",
+    "charge-navigation",
+    "charge-transport",
+    "area-patrol",
+    "expert-challenge",
+    "deep-hunt",
+    "charge-level",
+    "agent-transport",
+    "agent-goal",
+    "ether-synthesis-entry",
+    "ether-synthesis",
+];
+fn safe_charge_path(name: &str) -> bool {
+    CHARGE_DIRS
+        .iter()
+        .any(|dir| name.starts_with(&format!("generated/{dir}/")))
+        && !name.contains([':', '\\'])
+        && Path::new(name)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+fn validate_charge_bundles(root: &Path) -> Result<()> {
+    for name in CHARGE_DIRS {
+        let p = root.join("generated").join(name);
+        if !p.try_exists()? {
+            continue;
+        }
+        match *name {
+            "compendium" => {
+                maa_adapter::compendium::validate_compendium_bundle(&p)?;
+            }
+            "simulation" => {
+                maa_adapter::simulation::validate_simulation_bundle(&p)?;
+            }
+            "simulation-deploy" => {
+                maa_adapter::simulation_deploy::validate_simulation_deploy_bundle(&p)?;
+            }
+            "restore-charge" => {
+                maa_adapter::restore_charge::validate_restore_charge_bundle(&p)?;
+            }
+            "charge-navigation" => {
+                maa_adapter::charge_navigation::validate_charge_navigation_bundle(&p)?;
+            }
+            "charge-transport" => {
+                maa_adapter::charge_transport::validate_charge_transport_bundle(&p)?;
+            }
+            "area-patrol" => {
+                maa_adapter::area_patrol::validate_area_patrol_bundle(&p)?;
+            }
+            "expert-challenge" => {
+                maa_adapter::expert_challenge::validate_expert_challenge_bundle(&p)?;
+            }
+            "deep-hunt" => {
+                maa_adapter::deep_hunt::validate_deep_hunt_bundle(&p)?;
+            }
+            "charge-level" => {
+                maa_adapter::charge_level::validate_charge_level_bundle(&p)?;
+            }
+            "agent-transport" => {
+                maa_adapter::agent_transport::validate_agent_transport_bundle(&p)?;
+            }
+            "agent-goal" => {
+                maa_adapter::agent_goal::validate_agent_goal_bundle(&p)?;
+            }
+            "ether-synthesis-entry" => {
+                maa_adapter::ether_synthesis_entry::validate_ether_synthesis_entry_bundle(&p)?;
+            }
+            "ether-synthesis" => {
+                maa_adapter::ether_synthesis::validate_ether_synthesis_bundle(&p)?;
+            }
+            _ => unreachable!("固定体力资源目录"),
+        }
+    }
+    Ok(())
+}
 pub(crate) const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;
 // 首批只收集当前具有执行器的完整资源，其他生成目录不进入运行包。
 const FILES: &[&str] = &[
@@ -78,6 +157,13 @@ fn daily_extension_path(name: &str) -> bool {
         .is_some_and(|relative| {
             od_core::random_play::templates().contains_key(relative)
                 || intel_extension_relative(relative)
+        })
+}
+fn updated_agent_extension_path(name: &str) -> bool {
+    name.strip_prefix("generated/basic-daily/")
+        .is_some_and(|relative| {
+            od_core::random_play::templates().contains_key(relative)
+                && !od_core::random_play::templates_for_schema(7).contains_key(relative)
         })
 }
 fn intel_extension_relative(relative: &str) -> bool {
@@ -223,6 +309,14 @@ fn safe_patrol_path(name: &str) -> bool {
             .all(|part| matches!(part, std::path::Component::Normal(_)))
 }
 
+fn safe_lost_void_path(name: &str) -> bool {
+    name.starts_with("generated/lost-void-scene/")
+        && !name.contains([':', '\\'])
+        && Path::new(name)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
 fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
     ensure!(
         matches!(manifest.schema_version, 1..=4)
@@ -250,6 +344,8 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
                 || (manifest.schema_version >= 3
                     && manifest.protocol_version >= 38
                     && (!intel_extension_path(&file.path) || manifest.protocol_version >= 41)
+                    && (!updated_agent_extension_path(&file.path)
+                        || manifest.protocol_version >= 49)
                     && daily_extension_path(&file.path))
                 || (manifest.schema_version >= 3
                     && manifest.protocol_version >= 44
@@ -257,7 +353,13 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
                 || (manifest.schema_version == 4 && safe_combat_path(&file.path))
                 || (manifest.schema_version == 4
                     && manifest.protocol_version >= 46
-                    && safe_patrol_path(&file.path)))
+                    && safe_patrol_path(&file.path))
+                || (manifest.schema_version == 4
+                    && manifest.protocol_version >= 48
+                    && safe_charge_path(&file.path))
+                || (manifest.schema_version == 4
+                    && manifest.protocol_version >= 54
+                    && safe_lost_void_path(&file.path)))
                 && paths.insert(file.path.as_str()),
             "资源文件未登记或重复"
         );
@@ -275,10 +377,23 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
             && total <= MAX_ARCHIVE,
         "运行资源包不完整或过大"
     );
+    ensure!(
+        !paths.iter().any(|name| safe_lost_void_path(name))
+            || paths.contains(crate::lost_void_resources::SCENE_MANIFEST),
+        "迷失之地资源缺少配套场景清单"
+    );
     Ok(())
 }
 
-fn validate_semantics(root: &Path) -> Result<()> {
+fn validate_semantics(root: &Path, protocol: u32) -> Result<()> {
+    if root
+        .join(crate::lost_void_resources::SCENE_DIRECTORY)
+        .try_exists()?
+    {
+        ensure!(protocol >= 54, "迷失之地运行资源需要协议 v54");
+        crate::lost_void_resources::validate(root)?;
+    }
+    validate_charge_bundles(root)?;
     if root.join("generated/world-patrol").try_exists()? {
         maa_adapter::world_patrol::validate_bundle(&root.join("generated/world-patrol"))?;
     }
@@ -296,7 +411,17 @@ fn validate_semantics(root: &Path) -> Result<()> {
         maa_adapter::validate_coffee_run_bundle(&root.join("generated/coffee-run"))?;
     }
     if root.join("generated/basic-daily").try_exists()? {
-        maa_adapter::validate_basic_daily_bundle(&root.join("generated/basic-daily"))?;
+        let daily = maa_adapter::validate_basic_daily_bundle(&root.join("generated/basic-daily"))?;
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(daily.join("basic-daily-manifest.json"))?)?;
+        ensure!(
+            manifest["schema_version"]
+                .as_u64()
+                .is_some_and(
+                    |schema| (schema < 9 || protocol >= 50) && (schema < 10 || protocol >= 51)
+                ),
+            "编队资源与协议版本不匹配（槽位扫描 v50、选队 v51）"
+        );
     }
     for (name, expected) in [
         (
@@ -379,7 +504,7 @@ fn validate_directory_cancellable(
             file.path
         );
     }
-    validate_semantics(root)?;
+    validate_semantics(root, manifest.protocol_version)?;
     cancelled(cancel)?;
     Ok(manifest)
 }
@@ -500,6 +625,26 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
             }
         }
     }
+    for name in CHARGE_DIRS {
+        let directory = source.join("generated").join(name);
+        if !directory.try_exists()? {
+            continue;
+        }
+        ensure!(manifest.schema_version == 4, "体力资源需要配套战斗资源");
+        for entry in walkdir::WalkDir::new(directory).min_depth(1) {
+            let entry = entry?;
+            check_path(entry.path())?;
+            if entry.file_type().is_file() {
+                names.push(
+                    entry
+                        .path()
+                        .strip_prefix(&source)?
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+    }
     if source.join("generated/suibian-temple").try_exists()? {
         let temple = source.join("generated/suibian-temple");
         maa_adapter::suibian_temple::validate_full_temple_bundle(&temple)?;
@@ -517,6 +662,27 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
             }
         }
     }
+    let lost_void = source.join(crate::lost_void_resources::SCENE_DIRECTORY);
+    if lost_void.try_exists()? {
+        ensure!(manifest.schema_version == 4, "迷失之地需要配套战斗资源");
+        crate::lost_void_resources::validate(&source)?;
+        let mut scene_files = Vec::new();
+        for entry in walkdir::WalkDir::new(&lost_void).min_depth(1) {
+            let entry = entry?;
+            check_path(entry.path())?;
+            if entry.file_type().is_file() {
+                scene_files.push(
+                    entry
+                        .path()
+                        .strip_prefix(&source)?
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+        scene_files.sort();
+        names.extend(scene_files);
+    }
     for name in names {
         let path = source.join(&name);
         check_path(&path)?;
@@ -528,7 +694,7 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
         });
     }
     validate_manifest(&manifest)?;
-    validate_semantics(&source)?;
+    validate_semantics(&source, manifest.protocol_version)?;
     let bytes = serde_json::to_vec_pretty(&manifest)?;
     let id = hex::encode(Sha256::digest(&bytes));
     let parent = output.parent().context("无法定位输出目录")?;
@@ -605,7 +771,9 @@ fn extract(
                     || daily_extension_path(entry.name())
                     || safe_temple_path(entry.name())
                     || safe_combat_path(entry.name())
-                    || safe_patrol_path(entry.name()))
+                    || safe_patrol_path(entry.name())
+                    || safe_charge_path(entry.name())
+                    || safe_lost_void_path(entry.name()))
                 && names.insert(entry.name().to_owned()),
             "ZIP 包含多余、重复或非法条目"
         );
@@ -705,7 +873,7 @@ fn target(
         Ok((directory, Some(manifest)))
     } else {
         check_path(bundled)?;
-        validate_semantics(bundled)?;
+        validate_semantics(bundled, od_protocol::PROTOCOL_VERSION)?;
         Ok((bundled.to_path_buf(), None))
     }
 }

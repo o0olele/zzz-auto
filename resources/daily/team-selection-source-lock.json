@@ -1,0 +1,26 @@
+[
+  {
+    "path": "src/zzz_od/config/team_config.py",
+    "sha256": "b762dbb1a1866df3d56914db4d10ea968a980216ef1e4e62f540393ef1bdc390"
+  },
+  {
+    "path": "src/zzz_od/application/game_config_checker/predefined_team_checker/predefined_team_checker.py",
+    "sha256": "1a3798f923c603f5b47b5fb4e82fae8739e06fe8ffdcdc6d991203c772d57c08"
+  },
+  {
+    "path": "src/zzz_od/operation/agent_template_matcher.py",
+    "sha256": "07345f59ce9acf4ecf267f9deaa9f29bb650829efa73d46cd11cc064c08dbfa1"
+  },
+  {
+    "path": "src/zzz_od/operation/predefined_team_recognizer.py",
+    "sha256": "5fdce74172a0ed502d7261180371862236da24c4ae9482b0dd87458ed19ce3bd"
+  },
+  {
+    "path": "assets/game_data/screen_info/team_select.yml",
+    "sha256": "b8581d071d3a4e2b9d98962375985de705a359ce89747cd11c1ccc496e2ec8cf"
+  },
+  {
+    "path": "src/zzz_od/operation/choose_predefined_team.py",
+    "sha256": "5dead090505348f1980811fa98fccca27330c2453e24476c5c2ebdb7a2ca436a"
+  }
+]

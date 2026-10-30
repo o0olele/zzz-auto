@@ -107,7 +107,7 @@ impl TransportFlow {
         }
         Ok(())
     }
-    fn arrival(view: &SimulationView) -> bool {
+    pub(crate) fn arrival(view: &SimulationView) -> bool {
         match view {
             SimulationView::Challenge {
                 current_charge,

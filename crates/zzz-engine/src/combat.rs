@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, ensure};
 use maa_adapter::{
     NativeSession,
-    combat_vision::{CombatObservation, CombatRecognizer},
+    combat_vision::{CombatFrame, CombatObservation, CombatRecognizer},
 };
 use od_core::{
     RunState,
@@ -60,6 +60,35 @@ enum Step {
 pub enum CombatSegmentEnd {
     Result(NormalBattleResult),
     Interrupted(Interrupt),
+}
+
+/// 每次新截图在状态识别和动作调度前决定；等待不能沿用旧输入或状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CombatFrameGate {
+    Proceed,
+    Hold,
+    /// 同次战斗的临时重读，保留已生效的自定义状态和冷却；仍禁止输入。
+    Refresh,
+    Yield,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CombatResultPolicy {
+    NormalBattle,
+    ExternalBoundary,
+}
+pub struct CombatGuardOptions {
+    pub budget: Duration,
+    pub result_policy: CombatResultPolicy,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuardedCombatSegmentEnd {
+    Result(NormalBattleResult),
+    Yielded,
+    Interrupted(Interrupt),
+}
+enum InnerEnd {
+    Normal(NormalBattleResult),
+    Yielded,
 }
 
 pub struct CombatRun {
@@ -131,6 +160,20 @@ impl CombatRun {
         self.progress.state = RunState::Running;
         Ok(())
     }
+    /// 外层确认整个任务安全暂停后恢复子战斗，覆盖结果返回与父交接之间的暂停。
+    pub fn resume_segment_after_parent_pause(&mut self) -> Result<()> {
+        ensure!(
+            self.parented
+                && self.progress.inputs_released
+                && !matches!(self.progress.state, RunState::Failed | RunState::Stopped)
+                && self.control.resume(),
+            "子战斗尚未由父任务确认暂停、输入未释放或已经失败 / 停止"
+        );
+        self.progress.state = RunState::Running;
+        self.sequence = None;
+        self.end_tracker.reset_confirmation();
+        Ok(())
+    }
     fn intervals(&mut self) -> Result<BTreeMap<String, f64>> {
         let mut result = BTreeMap::new();
         for (name, default) in [
@@ -172,6 +215,7 @@ impl CombatRun {
                     Ok(())
                 },
                 false,
+                &mut |_, _, _, _| Ok(CombatFrameGate::Proceed),
             )
             .map(|_| ());
         self.elapsed += started.elapsed().as_secs_f64();
@@ -209,7 +253,7 @@ impl CombatRun {
         publish: impl FnMut(CombatProgress) -> Result<()>,
     ) -> Result<CombatSegmentEnd> {
         use std::sync::atomic::{AtomicBool, Ordering};
-        let deadline = Instant::now() + budget;
+        let deadline = self.segment_deadline(budget);
         self.parent_deadline = Some(deadline);
         let finished = AtomicBool::new(false);
         let raw = recognizer.cancellation_handle();
@@ -237,8 +281,93 @@ impl CombatRun {
         native: &mut NativeSession,
         recognizer: &mut CombatRecognizer,
         allow_audio: bool,
-        mut publish: impl FnMut(CombatProgress) -> Result<()>,
+        publish: impl FnMut(CombatProgress) -> Result<()>,
     ) -> Result<CombatSegmentEnd> {
+        match self.execute_segment_guarded(
+            native,
+            recognizer,
+            allow_audio,
+            CombatResultPolicy::NormalBattle,
+            &mut |_, _, _, _| Ok(CombatFrameGate::Proceed),
+            publish,
+        )? {
+            GuardedCombatSegmentEnd::Result(result) => Ok(CombatSegmentEnd::Result(result)),
+            GuardedCombatSegmentEnd::Interrupted(interrupt) => {
+                Ok(CombatSegmentEnd::Interrupted(interrupt))
+            }
+            GuardedCombatSegmentEnd::Yielded => anyhow::bail!("普通战斗出现未提供的外部交接"),
+        }
+    }
+    /// 外部守卫负责自己的页面身份及稳定新帧证明；本方法负责调度、释放与父预算。
+    pub fn execute_segment_guarded_with_budget(
+        &mut self,
+        native: &mut NativeSession,
+        recognizer: &mut CombatRecognizer,
+        allow_audio: bool,
+        options: CombatGuardOptions,
+        mut guard: impl FnMut(
+            &NativeSession,
+            &CombatRecognizer,
+            &CombatFrame,
+            Duration,
+        ) -> Result<CombatFrameGate>,
+        publish: impl FnMut(CombatProgress) -> Result<()>,
+    ) -> Result<GuardedCombatSegmentEnd> {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let deadline = self.segment_deadline(options.budget);
+        self.parent_deadline = Some(deadline);
+        let finished = AtomicBool::new(false);
+        let raw = recognizer.cancellation_handle();
+        let control = self.control.clone();
+        let result = std::thread::scope(|scope| {
+            scope.spawn(|| {
+                while !finished.load(Ordering::Acquire) {
+                    if (control.requested().is_some() || Instant::now() >= deadline)
+                        && let Some(raw) = raw.lock().expect("应用内战斗推理取消锁失效").clone()
+                    {
+                        let _ = raw.cancel();
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            });
+            let result = self.execute_segment_guarded(
+                native,
+                recognizer,
+                allow_audio,
+                options.result_policy,
+                &mut guard,
+                publish,
+            );
+            finished.store(true, Ordering::Release);
+            result
+        });
+        self.parent_deadline = None;
+        result
+    }
+    fn segment_deadline(&self, budget: Duration) -> Instant {
+        let config_remaining = Duration::from_secs_f64(
+            (f64::from(self.progress.config.timeout_ms) / 1000.0 - self.elapsed).max(0.0),
+        );
+        Instant::now() + budget.min(config_remaining)
+    }
+    fn execute_segment_guarded(
+        &mut self,
+        native: &mut NativeSession,
+        recognizer: &mut CombatRecognizer,
+        allow_audio: bool,
+        policy: CombatResultPolicy,
+        guard: &mut impl FnMut(
+            &NativeSession,
+            &CombatRecognizer,
+            &CombatFrame,
+            Duration,
+        ) -> Result<CombatFrameGate>,
+        mut publish: impl FnMut(CombatProgress) -> Result<()>,
+    ) -> Result<GuardedCombatSegmentEnd> {
+        ensure!(
+            policy == CombatResultPolicy::NormalBattle || self.patrol_ui_timeout.is_none(),
+            "世界巡逻与外部页面边界不能混用"
+        );
         ensure!(
             self.parented && !self.progress.state.is_terminal() && self.progress.inputs_released,
             "战斗交接缺少可继续状态或输入释放证明"
@@ -248,7 +377,15 @@ impl CombatRun {
         self.end_tracker.reset_confirmation();
         self.progress.state = RunState::Running;
         let started = Instant::now();
-        let result = self.execute_inner(native, recognizer, allow_audio, &mut publish, true);
+        let initial_elapsed = self.elapsed;
+        let result = self.execute_inner(
+            native,
+            recognizer,
+            allow_audio,
+            &mut publish,
+            policy == CombatResultPolicy::NormalBattle,
+            guard,
+        );
         self.elapsed += started.elapsed().as_secs_f64();
         let released = native.release_inputs();
         self.progress.inputs_released = released.is_ok();
@@ -271,20 +408,31 @@ impl CombatRun {
                         Interrupt::Stop => RunState::Stopped,
                     };
                     self.message = "应用内战斗已中断，输入已释放".into();
-                    CombatSegmentEnd::Interrupted(interrupt)
+                    GuardedCombatSegmentEnd::Interrupted(interrupt)
                 }
                 None => {
                     let result = result.context("应用内战斗没有结算或中断证据")?;
-                    self.progress.state = match result {
-                        NormalBattleResult::Completed => RunState::Succeeded,
-                        NormalBattleResult::Retreat => RunState::Failed,
-                    };
-                    self.message = "战斗结算已确认，输入已释放，交回应用流程".into();
-                    CombatSegmentEnd::Result(result)
+                    match result {
+                        InnerEnd::Normal(result) => {
+                            self.progress.state = match result {
+                                NormalBattleResult::Completed => RunState::Succeeded,
+                                NormalBattleResult::Retreat => RunState::Failed,
+                            };
+                            self.message = "战斗结算已确认，输入已释放，交回应用流程".into();
+                            GuardedCombatSegmentEnd::Result(result)
+                        }
+                        InnerEnd::Yielded => {
+                            self.progress.state = RunState::Running;
+                            self.message = "战斗输入已释放，交回父流程核对局内页面".into();
+                            GuardedCombatSegmentEnd::Yielded
+                        }
+                    }
                 }
             },
         };
-        if let Err(error) = publish(self.progress.clone()) {
+        let saved = publish(self.progress.clone());
+        self.elapsed = initial_elapsed + started.elapsed().as_secs_f64();
+        if let Err(error) = saved {
             self.progress.state = RunState::Failed;
             self.message = format!("战斗交接状态保存失败：{error:#}");
             return Err(error);
@@ -296,7 +444,17 @@ impl CombatRun {
                 Interrupt::Stop => RunState::Stopped,
             };
             self.message = "应用内战斗已中断，输入已释放".into();
-            end = CombatSegmentEnd::Interrupted(interrupt);
+            end = GuardedCombatSegmentEnd::Interrupted(interrupt);
+        }
+        if self.control.requested().is_none()
+            && (self
+                .parent_deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
+                || self.elapsed * 1000.0 >= f64::from(self.progress.config.timeout_ms))
+        {
+            self.progress.state = RunState::Failed;
+            self.message = "战斗交接保存期间总运行预算已耗尽".into();
+            anyhow::bail!("战斗交接保存期间总运行预算已耗尽");
         }
         Ok(end)
     }
@@ -307,7 +465,13 @@ impl CombatRun {
         allow_audio: bool,
         publish: &mut impl FnMut(CombatProgress) -> Result<()>,
         check_end: bool,
-    ) -> Result<Option<NormalBattleResult>> {
+        guard: &mut impl FnMut(
+            &NativeSession,
+            &CombatRecognizer,
+            &CombatFrame,
+            Duration,
+        ) -> Result<CombatFrameGate>,
+    ) -> Result<Option<InnerEnd>> {
         native.check_combat_input_mode(self.progress.config.mode)?;
         recognizer.reset();
         for prefix in [
@@ -404,6 +568,7 @@ impl CombatRun {
         let mut next_frame = 0.0;
         let mut recognition_seconds = 0.0_f64;
         let mut last_fresh = None;
+        let mut refresh_pending = false;
         let mut last_publish = 0.0;
         let mut last_lock = 0.0;
         let mut last_turn = 0.0;
@@ -447,6 +612,86 @@ impl CombatRun {
                     return Ok(None);
                 };
                 self.progress.frames += 1;
+                if self.control.requested().is_some() {
+                    return Ok(None);
+                }
+                ensure!(
+                    self.parent_deadline
+                        .is_none_or(|deadline| Instant::now() < deadline),
+                    "应用总运行预算已耗尽"
+                );
+                ensure!(
+                    (self.elapsed + started.elapsed().as_secs_f64()) * 1000.0
+                        < f64::from(self.progress.config.timeout_ms),
+                    "战斗运行达到超时上限"
+                );
+                let remaining = self
+                    .parent_deadline
+                    .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+                    .unwrap_or(Duration::from_millis(u64::from(
+                        self.progress.config.timeout_ms,
+                    )));
+                let gate = guard(native, recognizer, &frame, remaining)?;
+                if self.control.requested().is_some() {
+                    return Ok(None);
+                }
+                ensure!(
+                    self.parent_deadline
+                        .is_none_or(|deadline| Instant::now() < deadline),
+                    "应用总运行预算已耗尽"
+                );
+                ensure!(
+                    (self.elapsed + started.elapsed().as_secs_f64()) * 1000.0
+                        < f64::from(self.progress.config.timeout_ms),
+                    "战斗运行达到超时上限"
+                );
+                if gate != CombatFrameGate::Proceed {
+                    native.release_inputs()?;
+                    ledger.clear();
+                    queue.clear();
+                    until = None;
+                    if gate == CombatFrameGate::Refresh {
+                        // 已执行的状态操作可能尚待下一次 tick 合并；只提交其自定义更新。
+                        for update in pending_states
+                            .iter()
+                            .filter(|s: &&StateUpdate| s.name.starts_with("自定义-"))
+                        {
+                            self.scheduler.states.apply(update)?;
+                        }
+                    }
+                    pending_states.clear();
+                    if let Some((capture, detector)) = &mut audio {
+                        let _ = capture.drain()?;
+                        detector.reset();
+                    }
+                    if gate == CombatFrameGate::Refresh {
+                        self.scheduler.refresh_observation();
+                        refresh_pending = true;
+                    } else {
+                        self.scheduler.pause();
+                        self.scheduler.resume();
+                        refresh_pending = false;
+                    }
+                    self.sequence = None;
+                    last_fresh = None;
+                    self.progress.in_battle = false;
+                    self.progress.inputs_released = true;
+                    self.progress.frame_age_ms = frame.age_ms();
+                    if gate == CombatFrameGate::Yield {
+                        ensure!(frame.age_ms() <= 1500, "战斗交接守卫返回过期截图");
+                        return Ok(Some(InnerEnd::Yielded));
+                    }
+                    recognition_seconds = recognition_started.elapsed().as_secs_f64();
+                    now = self.elapsed + started.elapsed().as_secs_f64();
+                    next_frame = now + self.progress.config.frame_interval_ms as f64 / 1000.0;
+                    if now - last_publish >= 0.1 {
+                        publish(self.progress.clone())?;
+                        last_publish = now;
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                    continue;
+                }
+                self.progress.inputs_released = false;
                 if self.patrol_ui_timeout.is_some() {
                     if frame.age_ms() <= self.progress.config.max_frame_age_ms
                         && native.patrol_world_in_combat(&frame)?
@@ -460,7 +705,7 @@ impl CombatRun {
                         self.sequence = None;
                         patrol_visible_frames += 1;
                         if patrol_visible_frames >= 2 {
-                            return Ok(Some(NormalBattleResult::Completed));
+                            return Ok(Some(InnerEnd::Normal(NormalBattleResult::Completed)));
                         }
                         next_frame = now + 0.2;
                         continue;
@@ -538,7 +783,7 @@ impl CombatRun {
                         self.progress.frame_age_ms <= self.progress.config.max_frame_age_ms,
                     )
                 {
-                    return Ok(Some(end));
+                    return Ok(Some(InnerEnd::Normal(end)));
                 }
                 now = self.elapsed + started.elapsed().as_secs_f64();
                 recognition_seconds = recognition_started.elapsed().as_secs_f64();
@@ -550,8 +795,12 @@ impl CombatRun {
                     queue.clear();
                     until = None;
                     pending_states.clear();
-                    self.scheduler.pause();
-                    self.scheduler.resume();
+                    if refresh_pending {
+                        self.scheduler.refresh_observation();
+                    } else {
+                        self.scheduler.pause();
+                        self.scheduler.resume();
+                    }
                     self.sequence = None;
                     last_fresh = None;
                     self.progress.in_battle = false;
@@ -586,6 +835,9 @@ impl CombatRun {
                                 && !s.clear
                         }))
                     .then_some(frame_at);
+                    if last_fresh.is_some() {
+                        refresh_pending = false;
+                    }
                     observation = fresh;
                 }
             }
@@ -621,8 +873,10 @@ impl CombatRun {
                     queue.clear();
                     until = None;
                 }
-                self.scheduler.pause();
-                self.scheduler.resume();
+                if !refresh_pending {
+                    self.scheduler.pause();
+                    self.scheduler.resume();
+                }
                 self.sequence = None;
                 pending_states.clear();
             } else {

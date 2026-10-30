@@ -1,0 +1,1272 @@
+[
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/lost_void_app.py",
+    "encoding": "utf8_lf",
+    "sha256": "c0f16b8fbf9a09a721c554dbbb2bb1235b028f62959aebbfd188932cafaface0"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/lost_void_run_level.py",
+    "encoding": "utf8_lf",
+    "sha256": "b912a495f38438a2d4f33f8d797ed21db6e8924ceedd7c8d1a6ed18c4c598e13"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_choose_common.py",
+    "encoding": "utf8_lf",
+    "sha256": "1007617bae37233d3f4085181d8be6bde0297931a74047cbc944dfaba9b0c451"
+  },
+  {
+    "path": "assets/game_data/screen_info/common_deploy.yml",
+    "encoding": "utf8_lf",
+    "sha256": "f26dee189ef3d11636b53c64058ef22ce13aea48e45a0ba0dfa4ea1d17222d2f"
+  },
+  {
+    "path": "assets/game_data/screen_info/compendium_combat.yml",
+    "encoding": "utf8_lf",
+    "sha256": "bdc6b2f744bb5555fde9b464a71b4fee79d9e4b02312eaf479f24348dd70831b"
+  },
+  {
+    "path": "assets/game_data/screen_info/compendium.yml",
+    "encoding": "utf8_lf",
+    "sha256": "4653ff15c14ba24e6b6ee9556c809699fd0174fc99f39a8745f4df6e04cf4286"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_bangboo_store.yml",
+    "encoding": "utf8_lf",
+    "sha256": "2fa43c6bb97269040adec579f3a472eefc454b7060a8deb6d4b99bf5a7f0f438"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_battle_fail.yml",
+    "encoding": "utf8_lf",
+    "sha256": "42b95e3d2cb482f20062483efb74df29801b029c5a93bc9f402ef572aa53c38e"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_battle_result.yml",
+    "encoding": "utf8_lf",
+    "sha256": "c13b712e8a2d0f08c81fc148b274f96999dca0d349cab6f9075848f09c3c74db"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_choose_common.yml",
+    "encoding": "utf8_lf",
+    "sha256": "864d1cfbee38f63bdd72a110a0e800545b89671f32ea200edc592b26238b9281"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_entry_matrix_action.yml",
+    "encoding": "utf8_lf",
+    "sha256": "41dfa107a6e1aba34f90ed19b134a9001fb23236b8f4293ba71e633c83649b26"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_entry_periodic.yml",
+    "encoding": "utf8_lf",
+    "sha256": "61880b7f3a243ad4d82dfabcfa79750c809e3b24ee8cf5048fe768493d010eb3"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_entry_purge.yml",
+    "encoding": "utf8_lf",
+    "sha256": "911b29d49c9508c42f4c9d36274d91d6d7de7f7b1ce5c2eeee586dcf97b05c4c"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_entry_standard.yml",
+    "encoding": "utf8_lf",
+    "sha256": "f8fb86f36e84c69f091b5347d3eb0f4e0b99b9575c1b8d60073757c474295012"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_entry_task_force.yml",
+    "encoding": "utf8_lf",
+    "sha256": "46880d16bc0600daa8671d564199cca6dfcf1f1a7c0866bdcae960651e0d9973"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_entry.yml",
+    "encoding": "utf8_lf",
+    "sha256": "d4a50e7910f073c707fe55ef3ea639ff795543133cc882f9adc4a00a1f4192fa"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_gear.yml",
+    "encoding": "utf8_lf",
+    "sha256": "dcd14f26bc6ad249f220494405273f96efa7c3ec9c1a96765d03521e6f21a63f"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_lottery.yml",
+    "encoding": "utf8_lf",
+    "sha256": "d1482d5e474d382cdccf1213c70c78cf90d0f16bbfbc65d4eb377174c25c613e"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_normal_world.yml",
+    "encoding": "utf8_lf",
+    "sha256": "8df6c6107c86897d0d630155b1e3221cae52136645ec69469940d962d1ff61a7"
+  },
+  {
+    "path": "assets/game_data/screen_info/lost_void_route_change.yml",
+    "encoding": "utf8_lf",
+    "sha256": "d0b7e83129417924efd76ebe6d90326f5f751bf7cce346c2cf8139c50a5c86e5"
+  },
+  {
+    "path": "assets/game_data/screen_info/matrix_action_team_select.yml",
+    "encoding": "utf8_lf",
+    "sha256": "3a2da8636070e1ce76b97f37f5bca3c414f4b80f506b5768f8873ef334c70760"
+  },
+  {
+    "path": "assets/template/lost_void/normal_world_tab/raw.png",
+    "encoding": "binary",
+    "sha256": "8ab417d77812f4e5c969434e75435796df3daa1a10af06b841a48f790efee14e"
+  },
+  {
+    "path": "assets/template/lost_void/normal_world_tab/mask.png",
+    "encoding": "binary",
+    "sha256": "190ddefa30d6fc6797558424507f069be671369ec2e38c2a9803964cba984e64"
+  },
+  {
+    "path": "assets/template/battle/btn_menu/raw.png",
+    "encoding": "binary",
+    "sha256": "1a4caff33b86ba32b22d5a5d369b5baf37de333361e65161565f99b6e2bac79d"
+  },
+  {
+    "path": "assets/template/battle/btn_menu/mask.png",
+    "encoding": "binary",
+    "sha256": "02349f8c2faeea1268337a4040159ff7543c256e54fdaeb1863a85a2abcc91fe"
+  },
+  {
+    "path": "assets/game_data/compendium_data.yml",
+    "encoding": "utf8_lf",
+    "sha256": "33a28eb3ffc3b49fc19083a1fbf66873bc88c6ff8aafcc886e3d1fad321096cc"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/context/lost_void_context.py",
+    "encoding": "utf8_lf",
+    "sha256": "2e38d03f6a361b350459fadad121fa277ff434554f3f930db143c63ebd65042b"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_artifact_pos.py",
+    "encoding": "utf8_lf",
+    "sha256": "0b7e6fc9c1b517f72cd32ae0d73185ef587b2653e692561c68d1db89dd860b5a"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_lottery.py",
+    "encoding": "utf8_lf",
+    "sha256": "0fcc10d6b5fdbd3c8b80e5841f6afb0ae3376c6a9c5bc4caff2f8f23903407db"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_route_change.py",
+    "encoding": "utf8_lf",
+    "sha256": "83bfc8e5ab2d91ef7bd57b3a4eb67a5d9a96214807f1f434d3aae5ffcd47bdee"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_choose_gear.py",
+    "encoding": "utf8_lf",
+    "sha256": "6aa16cc3dfc46987bce65db0b3c5755a08df564616fab252dcfb2480a1287db0"
+  },
+  {
+    "path": "assets/image_analysis_pipelines/迷失之地-武备列表检测.yml",
+    "encoding": "utf8_lf",
+    "sha256": "049fb809c4a1906e36a2c24ed614eff75aad072d18966f3797461c48699c1afa"
+  },
+  {
+    "path": "assets/image_analysis_pipelines/迷失之地-武备等级检测.yml",
+    "encoding": "utf8_lf",
+    "sha256": "6b50ba04b5d52f53ab2d7d9c7ef39150e87c855494eccb00cd97ec185b5e31ca"
+  },
+  {
+    "path": "assets/template/lost_void/gear_branch_a/raw.png",
+    "encoding": "binary",
+    "sha256": "4c7e25215e0e78199482f29a9589834dbbc68424078b266a66546963c139d380"
+  },
+  {
+    "path": "assets/template/lost_void/gear_branch_a/mask.png",
+    "encoding": "binary",
+    "sha256": "60135f2e07e313a172d7a1046b4d50835c40accbafd0866d56432075dc851535"
+  },
+  {
+    "path": "assets/template/lost_void/gear_branch_b/raw.png",
+    "encoding": "binary",
+    "sha256": "8b3a16a8df0227e6e25e1663df9a25ceaeb8b77fc8b8f38b66090f559e012d62"
+  },
+  {
+    "path": "assets/template/lost_void/gear_branch_b/mask.png",
+    "encoding": "binary",
+    "sha256": "60135f2e07e313a172d7a1046b4d50835c40accbafd0866d56432075dc851535"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_bangboo_store.py",
+    "encoding": "utf8_lf",
+    "sha256": "bbcf0658a22ba1a994cdd4ad21b4c543d80a75c61e0a6e9cc71bd446752bbe64"
+  },
+  {
+    "path": "assets/template/lost_void/gold/raw.png",
+    "encoding": "binary",
+    "sha256": "f78780476ad2a9288367b680b19905d79c7ed87f14fc9fa75611c9813564364b"
+  },
+  {
+    "path": "assets/template/lost_void/gold/mask.png",
+    "encoding": "binary",
+    "sha256": "40ba4b9d10218901f48dc6ae5e44ca001b8e2f5d36349cd19308b7c50cd29195"
+  },
+  {
+    "path": "assets/template/lost_void/blood_drop/raw.png",
+    "encoding": "binary",
+    "sha256": "89fe2676c88371ba6818379acf01520a205d493c54b6571ad2e1e643698311d6"
+  },
+  {
+    "path": "assets/template/lost_void/blood_drop/mask.png",
+    "encoding": "binary",
+    "sha256": "8bbbf798d29defb8e56500f48bb22da5929628083942de44bc71737d78c0b518"
+  },
+  {
+    "path": "assets/template/normal_world/talk_option_icon/raw.png",
+    "encoding": "binary",
+    "sha256": "7329167b90aeb0fe192c9b4f417c5ba662898ee85913e7a2ad790a5c53fc8c85"
+  },
+  {
+    "path": "assets/template/normal_world/talk_option_icon/mask.png",
+    "encoding": "binary",
+    "sha256": "af0b4357aa4406af6d3d92d887ed871a936b1fa0a2f7590085419eacfb4caef1"
+  },
+  {
+    "path": "assets/template/lost_void/btn_black/raw.png",
+    "encoding": "binary",
+    "sha256": "f3a91e99e06b8e93d2653103a9996253e25c50b989b533f0877b35f3eb96f055"
+  },
+  {
+    "path": "assets/template/lost_void/btn_black/mask.png",
+    "encoding": "binary",
+    "sha256": "b929af5f1eaaec9ffddd41e16d669195801f062f3fe3aa2e8355f93c604c3390"
+  },
+  {
+    "path": "assets/template/lost_void/btn_black/config.yml",
+    "encoding": "utf8_lf",
+    "sha256": "e5a84cb4a99b79344090c5016a2608cda360eddbe758f948d2d7c321ad96839a"
+  },
+  {
+    "path": "assets/game_data/screen_info/lostvoid_investigativeStrategy.yml",
+    "encoding": "utf8_lf",
+    "sha256": "85e25b8f993e4edb4106a5cb172955bf56945723fdb9fd741e0d425b36deb014"
+  },
+  {
+    "path": "assets/image_analysis_pipelines/调查战略无等级圈圈.yml",
+    "encoding": "utf8_lf",
+    "sha256": "cbed55f7f97cf7cef99de88a59d885d4a792c6443bd1644bda18ee862eb03d20"
+  },
+  {
+    "path": "assets/image_analysis_pipelines/调查战略等级圈圈.yml",
+    "encoding": "utf8_lf",
+    "sha256": "4c96ca589ac3afef659e533d95a5ebc86c5a5ff06c5fd773368060adf0a843a2"
+  },
+  {
+    "path": "assets/image_analysis_pipelines/调查战略等级分析.yml",
+    "encoding": "utf8_lf",
+    "sha256": "fb8fdd400b1142f4f8f114096a9fcb00c617f4e7e09e81ab57f13a2d7358aa6c"
+  },
+  {
+    "path": "src/zzz_od/operation/agent_template_matcher.py",
+    "encoding": "utf8_lf",
+    "sha256": "07345f59ce9acf4ecf267f9deaa9f29bb650829efa73d46cd11cc064c08dbfa1"
+  },
+  {
+    "path": "src/one_dragon/utils/cv2_utils.py",
+    "encoding": "utf8_lf",
+    "sha256": "c6a9a081c396642e66c54316c770fc345c3635be5be644e945aebd6e71fb0c6d"
+  },
+  {
+    "path": "src/zzz_od/game_data/agent.py",
+    "encoding": "utf8_lf",
+    "sha256": "5c42209d512c3092ba53a537d8968a7f921d1ca4ecc26833c02d3a207309f92c"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_alice/raw.png",
+    "encoding": "binary",
+    "sha256": "326fca6084180aee19aa3c5de8ee689e449718cd4145f1cfd6e265695504aa8a"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_alice/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_alice_sea_of_thyme/raw.png",
+    "encoding": "binary",
+    "sha256": "0342e051d6b016880876fb126bedfca26eb00021308e2c54dd82d0092b272739"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_alice_sea_of_thyme/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_anby/raw.png",
+    "encoding": "binary",
+    "sha256": "fdffd3cd12a0d2a913f7a67da4721562685a4d3ccd6117609c4015902b46b620"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_anby/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_anton/raw.png",
+    "encoding": "binary",
+    "sha256": "9c925ae34f9f219f4f06a70c3281d6ac3b5c99af368707850a209014ca2387ef"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_anton/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_aria/raw.png",
+    "encoding": "binary",
+    "sha256": "9c88fb3b775ca6a5d63a7d809ed5868f8855a680109ae5bbe3d7a882b4776f65"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_aria/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_aria_cuteness_loading/raw.png",
+    "encoding": "binary",
+    "sha256": "13b8f0553abebbbb3129c6cee2d01ea0dfe510460e9b4c10c35f180a966d9a38"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_aria_cuteness_loading/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_aria_discordant_note/raw.png",
+    "encoding": "binary",
+    "sha256": "3ba08a4dc177135e813e93b97a81456ae6167cc123fefa58e39fc82c2c246755"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_aria_discordant_note/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_asaba_harumasa/raw.png",
+    "encoding": "binary",
+    "sha256": "c13cd0ce20efdd3a389dca38faa297824d2f150e892a33195630a2d3cb23c2cf"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_asaba_harumasa/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_astra_yao/raw.png",
+    "encoding": "binary",
+    "sha256": "3ddc9782d5c55bacd336a2e95e073b69e9193b069c360da5fb188eb4dd56e1d0"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_astra_yao/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_astra_yao_chandelier/raw.png",
+    "encoding": "binary",
+    "sha256": "aafd61c0ec522b0d80dd60d3f24faec622a8d6b7da6cfc8d281a691d3823692c"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_astra_yao_chandelier/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_banyue/raw.png",
+    "encoding": "binary",
+    "sha256": "831e2c4918a692f311c5fd8fc5b6ab8b781405ab38344f286816e5222dbbdf05"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_banyue/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_ben/raw.png",
+    "encoding": "binary",
+    "sha256": "2a2f3566b669b18ae00e234954c1971c648364da771911c02a992fec49a27a11"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_ben/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_billy/raw.png",
+    "encoding": "binary",
+    "sha256": "1d5cef932d4c3fe5e083f0b1b9263277a0920be233a9ff33053c29be747f6c5b"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_billy/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_burnice_white/raw.png",
+    "encoding": "binary",
+    "sha256": "a163769d6ba0122b19a183e0fc18f4afea41d234bcd98633a26196e88e9cd97f"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_burnice_white/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_caesar_king/raw.png",
+    "encoding": "binary",
+    "sha256": "32b2b4b746a0748e62adeb4644eefbd644458b0a40b5ed4012efb8cbc5886c9e"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_caesar_king/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_cissia/raw.png",
+    "encoding": "binary",
+    "sha256": "19145b91a3177bc56b10cd69e147d9db8efbd3a9094c1398e999d52951b990aa"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_cissia/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_claret/raw.png",
+    "encoding": "binary",
+    "sha256": "95893da80fe5aece10336e9f5b70ca80938472d0ae4972f72d47f87752ba4e30"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_claret/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_corin/raw.png",
+    "encoding": "binary",
+    "sha256": "e7cbe243d2f7ad95eb998e5ea577724ab5cf021cd27afa76e71f4ccc31abcf1e"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_corin/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_dialyn/raw.png",
+    "encoding": "binary",
+    "sha256": "36c990ae6a468a16e87f0e6ab7afa250ecdf9c1e60688d0fc9e4d6ee051e94e6"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_dialyn/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_ellen/raw.png",
+    "encoding": "binary",
+    "sha256": "c47374cde042f5edb70c15dfbc0aa289f7b78e89c37509e02c47f92e07da60ee"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_ellen/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_ellen_on_campus/raw.png",
+    "encoding": "binary",
+    "sha256": "ffe3498a69ee9eefe69a22e511cbaf6f3daff2dbaea76311ba89915e9424657c"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_ellen_on_campus/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_evelyn_chevalier/raw.png",
+    "encoding": "binary",
+    "sha256": "4fbd1a8afc4fa5b8c13ecfccc282c25f37094ad2693abd6eb5e300e2d157358d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_evelyn_chevalier/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_grace/raw.png",
+    "encoding": "binary",
+    "sha256": "43aeb3a86f88ea8be4c45fc10d5d8b921f032bcff70ce9344c2ad2c9f890283e"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_grace/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_hoshimi_miyabi/raw.png",
+    "encoding": "binary",
+    "sha256": "9113e7397646d183fede18c37ab91b325a555624d7a83da9024f9818db1eea23"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_hoshimi_miyabi/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_hoshimi_miyabi_dignified_blossom/raw.png",
+    "encoding": "binary",
+    "sha256": "780e815d4f79dd54de4d624e5c725c57cf92fb4fe5716b298ed918c9b5311557"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_hoshimi_miyabi_dignified_blossom/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_hugo_vlad/raw.png",
+    "encoding": "binary",
+    "sha256": "ed63d4264a4b1ecb061033fe6750805f16521f5515f309f34cbbe526c05aff97"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_hugo_vlad/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_jane_doe/raw.png",
+    "encoding": "binary",
+    "sha256": "67142dfe81316ebd2a1cd026e6c123e743549c05f0e76357041a0196afc6493e"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_jane_doe/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_jane_doe_nocturne_of_light/raw.png",
+    "encoding": "binary",
+    "sha256": "0fbf9ee4d26c49aa211f9591e07100a68eb2d2048e8daf5064a48fb1643c1dcb"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_jane_doe_nocturne_of_light/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_ju_fufu/raw.png",
+    "encoding": "binary",
+    "sha256": "3a7ae97fda17d83e600c7a58b0eae7f3c741d28002d821fbb0be5ea225791839"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_ju_fufu/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_koleda/raw.png",
+    "encoding": "binary",
+    "sha256": "b11901d6031854c61fd64cfc7aa6b0b6ebc7f72148bbf1ad7eea885dc1385765"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_koleda/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lighter/raw.png",
+    "encoding": "binary",
+    "sha256": "41a5bfd20434fb2845766c825fdbce9128a7e3e3596630f822d08f80e839bd23"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lighter/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lucia/raw.png",
+    "encoding": "binary",
+    "sha256": "ddde0bf3eb40204b7296da06aa9a3682dae2ed7618a4c0ee0da7499697e399d2"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lucia/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lucy/raw.png",
+    "encoding": "binary",
+    "sha256": "eae31c437c511d06c26f85859e72024d6a1702b1d404ef504dd8600a3ea1ec9b"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lucy/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lucy_princess_on_holiday/raw.png",
+    "encoding": "binary",
+    "sha256": "5e60dfbcb5343acdacc646b8a3e33f353b76c0b6d77ed04168f207533fd42f4e"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lucy_princess_on_holiday/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lycaon/raw.png",
+    "encoding": "binary",
+    "sha256": "dc89c0347c9ca589e65277f3e6fd233bdc01b6bc54a7880b5b98b0d3c87574ed"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_lycaon/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_manato/raw.png",
+    "encoding": "binary",
+    "sha256": "6ad2a5824d084f58974571ad7abb09f48db6d3c70e4a76ae8859b82980ad8365"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_manato/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_manato_white_heart_silhouette/raw.png",
+    "encoding": "binary",
+    "sha256": "445890746c1e49980a31412edb33d18af8feed6e03e9dc2929a364f53323be53"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_manato_white_heart_silhouette/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nangongyu/raw.png",
+    "encoding": "binary",
+    "sha256": "762e3ec7f50f9d9d5e845537551033c3956f3ae57f88a758b43241afb1237fe7"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nangongyu/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nangongyu_heartfelt_support/raw.png",
+    "encoding": "binary",
+    "sha256": "b71a6749a30f3dc360f73f0f376206578bf65b4a50a5f27fb82c5d4810c571f9"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nangongyu_heartfelt_support/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nangongyu_muse/raw.png",
+    "encoding": "binary",
+    "sha256": "193613749514d8386a2823ca90886e78a0a2189904f6b8079123eee0b02bd6f4"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nangongyu_muse/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nekomata/raw.png",
+    "encoding": "binary",
+    "sha256": "e31e0c0e65e124049a11d74d9df05c6ac12aad869591f1e88da0b6361ad1c1cd"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nekomata/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nicole/raw.png",
+    "encoding": "binary",
+    "sha256": "771ec82845e563e2f654b1641511acdc7e5b7db611942dd9bea0078c8997c143"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nicole/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nicole_cunning_cutie/raw.png",
+    "encoding": "binary",
+    "sha256": "eac91a4985dc8424a1a96d9dc17310fea894e858fe83b9606a406a6e54c9bcd6"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_nicole_cunning_cutie/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_norma/raw.png",
+    "encoding": "binary",
+    "sha256": "158dd6dc4541ea7d25fdd020726f4776139ddc46d21ac3816ab4be0359b320db"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_norma/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_orphie/raw.png",
+    "encoding": "binary",
+    "sha256": "77747c9ed4d40d42f8de2b786c8f517a492298636fc1a4fc1019b5f484046fb0"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_orphie/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_panyinhu/raw.png",
+    "encoding": "binary",
+    "sha256": "4626f399524c4572242d6ad4cc02ada429f215b7931b09b1a79f7e800ce30984"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_panyinhu/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_panyinhu_culinary_jewel/raw.png",
+    "encoding": "binary",
+    "sha256": "69e3c293f0f8d8a6500215a258371d891db3a813cecfd9282e7dc31919f156e3"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_panyinhu_culinary_jewel/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix/raw.png",
+    "encoding": "binary",
+    "sha256": "a997a94da344806c333e4499e4d23d55ec953a1cabafa50dd95184921f980553"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix_daydream_complex/raw.png",
+    "encoding": "binary",
+    "sha256": "4f7140acdcc89208acba549259f472fe6390f3bbd929d66cc27ab86a968d5d6d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix_daydream_complex/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix_the_illness_called_life/raw.png",
+    "encoding": "binary",
+    "sha256": "7d73053dea7e1e5d650991ae37f48a996cf8665b632bf0ef6bcd0d0c0d5e49b6"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_phoenix_the_illness_called_life/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_piper/raw.png",
+    "encoding": "binary",
+    "sha256": "2ccb2c02a9ba135efdb093f77cf38c1df1053929dfe650eee296197f12af0319"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_piper/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_promeia/raw.png",
+    "encoding": "binary",
+    "sha256": "f8456ec3d4931dac390b56d42efe59d831b3ab2146005b7dd09d8de7fa0a5078"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_promeia/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_pulchra/raw.png",
+    "encoding": "binary",
+    "sha256": "0dcf1ecd7cfe88a1fccc6866eaaa12d892877432d7584be1b0ac2df8807c402c"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_pulchra/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_pyrois_wise/raw.png",
+    "encoding": "binary",
+    "sha256": "c46be869bc92167bc30427d504dde1331e64ca742d9719156a305a3140d4fd5f"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_pyrois_wise/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_qingyi/raw.png",
+    "encoding": "binary",
+    "sha256": "2ab7306744547c0c67f5d4d02e022d20b84e52563f2b903a581f585e84cf43c1"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_qingyi/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_remielle/raw.png",
+    "encoding": "binary",
+    "sha256": "348e3633c5a452f339c1148f707901ca23f225bbd1668d1cc40cd55a673f5fbf"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_remielle/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_remielle_dark/raw.png",
+    "encoding": "binary",
+    "sha256": "0a23103c4a08381008a8e1c15e55960d4284afd88d121a16f5e70c2a32ab22b2"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_remielle_dark/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_remielle_dark_veil/raw.png",
+    "encoding": "binary",
+    "sha256": "9afa0a8cb6250db5ee7e0126940a5302e016d545b661604ca33a1844b27abe18"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_remielle_dark_veil/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_remielle_seashade/raw.png",
+    "encoding": "binary",
+    "sha256": "9c7bda589757dbb3f7eee01cef7f1baf47b11a57b75e3cc6df3d30fe5b3f12e3"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_remielle_seashade/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_rina/raw.png",
+    "encoding": "binary",
+    "sha256": "3714b12ec03b530182957a004405a0ad2de25c4e55fc2a82fe9498279d723f44"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_rina/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_roxy/raw.png",
+    "encoding": "binary",
+    "sha256": "82d82d97285dfb7db94f240e09ada043136ba790c3218ee479e78b6fe6ef731b"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_roxy/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_seed/raw.png",
+    "encoding": "binary",
+    "sha256": "a220ae3e560ae3c0f582d7f2e8657d05dafb0d553c2cfe3477d4c42d7c9bcc14"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_seed/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_seth_lowell/raw.png",
+    "encoding": "binary",
+    "sha256": "999cfecdc34a22f4f4f51fec66e047a69adeb306a1436807485b916b9e910d70"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_seth_lowell/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sigrid/raw.png",
+    "encoding": "binary",
+    "sha256": "7868aad13ef6269a1a8ceee97a27e4ce7b8c8f9db16d627b1fc8d6712bc376b8"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sigrid/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sigrid_majestic_wavechaser/raw.png",
+    "encoding": "binary",
+    "sha256": "3ef4c805f50f9b60234555ba14fc46521d2b76f7ff4487043ce2cd85b316d7ed"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sigrid_majestic_wavechaser/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_soldier_0_anby/raw.png",
+    "encoding": "binary",
+    "sha256": "1342a1374e09897b8748571ed5e0cc67b3d37d35b7e22cdca4e9a0f6f70292ac"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_soldier_0_anby/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_soldier_11/raw.png",
+    "encoding": "binary",
+    "sha256": "7205b83d78fe9918d5e5a11fb091e393cca59d34f6f50c8529261d038c93d3a8"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_soldier_11/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_soukaku/raw.png",
+    "encoding": "binary",
+    "sha256": "25db7fb1ff89ee91fe7d3d2d57e86124830e132c44477312fee5fc04dbc422e9"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_soukaku/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_starlight_billy_kid/raw.png",
+    "encoding": "binary",
+    "sha256": "fa7d288b605f080ba8e6b191df48e70531660c809790cd4b0ca33a76eeceed5d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_starlight_billy_kid/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sunna/raw.png",
+    "encoding": "binary",
+    "sha256": "0c74bc585ca351e6f5d44a23c80c5515bba3e5b112bdee05486b8ff67a8de878"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sunna/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sunna_afternoon_tea_break/raw.png",
+    "encoding": "binary",
+    "sha256": "dc4650a62b010059c43210e5762230f1ca6ce149737fc80aae04abd69773595b"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sunna_afternoon_tea_break/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sunna_delusions_in_business/raw.png",
+    "encoding": "binary",
+    "sha256": "f1d29c96dc65c5c31642eed50251180641f167c1d8bf8b198a876c2035e127f5"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_sunna_delusions_in_business/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_trigger/raw.png",
+    "encoding": "binary",
+    "sha256": "70c76863eecc746ddfbb15bb7150b0a7ed071e643adf140fbf4902ecf73950c8"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_trigger/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_velina/raw.png",
+    "encoding": "binary",
+    "sha256": "3268b1df90fc9d45a3e6641b2e364ccc4d92cd9c0dea4dfdfbf985e48965b276"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_velina/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_velina_shade_of_leisure/raw.png",
+    "encoding": "binary",
+    "sha256": "6c30ea0cfc66705808b9aa42f9fbf2de326b95e4c497bc296dd712421e7421de"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_velina_shade_of_leisure/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_vivian/raw.png",
+    "encoding": "binary",
+    "sha256": "36ea72b8676f6131613b7f9ba563f9fa1802666d18c792a7e1ad5a8ab7e0c3ab"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_vivian/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_vivian_iris_of_the_shore/raw.png",
+    "encoding": "binary",
+    "sha256": "89289d294f8f39ac8c36fc8acce56aca9833f2c5f0e6f7b12f8e042e136d720c"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_vivian_iris_of_the_shore/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yanagi/raw.png",
+    "encoding": "binary",
+    "sha256": "caaaf43f19e9e7e401466e1e594d19b318cbcb0788a563767313006697bb8824"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yanagi/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yeshunguang/raw.png",
+    "encoding": "binary",
+    "sha256": "ebcb21da7d409ba391b765635a18923f34b6512fea6962cf3637ee4de1ace68f"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yeshunguang/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yeshunguang_touch_of_dawnlight/raw.png",
+    "encoding": "binary",
+    "sha256": "e05479810b992aafad4f9c11a2343304b5171e272a191318eb433f7b924db483"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yeshunguang_touch_of_dawnlight/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yidhari/raw.png",
+    "encoding": "binary",
+    "sha256": "ad3e68cc377d8cfc25669a6c0c21b91f3bfb08c27ebcd4c1ca6d536380adc632"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yidhari/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yixuan/raw.png",
+    "encoding": "binary",
+    "sha256": "06dc5b63f67bd4a2fb394de6fb5204db787aec07a9543bdf095f1990c518c219"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yixuan/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yixuan_trails_of_ink/raw.png",
+    "encoding": "binary",
+    "sha256": "092645094bccce4c4dd1e9b405ec254e5890e17fba2e24147be4d95e64d4ebd3"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yixuan_trails_of_ink/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yuzuha/raw.png",
+    "encoding": "binary",
+    "sha256": "54dfe2e3582d75e58a74f3c659ef776f50a805248af93aa967d40d00a860d5e7"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yuzuha/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yuzuha_tanuki_in_broad_daylight/raw.png",
+    "encoding": "binary",
+    "sha256": "6beedfd51b894aa027700d2e59a46f78aadc829fefbef8c92058543187eb9fb4"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_yuzuha_tanuki_in_broad_daylight/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_zhao/raw.png",
+    "encoding": "binary",
+    "sha256": "d5ea0c042b3b4dafa2861e7b99a61484996c4546a7b25451ce0ce4bf28a91e4a"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_zhao/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_zhu_yuan/raw.png",
+    "encoding": "binary",
+    "sha256": "5e96608d9ccd2f67af40c6fa150d78c5969dcd615f5e85d1240c74a3e63b1f0f"
+  },
+  {
+    "path": "assets/template/predefined_team/avatar_zhu_yuan/mask.png",
+    "encoding": "binary",
+    "sha256": "ce8b39cb8bd5cc316ec54b25a6daf93aeda76b2458717bc8d78a48ae8065b79d"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/interact/lost_void_interact_target_const.py",
+    "encoding": "utf8_lf",
+    "sha256": "1001f2591fde8254e85dc72762343f56c11a262ffba45790e69104a842a4bef6"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/lost_void_move_by_det.py",
+    "encoding": "utf8_lf",
+    "sha256": "8874035dc03092f29370f480d7bd0542d422115091680795e39e3f690e83353c"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/context/lost_void_detector.py",
+    "encoding": "utf8_lf",
+    "sha256": "1ce2a1667d8f4a19aff56bec49fe88e5c94e9d0f0cb48be649cb9102fb5b34aa"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/operation/lost_void_motion.py",
+    "encoding": "utf8_lf",
+    "sha256": "46fb66f22151f50301835c8fb7357b53430e23e0cd8e37efc5e2d8a1dfd7776a"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/lost_void_navigation_config.py",
+    "encoding": "utf8_lf",
+    "sha256": "bb85a529914a7950e716cad678333046aa7934a4f33758e50fd78868adc07ccd"
+  },
+  {
+    "path": "config/lost_void_navigation.sample.yml",
+    "encoding": "utf8_lf",
+    "sha256": "be190ed005fd95fcc4175ecf8e5e54987834ba605b650661940ae543c0ca1747"
+  },
+  {
+    "path": "src/zzz_od/auto_battle/auto_battle_utils.py",
+    "encoding": "utf8_lf",
+    "sha256": "470e01676a8366bd0a35922f419bd5f7596cc7e48346f1fe861f6a727f97272e"
+  },
+  {
+    "path": "src/zzz_od/auto_battle/auto_battle_agent_context.py",
+    "encoding": "utf8_lf",
+    "sha256": "1387ae4b234e8c05515990d46d81c1339ae33a5b8b9bb0f32652e2445cc84ecc"
+  },
+  {
+    "path": "assets/game_data/screen_info/battle.yml",
+    "encoding": "utf8_lf",
+    "sha256": "83ac6836cc40f46cfab33411ee128681f8b16f5ffe2d6869424d617c2cce2c06"
+  },
+  {
+    "path": "src/zzz_od/operation/deploy.py",
+    "encoding": "utf8_lf",
+    "sha256": "c2c48f49c5410dafd1fd9452fc0525c5d040c4ee50552a41c3b729a9b3f16172"
+  },
+  {
+    "path": "assets/game_data/screen_info/loading.yml",
+    "encoding": "utf8_lf",
+    "sha256": "9f6589e842ff1c455902ecce788a274d3706610572ebe338c39414c8f2357eaa"
+  },
+  {
+    "path": "docs/game/screens/加载画面.md",
+    "encoding": "utf8_lf",
+    "sha256": "56940f56fc70ef2f40bdaee58be3985dacbf2f0c9a30c16b58b2e3face1ac6a1"
+  },
+  {
+    "path": "src/zzz_od/operation/enter_game/enter_game.py",
+    "encoding": "utf8_lf",
+    "sha256": "a8329e0ae45fb3a5331981b0479767f6e3e09bde117c023d76dd32cf3e1dcad5"
+  },
+  {
+    "path": "assets/template/hollow/challenge_reward_eval/raw.png",
+    "encoding": "binary",
+    "sha256": "e597c997fb9c6d00aee10c373f40c370e6a63fbac445cdcc8c8aedf8cac43547"
+  },
+  {
+    "path": "assets/template/hollow/challenge_reward_eval/mask.png",
+    "encoding": "binary",
+    "sha256": "b9a9d50dc7934419a9b8119c02bb7148d641bde6e986e00f59f4b84ca8c71bbf"
+  },
+  {
+    "path": "assets/template/hollow/critical_reward_money/raw.png",
+    "encoding": "binary",
+    "sha256": "c0ce58a7941d0a751061529bc1665940c8c81042c2eb5729d3c2d84b6e78b7aa"
+  },
+  {
+    "path": "assets/template/hollow/critical_reward_money/mask.png",
+    "encoding": "binary",
+    "sha256": "95f1de385f32a3ce63cc681b4428d6a56f51556cb0fd95d2b505f749bd1c3fba"
+  },
+  {
+    "path": "src/zzz_od/application/hollow_zero/lost_void/lost_void_run_record.py",
+    "encoding": "utf8_lf",
+    "sha256": "4e76014efb9401383710a63bdf4fe7a6cfba13dcb2ead9f1e6c18bcffe7aed3b"
+  },
+  {
+    "path": "docs/game/gameplay/迷失之地.md",
+    "encoding": "utf8_lf",
+    "sha256": "cd267dd4652eab3ae37e5168b7536aafbfc8baaa53351614437e181ed3eb5d9c"
+  },
+  {
+    "path": "assets/game_data/screen_info/battle_menu.yml",
+    "encoding": "utf8_lf",
+    "sha256": "7281673b6435145925db225cfe334065c31717a18678295964902ead03fb0dfa"
+  },
+  {
+    "path": "src/zzz_od/operation/challenge_mission/restart_in_battle.py",
+    "encoding": "utf8_lf",
+    "sha256": "94eb78cb7520435d5b6f29f740860f391eaa41e600edc4cbffdcb8e302080187"
+  },
+  {
+    "path": "src/zzz_od/operation/challenge_mission/exit_in_battle.py",
+    "encoding": "utf8_lf",
+    "sha256": "fa2a8a470d4763a76c20fa767550ca474d845c8d976b0c7455df43f67bb26270"
+  },
+  {
+    "path": "assets/game_data/screen_info/common_screen.yml",
+    "encoding": "utf8_lf",
+    "sha256": "6cbeb0f60ecd9b9fcc729b7bd5bcd28849b5cdcd997c9fada29e60014d6ab31f"
+  },
+  {
+    "path": "assets/game_data/screen_info/email.yml",
+    "encoding": "utf8_lf",
+    "sha256": "511a40be998ad08bebc698234ea10aea9f78d65a7253c32bf5a7891ed901ea24"
+  },
+  {
+    "path": "docs/game/screens/邮件.md",
+    "encoding": "utf8_lf",
+    "sha256": "0370bba3a5068fbb4bd5547d8370ad82597f97a704f2404ae61042d952275e36"
+  },
+  {
+    "path": "src/zzz_od/operation/back_to_normal_world.py",
+    "encoding": "utf8_lf",
+    "sha256": "7ec0c1fac5b12b131fe464cc5b9e21e4b961d34623ae3f11e0bbf40f11bf0d7b"
+  }
+]

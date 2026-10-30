@@ -1,0 +1,22 @@
+{
+  "source_repository": "zzz-od-test",
+  "source_path": "screens/迷失之地-挑战结果/完成态.webp",
+  "source_sha256": "10b91ed1d7ff9f19ba12be73cb8c543b2d9604d66f95e189d8931f59d188ac50",
+  "panel_xywh": [
+    1300,
+    310,
+    550,
+    530
+  ],
+  "grid_xywh": [
+    1312,
+    486,
+    522,
+    348
+  ],
+  "rows": 2,
+  "columns": 4,
+  "quantity_offset_y": 135,
+  "quantity_height": 39,
+  "description": "最终结算留档的完整4乘2奖励格；每格数量或EMPTY与阴影结晶数据共同确认完整可见"
+}

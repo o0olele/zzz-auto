@@ -1,0 +1,22 @@
+[
+  {
+    "path": "src/zzz_od/operation/exchange_ether_battery.py",
+    "sha256": "985e8ea1512bb3b71e455fb20645eb55dd7b483780817cbf0667e0abae64d1a8"
+  },
+  {
+    "path": "assets/game_data/screen_info/item_processing.yml",
+    "sha256": "7a44a0f06f85db352f9f6d5bc5b191c92ad3b90a7b2566649b0c3d13f87dce09"
+  },
+  {
+    "path": "assets/game_data/screen_info/item_processing_confirm.yml",
+    "sha256": "16d0749a0e3dac2c1debf982430535ff833d032416c17ad3804d80697d38b149"
+  },
+  {
+    "path": "assets/game_data/screen_info/item_processing_obtained.yml",
+    "sha256": "2747ceb1785b288cecc8cfab04dfb05beae071745eaec61931a78a41c0f09108"
+  },
+  {
+    "path": "docs/game/screens/道具处理.md",
+    "sha256": "67a74a4a52c1ebcd098530d111eaa94b4f5c8c2789fd02b9569b9a38a31c0fce"
+  }
+]

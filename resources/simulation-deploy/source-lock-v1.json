@@ -1,0 +1,26 @@
+[
+  {
+    "sha256": "3becd49b870b4d53e41feb6181630370d127524b27a6bfa4e4a3994918286207",
+    "path": "src/zzz_od/operation/compendium/combat_simulation.py"
+  },
+  {
+    "sha256": "868258c0f28722b6481018a14541b560565a347042d16e01b94831f6f6679d8d",
+    "path": "src/zzz_od/operation/deploy.py"
+  },
+  {
+    "sha256": "f26dee189ef3d11636b53c64058ef22ce13aea48e45a0ba0dfa4ea1d17222d2f",
+    "path": "assets/game_data/screen_info/common_deploy.yml"
+  },
+  {
+    "sha256": "b5739b698c3034f9c4d754a415317693236aa356eb8bba3c0d3aa83f7f61a611",
+    "path": "assets/game_data/screen_info/combat_simulation.yml"
+  },
+  {
+    "sha256": "f077ede1105202fcc0f07d4f390ec1a9b6418e94f1b73368ff5caed5f1e77553",
+    "path": "docs/game/screens/实战模拟室.md"
+  },
+  {
+    "sha256": "c196e94258a959cd98adf48a5415e48d05bdec794513f4d13356c1bfdcf817b6",
+    "path": "docs/game/screens/战斗画面.md"
+  }
+]

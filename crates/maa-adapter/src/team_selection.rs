@@ -21,6 +21,7 @@ pub struct SelectionPage {
     pub unreadable: Vec<u8>,
     pub confirm_enabled: bool,
     pub deployment: bool,
+    pub slot_cards: Vec<od_core::team_selection_slots::SlotSelectionCard>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectionEnd {
@@ -40,10 +41,40 @@ fn in_area(reading: &Value, [left, top, right, bottom]: [i32; 4]) -> bool {
 }
 
 impl NativeSession {
+    fn selection_by_slot(&self) -> Result<bool> {
+        let root = self.daily_bundle.as_deref().unwrap_or(&self.resource_root);
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(root.join("basic-daily-manifest.json"))?)?;
+        Ok(manifest["schema_version"]
+            .as_u64()
+            .is_some_and(|schema| schema >= 10))
+    }
     pub fn inspect_team_selection(
         &self,
         frame: &RecognitionImage,
         config: &TeamConfig,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<SelectionPage>> {
+        self.inspect_team_selection_at(frame, config, 0, cancel, timeout)
+    }
+    pub fn inspect_team_selection_at(
+        &self,
+        frame: &RecognitionImage,
+        config: &TeamConfig,
+        page: u8,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<SelectionPage>> {
+        ensure!(page < 5, "选队页号无效");
+        let slot_page = self.selection_by_slot()?.then_some(page);
+        self.inspect_team_selection_mode(frame, config, slot_page, cancel, timeout)
+    }
+    fn inspect_team_selection_mode(
+        &self,
+        frame: &RecognitionImage,
+        config: &TeamConfig,
+        slot_page: Option<u8>,
         cancel: &AtomicBool,
         timeout: Duration,
     ) -> Result<Option<SelectionPage>> {
@@ -66,6 +97,7 @@ impl NativeSession {
             unreadable: vec![],
             confirm_enabled: false,
             deployment: false,
+            slot_cards: vec![],
         };
         let ocr =
             self.recognize_prepared(frame, "OCR", &json!({"model":"ppocrv5","threshold":0.6}))?;
@@ -132,6 +164,30 @@ impl NativeSession {
             return Ok(None);
         }
         page.confirm_enabled = white.detail["hit"] == true;
+        if let Some(index) = slot_page {
+            let mut readings = texts.clone();
+            let (_, unreadable) = crate::team_selection_slots::read_cards(index, &readings)?;
+            for slot in unreadable {
+                if !ready()? {
+                    return Ok(None);
+                }
+                let cell = usize::from(slot - index * 4);
+                let [_, top, _, height] = od_core::team_slots::CARDS[cell];
+                let left = if cell % 2 == 0 { 774 } else { 1598 };
+                let result=self.recognize_prepared(frame,"OCR",&json!({"model":"ppocrv5","roi":[left,top+height/2-85,166,170],"threshold":0.6}))?;
+                readings.extend(
+                    result.detail["detail"]["filtered"]
+                        .as_array()
+                        .context("槽位按钮 OCR 缺少结果")?
+                        .iter()
+                        .cloned(),
+                );
+            }
+            let (cards, unreadable) = crate::team_selection_slots::read_cards(index, &readings)?;
+            page.slot_cards = cards;
+            page.unreadable = unreadable;
+            return Ok(ready()?.then_some(page));
+        }
         let mut names = BTreeMap::new();
         for reading in texts {
             let Some(text) = reading["text"].as_str() else {
@@ -229,7 +285,12 @@ impl NativeSession {
         if !resumed_confirmation && selection.phase != SelectionPhase::Confirmed {
             selection.restart().map_err(anyhow::Error::msg)?;
         }
-        let definition = selection_pipeline();
+        let by_slot = self.selection_by_slot()?;
+        let definition = if by_slot {
+            slot_selection_pipeline()
+        } else {
+            selection_pipeline()
+        };
         self._resource.override_pipeline_json(&definition)?;
         let started = Instant::now();
         let result = (|| -> Result<SelectionEnd> {
@@ -243,9 +304,10 @@ impl NativeSession {
                 let Some(frame) = self.navigation_frame(&cancel)? else {
                     return Ok(SelectionEnd::Cancelled);
                 };
-                let Some(page) = self.inspect_team_selection(
+                let Some(page) = self.inspect_team_selection_at(
                     &frame.image,
                     config,
+                    selection.page,
                     &cancel,
                     timeout.saturating_sub(started.elapsed()),
                 )?
@@ -270,19 +332,38 @@ impl NativeSession {
                     page.mode != TeamPageMode::Editing,
                     "编队管理页不能执行出战选择"
                 );
+                if by_slot && resumed_confirmation && page.mode == TeamPageMode::Selection {
+                    selection.restart().map_err(anyhow::Error::msg)?;
+                    resumed_confirmation = false;
+                }
+                let resetting = by_slot
+                    && selection.top_scrolls < 4
+                    && matches!(
+                        selection.phase,
+                        SelectionPhase::ResetClear
+                            | SelectionPhase::ResetChoose
+                            | SelectionPhase::ResetVerify
+                    );
                 let action = if page.mode != TeamPageMode::Selection
-                    || !page.unreadable.is_empty()
-                    || page.cards.is_empty()
-                {
+                    || (!resetting
+                        && (!page.unreadable.is_empty()
+                            || (if by_slot {
+                                page.slot_cards.is_empty()
+                            } else {
+                                page.cards.is_empty()
+                            }))) {
                     None
                 } else {
                     if resumed_confirmation {
                         selection.restart().map_err(anyhow::Error::msg)?;
                         resumed_confirmation = false;
                     }
-                    selection
-                        .next(&page.cards, page.confirm_enabled)
-                        .map_err(anyhow::Error::msg)?
+                    (if by_slot {
+                        selection.next_slots(&page.slot_cards, page.confirm_enabled)
+                    } else {
+                        selection.next(&page.cards, page.confirm_enabled)
+                    })
+                    .map_err(anyhow::Error::msg)?
                 };
                 if let Some(action) = action {
                     let mut overrides = json!({});
@@ -291,17 +372,22 @@ impl NativeSession {
                         SelectionAction::Down => "__ZzzSelect.Down",
                         SelectionAction::Confirm => "__ZzzSelect.Confirm",
                         SelectionAction::Toggle { index, order } => {
-                            let card = page
-                                .cards
-                                .iter()
-                                .find(|card| card.index == index)
-                                .context("选队点击缺少当前帧卡片")?;
-                            let [x, y, w, h] = card.name_rect;
-                            overrides["__ZzzSelect.Name"] = json!({"roi":[x.saturating_sub(15),y.saturating_sub(10),(w+30).min(1920-x),h+20],
+                            if by_slot {
+                                slot_toggle_overrides(&page, index, order, &mut overrides)?;
+                                "__ZzzSelect.Toggle"
+                            } else {
+                                let card = page
+                                    .cards
+                                    .iter()
+                                    .find(|card| card.index == index)
+                                    .context("选队点击缺少当前帧卡片")?;
+                                let [x, y, w, h] = card.name_rect;
+                                overrides["__ZzzSelect.Name"] = json!({"roi":[x.saturating_sub(15),y.saturating_sub(10),(w+30).min(1920-x),h+20],
                                 "expected":[format!("^{}$",regex::escape(&card.recognized_name))]});
-                            overrides["__ZzzSelect.Marker"] = json!({"roi":[x+610,y+70,160,125],"expected":if order.is_some() { json!(["(?i).*SELECT.*"]) } else { json!(["(?i)^TEAM.*"]) }});
-                            overrides["__ZzzSelect.Toggle"] = json!({"target":[x+300,y+h/2]});
-                            "__ZzzSelect.Toggle"
+                                overrides["__ZzzSelect.Marker"] = json!({"roi":[x+610,y+70,160,125],"expected":if order.is_some() { json!(["(?i).*SELECT.*"]) } else { json!(["(?i)^TEAM.*"]) }});
+                                overrides["__ZzzSelect.Toggle"] = json!({"target":[x+300,y+h/2]});
+                                "__ZzzSelect.Toggle"
+                            }
                         }
                     };
                     publish(selection.clone())?;
@@ -348,10 +434,17 @@ impl NativeSession {
                         ),
                         PipelineEnd::Succeeded => {
                             ensure!(
-                                execution
-                                    .nodes
-                                    .iter()
-                                    .any(|node| node.name == entry && node.completed),
+                                execution.nodes.iter().any(|node| node.name
+                                    == (if by_slot
+                                        && matches!(
+                                            action,
+                                            SelectionAction::Up | SelectionAction::Down
+                                        ) {
+                                        format!("{entry}Done")
+                                    } else {
+                                        entry.into()
+                                    })
+                                    && node.completed),
                                 "选队 Pipeline 缺少实际输入节点证明"
                             );
                             if matches!(action, SelectionAction::Up | SelectionAction::Down) {
@@ -411,6 +504,81 @@ fn selection_pipeline() -> Value {
         ] {
             node.as_object_mut().unwrap().entry(key).or_insert(value);
         }
+    }
+    p
+}
+
+fn slot_toggle_overrides(
+    page: &SelectionPage,
+    index: u8,
+    order: Option<u8>,
+    overrides: &mut Value,
+) -> Result<()> {
+    let card = page
+        .slot_cards
+        .iter()
+        .find(|c| c.identity.index == index)
+        .context("选队槽位缺少当前按钮")?;
+    let bounds = od_core::team_slots::CARDS
+        .iter()
+        .copied()
+        .find(|[x, y, w, h]| {
+            card.button[0] >= *x
+                && card.button[1] >= *y
+                && card.button[0] + card.button[2] <= x + w
+                && card.button[1] + card.button[3] <= y + h
+        })
+        .context("按钮不在固定卡片内")?;
+    let [left, top, width, _] = bounds;
+    overrides["__ZzzSelect.CardCount"] = json!({"roi":[left+width-180,top,135,70],"expected":[format!("^\\s*[0-{}]\\s*[/／1]\\s*{}\\s*$",card.identity.members,card.identity.members)]});
+    overrides["__ZzzSelect.Name"] = if let Some(name) = &card.identity.name {
+        json!({"recognition":"OCR","model":"ppocrv5","roi":[left,top,width,70],"expected":[format!("^\\s*{}\\s*$",name.chars().map(|c|regex::escape(&c.to_string())).collect::<Vec<_>>().join("\\s*"))]})
+    } else {
+        json!({"recognition":"DirectHit"})
+    };
+    let [x, y, w, h] = card.button;
+    overrides["__ZzzSelect.Marker"] = json!({"roi":[x.saturating_sub(10),y.saturating_sub(10),w+20,h+20],"expected":[if order.is_some() {"(?i)^\\s*\\+?\\s*SELECT\\s*$"} else {"(?i)^\\s*(TEAM(?:\\s*0?[12])?|SELECTED)\\s*$"}]});
+    overrides["__ZzzSelect.Toggle"] = json!({"target":[x+w/2,y+h/2]});
+    Ok(())
+}
+
+fn slot_selection_pipeline() -> Value {
+    let mut p = selection_pipeline();
+    p["__ZzzSelect.CardCount"] = json!({"recognition":"OCR","model":"ppocrv5","roi":[765,130,135,70],"expected":["^[0-3][/／1][0-3]$"],"threshold":0.6,"action":"DoNothing","next":[]});
+    p["__ZzzSelect.Toggle"]["all_of"] = json!([
+        "__ZzzSelect.Page",
+        "__ZzzSelect.Name",
+        "__ZzzSelect.CardCount",
+        "__ZzzSelect.Marker"
+    ]);
+    let source = od_core::basic_daily::pipeline_for_schema(9);
+    for direction in ["Up", "Down"] {
+        for name in std::iter::once("Teams.Drag".to_string())
+            .chain((0..=10).map(|i| format!("Teams.DragMove{i}")))
+            .chain(std::iter::once("Teams.DragUp".into()))
+        {
+            let target = name.replace("Teams.Drag", &format!("__ZzzSelect.{direction}"));
+            let mut node: Value = serde_json::from_str(
+                &source[&name]
+                    .to_string()
+                    .replace("Teams.Drag", &format!("__ZzzSelect.{direction}"))
+                    .replace(
+                        "Teams.WaitScrolled",
+                        &format!("__ZzzSelect.{direction}Done"),
+                    ),
+            )
+            .expect("固定选队拖动节点");
+            if name == "Teams.Drag" {
+                node["all_of"] = json!(["__ZzzSelect.Page"]);
+            }
+            if direction == "Up"
+                && let Some(point) = node["target"].as_array_mut()
+            {
+                point[1] = json!(865 - point[1].as_i64().expect("固定拖动坐标"));
+            }
+            p[target] = node;
+        }
+        p[format!("__ZzzSelect.{direction}Done")] = json!({"recognition":"DirectHit","action":"DoNothing","pre_delay":0,"post_delay":0,"next":[]});
     }
     p
 }

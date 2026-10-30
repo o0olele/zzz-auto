@@ -1,0 +1,14 @@
+{
+  "source_repository": "zzz-od-test",
+  "source_path": "screens/加载画面/港口工厂旧址.webp",
+  "source_sha256": "0ab8482f1055e84a30ee8d15fb0c13f15dc7f8f62e14dfebf137cd52b0c4deb8",
+  "crop_xywh": [
+    65,
+    80,
+    495,
+    118
+  ],
+  "asset": "scene/loading-lore-logo.png",
+  "asset_sha256": "e71c30f04cab263de8f4bbced388063e475496055913b88b73b3d7c99a829713",
+  "description": "留档 lore 加载图的固定 HOLLOW 标识，不含 UID，不使用 OCR 错字作为标识"
+}

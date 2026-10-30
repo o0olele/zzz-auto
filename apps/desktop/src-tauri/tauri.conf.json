@@ -28,6 +28,7 @@
       "../../../resources/generated/suibian-temple/": "resources/generated/suibian-temple/",
       "../../../resources/generated/world-patrol/": "resources/generated/world-patrol/",
       "../../../resources/generated/combat/": "resources/generated/combat/",
+      "../../../resources/generated/lost-void-scene/": "resources/generated/lost-void-scene/",
       "../../../resources/sdk-manifest.json": "resources/sdk-manifest.json",
       "../../../resources/licenses/": "licenses/",
       "../../../LICENSE": "licenses/project.LICENSE",

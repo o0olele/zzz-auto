@@ -39,6 +39,68 @@ pub fn validate_basic_daily_bundle(root: &Path) -> Result<PathBuf> {
         "日常清单过大"
     );
     let manifest: Value = serde_json::from_slice(&std::fs::read(manifest_path)?)?;
+    ensure!(
+        manifest["schema_version"] == 10 || manifest.get("team_selection_sources").is_none(),
+        "旧版日常包不能声明槽位选择来源"
+    );
+    if matches!(manifest["schema_version"].as_u64(), Some(8..=10)) {
+        let expected = od_core::random_play::roster_sources();
+        ensure!(
+            manifest["roster_sources"] == expected
+                && manifest["random_play_sources"]
+                    .as_array()
+                    .is_some_and(|sources| sources
+                        .iter()
+                        .any(|s| s["path"] == expected[0]["path"]
+                            && s["sha256"] == expected[0]["sha256"])),
+            "schema 8 代理人来源不匹配"
+        );
+    }
+    if matches!(manifest["schema_version"].as_u64(), Some(9 | 10)) {
+        ensure!(
+            manifest["team_slot_sources"] == od_core::team_slots::sources(),
+            "schema 9 编队槽位来源不匹配"
+        );
+        for source in od_core::team_slots::sources()
+            .as_array()
+            .expect("固定槽位来源")
+            .iter()
+            .take(3)
+        {
+            let matches: Vec<_> = manifest["team_check_sources"]
+                .as_array()
+                .context("缺少编队来源")?
+                .iter()
+                .filter(|s| s["path"] == source["path"])
+                .collect();
+            ensure!(
+                matches.len() == 1 && matches[0]["sha256"] == source["sha256"],
+                "编队扫描来源记录与槽位版本不符"
+            );
+        }
+    }
+    if manifest["schema_version"] == 10 {
+        let expected = od_core::team_selection_slots::sources();
+        ensure!(
+            manifest["team_selection_sources"] == expected,
+            "schema 10 编队选择来源不匹配"
+        );
+        let source = expected
+            .as_array()
+            .expect("选择来源")
+            .last()
+            .expect("选择源码");
+        let matches: Vec<_> = manifest["team_check_sources"]
+            .as_array()
+            .context("缺少编队来源")?
+            .iter()
+            .filter(|s| s["path"] == source["path"])
+            .collect();
+        ensure!(
+            matches.len() == 1 && matches[0]["sha256"] == source["sha256"],
+            "选择来源记录不符"
+        );
+    }
     let (pipeline, apps) = match manifest["schema_version"].as_u64() {
         Some(1) => (
             od_core::basic_daily::legacy_pipeline(),
@@ -68,14 +130,21 @@ pub fn validate_basic_daily_bundle(root: &Path) -> Result<PathBuf> {
             od_core::basic_daily::current_pipeline(),
             json!(od_core::basic_daily::RESOURCE_APP_IDS),
         ),
+        Some(schema @ (8..=10)) => (
+            od_core::basic_daily::pipeline_for_schema(schema),
+            json!(od_core::basic_daily::RESOURCE_APP_IDS),
+        ),
         _ => anyhow::bail!("日常执行资源版本不兼容"),
     };
-    if matches!(manifest["schema_version"].as_u64(), Some(5..=7)) {
-        pinned.extend(od_core::random_play::templates().clone());
-        allowed.extend(od_core::random_play::templates().keys().cloned());
+    if matches!(manifest["schema_version"].as_u64(), Some(5..=10)) {
+        let templates = od_core::random_play::templates_for_schema(
+            manifest["schema_version"].as_u64().unwrap(),
+        );
+        pinned.extend(templates.clone());
+        allowed.extend(templates.keys().cloned());
     }
     let mut model_files = ocr["files"].as_array().context("OCR 清单无效")?.clone();
-    if manifest["schema_version"] == 7 {
+    if matches!(manifest["schema_version"].as_u64(), Some(7..=10)) {
         pinned.extend(od_core::intel_board::templates().clone());
         allowed.extend(od_core::intel_board::templates().keys().cloned());
         let detector = lock["models"]
@@ -169,6 +238,16 @@ pub fn validate_basic_daily_bundle(root: &Path) -> Result<PathBuf> {
     Ok(root)
 }
 /// 整组预检时按实际应用检查版本，不能在前项领取之后才发现缺少后项资源。
+pub fn basic_daily_agents(root: &Path) -> Result<Vec<od_core::random_play::ShopAgent>> {
+    let root = validate_basic_daily_bundle(root)?;
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(root.join("basic-daily-manifest.json"))?)?;
+    Ok(od_core::random_play::agents_for_schema(
+        manifest["schema_version"]
+            .as_u64()
+            .context("日常版本无效")?,
+    ))
+}
 pub fn validate_basic_daily_app_bundle(root: &Path, app: &str) -> Result<PathBuf> {
     ensure!(
         od_core::basic_daily::RESOURCE_APP_IDS.contains(&app),
@@ -211,11 +290,18 @@ impl crate::NativeSession {
                 && self.input_mode == Some(crate::InputMode::Foreground),
             "日常控制器模式不匹配"
         );
-        validate_basic_daily_app_bundle(
+        let bundle_root = validate_basic_daily_app_bundle(
             self.daily_bundle.as_deref().unwrap_or(&self.resource_root),
             &progress.app_id,
         )?;
-        let pipeline = od_core::basic_daily::current_pipeline();
+        let manifest: Value = serde_json::from_slice(&std::fs::read(
+            bundle_root.join("basic-daily-manifest.json"),
+        )?)?;
+        let pipeline = od_core::basic_daily::pipeline_for_schema(
+            manifest["schema_version"]
+                .as_u64()
+                .context("日常版本无效")?,
+        );
         let entry = progress.entry();
         ensure!(pipeline.get(&entry).is_some(), "日常步骤未登记");
         if game {
@@ -232,7 +318,12 @@ impl crate::NativeSession {
                 .as_ref()
                 .context("缺少录像店冻结设置")?;
             shop.validate().map_err(anyhow::Error::msg)?;
-            overrides = od_core::random_play::overrides(shop);
+            overrides = od_core::random_play::overrides_for_schema(
+                shop,
+                manifest["schema_version"]
+                    .as_u64()
+                    .context("日常版本无效")?,
+            );
             if matches!(progress.stage.as_str(), "StartBusiness" | "ConfirmBusiness") {
                 ensure!(shop.setup_ready(), "录像店尚未确认宣传员与录像带");
             }

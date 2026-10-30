@@ -90,6 +90,47 @@ impl From<Button> for MouseButton {
 
 #[derive(Subcommand)]
 enum Action {
+    /// 不加载 SDK，校验迷失之地场景、普通选队、战斗和共享导航模型。
+    LostVoidResourcesCheck {
+        #[arg(long)]
+        directory: Option<PathBuf>,
+    },
+    /// 校验迷失之地全画面只读识别资源。
+    LostVoidSceneBundleCheck {
+        #[arg(long, default_value = "resources/generated/lost-void-scene")]
+        bundle: PathBuf,
+    },
+    /// 从留档图片识别迷失之地画面和完整悬赏进度。
+    LostVoidSceneInspect {
+        #[arg(long, default_value = "resources/generated/lost-void-scene")]
+        bundle: PathBuf,
+        #[arg(long)]
+        image: PathBuf,
+        /// 同时读取通用选择候选与选择状态，仍不发送输入。
+        #[arg(long)]
+        choices: bool,
+        #[arg(long,conflicts_with_all=["choices","store","events","strategy","matrix","npc","navigation","roster"])]
+        gear: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","events","strategy","matrix","npc","navigation","roster"])]
+        store: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","strategy","matrix","npc","navigation","roster"])]
+        events: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","matrix","npc","navigation","roster"])]
+        strategy: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","strategy","npc","navigation","roster"])]
+        matrix: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","strategy","matrix","navigation","roster"])]
+        npc: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","strategy","matrix","npc","roster"])]
+        navigation: bool,
+        #[arg(long,conflicts_with_all=["choices","gear","store","events","strategy","matrix","npc","navigation"])]
+        roster: bool,
+    },
+    /// 无 SDK、无游戏输入的迷失之地配置和藏品决策预览。
+    LostVoidPreview {
+        #[arg(long)]
+        input: Option<PathBuf>,
+    },
     #[command(flatten)]
     ResourceDiagnostics(ResourceDiagnostics),
     /// 按保存计划和人工资源数估算下一项，不初始化 SDK 或写入配置。
@@ -915,6 +956,10 @@ async fn main() -> Result<()> {
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
                 | Action::ChargePlanPreview(_)
+                | Action::LostVoidPreview { .. }
+                | Action::LostVoidSceneBundleCheck { .. }
+                | Action::LostVoidResourcesCheck { .. }
+                | Action::LostVoidSceneInspect { .. }
                 | Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisBundleCheck(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisInspect(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::EtherSynthesisEntryBundleCheck(
@@ -955,6 +1000,28 @@ async fn main() -> Result<()> {
         paths.resources = zzz_engine::runtime_resources::resolve(&paths.data, &paths.resources)?;
     }
     match args.command {
+        Action::LostVoidResourcesCheck { ref directory } => {
+            return print(zzz_engine::lost_void_resources::validate(
+                directory.as_deref().unwrap_or(&paths.resources),
+            )?);
+        }
+        Action::LostVoidSceneBundleCheck { ref bundle } => {
+            return print(
+                serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"bundle":maa_adapter::lost_void_scene::validate_lost_void_scene_bundle(bundle)?}),
+            );
+        }
+        Action::LostVoidSceneInspect { ref bundle, .. } => {
+            maa_adapter::lost_void_scene::validate_lost_void_scene_bundle(bundle)?;
+        }
+        Action::LostVoidPreview { input } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&zzz_engine::lost_void::preview_file(
+                    input.as_deref()
+                )?)?
+            );
+            return Ok(());
+        }
         Action::ChargePlanPreview(ChargePlanPreviewArgs {
             instance_id,
             group_id,
@@ -1722,6 +1789,143 @@ async fn main() -> Result<()> {
         Action::EngagementRewardInspect { bundle, image } => {
             let native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
             print(native.inspect_engagement_reward_fixture(&image)?)
+        }
+        Action::LostVoidSceneInspect {
+            bundle,
+            image,
+            choices,
+            gear,
+            store,
+            events,
+            strategy,
+            matrix,
+            npc,
+            navigation,
+            roster,
+        } => {
+            let mut native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
+            if roster {
+                let recognizer =
+                    native.load_combat_bundle(&paths.resources.join("generated/combat"))?;
+                let mut reader =
+                    maa_adapter::lost_void_roster::LostVoidHudReader::new(&recognizer)?;
+                let frame = native
+                    .combat_frame(&AtomicBool::new(false))?
+                    .context("离线 HUD 截图被取消")?;
+                let observation = native.inspect_lost_void_roster(
+                    &frame,
+                    &mut reader,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation,"candidates":reader.diagnostics()}),
+                );
+            }
+            if navigation {
+                let mut recognizer =
+                    native.load_combat_bundle(&paths.resources.join("generated/combat"))?;
+                native.load_challenge_detector(&paths.resources.join("generated/basic-daily"))?;
+                let frame = native
+                    .combat_frame(&AtomicBool::new(false))?
+                    .context("导航留档读取被取消")?;
+                let observation = native.inspect_lost_void_navigation(
+                    &frame,
+                    &mut recognizer,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if npc {
+                native.load_challenge_detector(&paths.resources.join("generated/basic-daily"))?;
+                let observation = native.inspect_lost_void_npc(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    true,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if matrix {
+                let request = od_core::lost_void_matrix::LostVoidMatrixRequest {
+                    run_id: uuid::Uuid::new_v4(),
+                    challenge: Default::default(),
+                    teams: Default::default(),
+                    timeout_ms: 120_000,
+                };
+                let observation = native.inspect_lost_void_matrix(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    request,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if strategy {
+                let observation = native.inspect_lost_void_strategy(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(120),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if events {
+                let observation = native.inspect_lost_void_event(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(30),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if gear {
+                let observation = native.inspect_lost_void_gear(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(30),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if store {
+                let observation = native.inspect_lost_void_store(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(30),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            if choices {
+                let observation = native.inspect_lost_void_choice(
+                    &maa_adapter::RecognitionImage::load(&image)?,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(30),
+                )?;
+                return print(
+                    serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+                );
+            }
+            let observation = native.inspect_lost_void_scene(
+                &maa_adapter::RecognitionImage::load(&image)?,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"observation":observation}),
+            )
         }
         Action::ResourceDiagnostics(ResourceDiagnostics::ChargeTransportInspect(args)) => {
             let request = args.request()?;

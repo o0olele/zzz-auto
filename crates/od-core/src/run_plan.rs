@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const TRIAL_APP_IDS: [&str; 16] = [
+pub const TRIAL_APP_IDS: [&str; 17] = [
+    "lost_void",
     "charge_plan",
     "world_patrol",
     "email",
@@ -86,6 +87,7 @@ impl RunContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum AppAvailability {
+    LostVoidTrial,
     ChargeTrial,
     MailTrial,
     CoffeeTrial,
@@ -116,6 +118,15 @@ pub struct PlannedApp {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GroupPlan {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub lost_void_combat: Option<crate::app_combat::AppCombatPlan>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub lost_void_planning: Option<crate::lost_void_record_store::LostVoidApplicationPlanning>,
+    #[serde(default)]
+    #[ts(as = "Option<crate::lost_void::LostVoidConfig>", optional)]
+    pub lost_void_config: crate::lost_void::LostVoidConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub charge_combat: Option<crate::app_combat::AppCombatPlan>,
@@ -320,6 +331,7 @@ fn plan_account_at(
             (true, "email") => AppAvailability::MailTrial,
             (true, "coffee") => AppAvailability::CoffeeTrial,
             (true, "charge_plan") => AppAvailability::ChargeTrial,
+            (true, "lost_void") => AppAvailability::LostVoidTrial,
             (true, id) if crate::basic_daily::APP_IDS.contains(&id) => AppAvailability::DailyTrial,
             (true, _) => AppAvailability::Unmigrated,
             (false, _) => AppAvailability::Unknown,
@@ -332,11 +344,13 @@ fn plan_account_at(
                 AppAvailability::MailTrial
                 | AppAvailability::CoffeeTrial
                 | AppAvailability::ChargeTrial
+                | AppAvailability::LostVoidTrial
                 | AppAvailability::DailyTrial => {
                     completed_run_id = completed
                         .and_then(|index| index.apps.get(&item.app_id))
                         .copied();
-                    decision = if !["world_patrol", "charge_plan"].contains(&item.app_id.as_str())
+                    decision = if !["world_patrol", "charge_plan", "lost_void"]
+                        .contains(&item.app_id.as_str())
                         && group.run_policy == RunPolicy::SkipDailySuccess
                         && !options.rerun_completed
                         && !standalone
@@ -414,6 +428,9 @@ fn plan_account_at(
     let executable = blockers.is_empty() && has_pending;
     let all_done = blockers.is_empty() && !has_pending;
     Ok(GroupPlan {
+        lost_void_combat: None,
+        lost_void_planning: None,
+        lost_void_config: (*group.lost_void).clone(),
         charge_combat: None,
         world_patrol_config: group.world_patrol.clone(),
         world_patrol_combat: None,

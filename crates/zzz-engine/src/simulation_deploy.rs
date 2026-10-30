@@ -40,6 +40,14 @@ impl PreparedDeployment {
     pub(crate) fn plan(&self) -> &AppCombatPlan {
         &self.plan
     }
+    /// 只克隆首次输入前的编译结果，不重新读取当前脚本导入选择。
+    pub(crate) fn frozen_segment(&self, id: Uuid, control: PipelineControl) -> Result<CombatRun> {
+        self.resource_root()?;
+        let mut run =
+            CombatRun::new_segment(id, self.plan.config.clone(), self.script.clone(), control)?;
+        run.progress.script_revision = self.plan.script_revision.clone();
+        Ok(run)
+    }
     pub fn load(plan: AppCombatPlan, root: &Path, data: &Path) -> Result<Self> {
         plan.validate().map_err(anyhow::Error::msg)?;
         let bundle = CombatBundle::load(root)?;

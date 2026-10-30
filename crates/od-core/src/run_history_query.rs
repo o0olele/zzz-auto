@@ -116,6 +116,9 @@ impl HistoryItem {
             || self.record.charge.as_ref().is_some_and(|p| {
                 p.outcome == Some(crate::charge_application::ChargeAppOutcome::TimedOut)
             })
+            || self.record.lost_void.as_ref().is_some_and(|p| {
+                p.end == Some(crate::lost_void_application::LostVoidAppEnd::TimedOut)
+            })
         {
             return HistoryOutcome::TimedOut;
         }

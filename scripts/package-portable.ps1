@@ -1,43 +1,48 @@
 param([switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$buildTargetRoot = if (-not $env:CARGO_TARGET_DIR) { Join-Path $projectRoot 'target' } elseif ([IO.Path]::IsPathRooted($env:CARGO_TARGET_DIR)) { [IO.Path]::GetFullPath($env:CARGO_TARGET_DIR) } else { [IO.Path]::GetFullPath((Join-Path $projectRoot $env:CARGO_TARGET_DIR)) }
+$engineBinary = Join-Path $buildTargetRoot 'release/zzz-engine.exe'
+$desktopBinary = Join-Path $buildTargetRoot 'release/zzz-desktop.exe'
 Push-Location $projectRoot
 try {
     if (-not $SkipBuild) {
-        & npm --prefix apps/desktop run tauri -- build --no-bundle
+        & npm --prefix apps/desktop run tauri -- build --no-bundle -- --locked --target-dir $buildTargetRoot
         if ($LASTEXITCODE -ne 0) { throw 'Release 桌面构建失败。' }
     }
     $config = Get-Content -Raw -Encoding UTF8 -LiteralPath apps/desktop/src-tauri/tauri.conf.json | ConvertFrom-Json
     $sdkLock = Get-Content -Raw -Encoding UTF8 -LiteralPath sdk.lock.json | ConvertFrom-Json
     $sdkManifest = Get-Content -Raw -Encoding UTF8 -LiteralPath resources/sdk-manifest.json | ConvertFrom-Json
     # SkipBuild 也必须校验当前引擎和资源，避免生成缺模型或流程版本不匹配的包。
-    $mailCheckOutput = & ./target/release/zzz-engine.exe --root $projectRoot mail-bundle-check
+    $mailCheckOutput = & $engineBinary --root $projectRoot mail-bundle-check
     if ($LASTEXITCODE -ne 0) { throw '邮件资源校验失败，请先完成当前源码的 release 构建及 mail-bundle 生成。' }
     $mailCheck = ($mailCheckOutput -join "`n") | ConvertFrom-Json
     if (-not $mailCheck.valid -or $mailCheck.engine_version -ne $config.version) { throw '发布引擎版本或邮件资源无效，请重新构建。' }
-    & ./target/release/zzz-engine.exe --root $projectRoot map-bundle-check --bundle resources/generated/map-preview
+    & $engineBinary --root $projectRoot map-bundle-check --bundle resources/generated/map-preview
     if ($LASTEXITCODE -ne 0) { throw '地图资源校验失败，请先完成当前源码的 release 构建及 map-bundle 生成。' }
-    & ./target/release/zzz-engine.exe --root $projectRoot coffee-run-bundle-check --bundle resources/generated/coffee-run
+    & $engineBinary --root $projectRoot coffee-run-bundle-check --bundle resources/generated/coffee-run
     if ($LASTEXITCODE -ne 0) { throw '咖啡资源校验失败，请先完成当前源码的 release 构建及 coffee-run-bundle 生成。' }
-    & ./target/release/zzz-engine.exe --root $projectRoot basic-daily-bundle-check --bundle resources/generated/basic-daily
+    & $engineBinary --root $projectRoot basic-daily-bundle-check --bundle resources/generated/basic-daily
     if ($LASTEXITCODE -ne 0) { throw '首批日常资源校验失败，请先完成 basic-daily-bundle 生成。' }
-    & ./target/release/zzz-engine.exe --root $projectRoot combat-bundle-check --bundle resources/generated/combat
+    & $engineBinary --root $projectRoot combat-bundle-check --bundle resources/generated/combat
     if ($LASTEXITCODE -ne 0) { throw '战斗资源校验失败，请先完成 combat-bundle 生成。' }
-    & ./target/release/zzz-engine.exe --root $projectRoot suibian-temple-bundle-check --bundle resources/generated/suibian-temple
+    & $engineBinary --root $projectRoot suibian-temple-bundle-check --bundle resources/generated/suibian-temple
     if ($LASTEXITCODE -ne 0) { throw '随便观资源校验失败，请先完成 suibian-temple-bundle 生成。' }
-    & ./target/release/zzz-engine.exe --root $projectRoot world-patrol-bundle-check --bundle resources/generated/world-patrol
+    & $engineBinary --root $projectRoot world-patrol-bundle-check --bundle resources/generated/world-patrol
     if ($LASTEXITCODE -ne 0) { throw '锄大地资源校验失败，请先完成 world-patrol-bundle 生成。' }
+    & $engineBinary --root $projectRoot lost-void-resources-check
+    if ($LASTEXITCODE -ne 0) { throw '迷失之地资源或 schema 10 选队能力缺失，请先重新生成完整资源。' }
     $packageName = "zzz-auto-$($config.version)-windows-x64-prototype"
     $stagingParent = Join-Path $projectRoot ("target/portable-" + [guid]::NewGuid().ToString('N'))
     $staging = Join-Path $stagingParent $packageName
     foreach ($folder in @('', 'sdk/maa/bin', 'resources/pipeline', 'resources/catalog', 'licenses', 'tools')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $staging $folder) | Out-Null
     }
-    Copy-Item -LiteralPath target/release/zzz-desktop.exe -Destination (Join-Path $staging 'zzz-desktop.exe')
-    Copy-Item -LiteralPath target/release/zzz-engine.exe -Destination (Join-Path $staging 'zzz-auto-engine.exe')
+    Copy-Item -LiteralPath $desktopBinary -Destination (Join-Path $staging 'zzz-desktop.exe')
+    Copy-Item -LiteralPath $engineBinary -Destination (Join-Path $staging 'zzz-auto-engine.exe')
     Copy-Item -LiteralPath resources/sdk-manifest.json -Destination (Join-Path $staging 'resources/sdk-manifest.json')
     Copy-Item -LiteralPath sdk.lock.json -Destination (Join-Path $staging 'sdk.lock.json')
-    foreach ($resourceFolder in @('resources/pipeline', 'resources/catalog', 'resources/generated/mail', 'resources/generated/map-preview', 'resources/generated/coffee-run', 'resources/generated/basic-daily', 'resources/generated/suibian-temple', 'resources/generated/world-patrol', 'resources/generated/combat')) {
+    foreach ($resourceFolder in @('resources/pipeline', 'resources/catalog', 'resources/generated/mail', 'resources/generated/map-preview', 'resources/generated/coffee-run', 'resources/generated/basic-daily', 'resources/generated/suibian-temple', 'resources/generated/world-patrol', 'resources/generated/combat', 'resources/generated/lost-void-scene')) {
         $sourceFolder = Join-Path $projectRoot $resourceFolder
         foreach ($file in (Get-ChildItem -LiteralPath $sourceFolder -File -Recurse)) {
             $relative = $file.FullName.Substring($sourceFolder.Length + 1)
@@ -68,6 +73,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '复制后的随便观资源包校验失败，已停止打包。' }
     & (Join-Path $staging 'zzz-auto-engine.exe') --root $staging world-patrol-bundle-check --bundle (Join-Path $staging 'resources/generated/world-patrol')
     if ($LASTEXITCODE -ne 0) { throw '复制后的锄大地资源包校验失败，已停止打包。' }
+    & (Join-Path $staging 'zzz-auto-engine.exe') --root $staging lost-void-resources-check
+    if ($LASTEXITCODE -ne 0) { throw '复制后的迷失之地完整资源校验失败，已停止打包。' }
     foreach ($binary in $sdkManifest.binaries) {
         $path = Join-Path (Join-Path $projectRoot 'sdk/maa/bin') $binary.path
         if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $binary.sha256) { throw "SDK 文件校验失败：$($binary.path)" }
@@ -108,13 +115,14 @@ try {
         sdk_version = $sdkLock.sdk_version; binding_version = $sdkLock.binding_version
         created_at_utc = [DateTime]::UtcNow.ToString('o'); vc_runtime = $runtimeVersions
         webview2 = 'Evergreen bootstrapper included; internet needed only if runtime is missing'
-        includes_user_data = $false; includes_models = $true; included_models = @('ppocrv5', 'flash_classifier')
+        includes_user_data = $false; includes_models = $true; included_models = @('ppocrv5', 'flash_classifier', 'yolov26n-736-lost-void-det-20260630')
         protocol_version = $mailCheck.protocol_version
         mail_resources = [ordered]@{ path = 'resources/generated/mail'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/mail/mail-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         map_resources = [ordered]@{ path = 'resources/generated/map-preview'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/map-preview/map-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         coffee_resources = [ordered]@{ path = 'resources/generated/coffee-run'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/coffee-run/coffee-run-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         daily_resources = [ordered]@{ path = 'resources/generated/basic-daily'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/basic-daily/basic-daily-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
         combat_resources = [ordered]@{ path = 'resources/generated/combat'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/combat/combat-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); accepted = $false }
+        lost_void_resources = [ordered]@{ path = 'resources/generated/lost-void-scene'; manifest_sha256 = (Get-FileHash -LiteralPath (Join-Path $staging 'resources/generated/lost-void-scene/lost_void_scene-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); navigation_path = 'resources/generated/basic-daily'; ordinary_schema = 10; accepted = $false }
         files = $manifestFiles
     }
     [IO.File]::WriteAllText((Join-Path $staging 'release-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))

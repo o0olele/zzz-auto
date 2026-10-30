@@ -2,8 +2,12 @@ use super::*;
 #[path = "charge_group.rs"]
 mod charge_group;
 use charge_group::{ChargeWork, run_charge_work};
+#[path = "lost_void_group.rs"]
+mod lost_void_group;
+use lost_void_group::{LostVoidWork, run_lost_void_work};
 
 enum GroupAppWork {
+    LostVoid(Box<LostVoidWork>),
     Charge(Box<ChargeWork>),
     Patrol(Box<PatrolWork>),
     Temple(Box<TempleWork>),
@@ -42,6 +46,7 @@ struct DailyWork {
 }
 
 pub(super) struct GroupWork {
+    data: PathBuf,
     id: Uuid,
     plan: GroupPlan,
     window: WindowInfo,
@@ -52,6 +57,7 @@ pub(super) struct GroupWork {
     intel: Option<crate::intel_board::PreparedIntel>,
     patrol: Option<crate::intel_board::PreparedIntel>,
     charge: Option<crate::charge_entry::PreparedCharge>,
+    lost_void: Option<crate::lost_void_run_plan::PreparedLostVoidApp>,
 }
 
 impl GroupWork {
@@ -69,6 +75,25 @@ impl GroupWork {
             .and_then(|g| g.current_index.map(|i| g.steps[i].app_id.as_str()))
             .ok_or_else(|| anyhow::anyhow!("缺少当前分项"))?;
         let (work, control) = match app {
+            "lost_void" => {
+                let control = od_core::pipeline::PipelineControl::default();
+                let requester = control.requester();
+                let run = self
+                    .lost_void
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("迷失之地预检缺失"))?
+                    .create(record, &self.data, control.clone())?;
+                (
+                    GroupAppWork::LostVoid(Box::new(LostVoidWork::new(
+                        run,
+                        control,
+                        self.window.clone(),
+                        self.capture,
+                        self.fixture,
+                    ))),
+                    requester,
+                )
+            }
             "charge_plan" => {
                 let control = od_core::pipeline::PipelineControl::default();
                 let requester = control.requester();
@@ -228,6 +253,7 @@ impl GroupWork {
         charge: &mut Option<crate::charge_worker::ChargeWorker>,
     ) {
         match &mut self.current {
+            Some(GroupAppWork::LostVoid(work)) => work.control(resume),
             Some(GroupAppWork::Charge(work)) => work.control(resume, charge),
             Some(GroupAppWork::Patrol(work)) => {
                 if resume
@@ -321,6 +347,21 @@ impl Engine {
         plan: GroupPlan,
         window: WindowInfo,
     ) -> Result<Payload, ApiError> {
+        let lost_void =
+            if plan.items.iter().any(|i| {
+                i.app_id == "lost_void" && i.decision == od_core::run_plan::PlanDecision::Run
+            }) {
+                Some(
+                    crate::lost_void_run_plan::PreparedLostVoidApp::load(
+                        &plan,
+                        &self.execution_root,
+                        &self.combat_data,
+                    )
+                    .map_err(native_error)?,
+                )
+            } else {
+                None
+            };
         let intel = if plan.items.iter().any(|i| {
             i.app_id == "intel_board" && i.decision == od_core::run_plan::PlanDecision::Run
         }) {
@@ -391,8 +432,23 @@ impl Engine {
             intel,
             patrol,
             charge,
+            lost_void,
+            data: (*self.combat_data).clone(),
         });
-        let control = work.prepare(&record).map_err(native_error)?;
+        let control = match work.prepare(&record) {
+            Ok(control) => control,
+            Err(error) => {
+                let message = format!("分项创建失败，未投递输入：{error:#}");
+                if let Some(failed) = fail_current(state, message.clone())
+                    && let Err(error) = self.history.save(&failed)
+                {
+                    state.failed_save = Some(failed);
+                    state.record_error = Some(error.to_string());
+                }
+                state.event(Some(record.id), "error", message);
+                return Err(native_error(error));
+            }
+        };
         if let Err(error) = self.history.save(&record) {
             let message = format!("启动记录保存失败，未投递游戏动作：{error}");
             let failed = fail_current(state, message.clone());
@@ -477,6 +533,14 @@ pub(super) fn run_group_work(
                     continue;
                 }
                 match item.app_id.as_str() {
+                    "lost_void" => match &work.current {
+                        Some(GroupAppWork::LostVoid(w)) => w.verify()?,
+                        _ => work
+                            .lost_void
+                            .as_ref()
+                            .ok_or_else(|| anyhow::anyhow!("迷失之地资源预检缺失"))?
+                            .verify()?,
+                    },
                     "charge_plan" => match &work.current {
                         Some(GroupAppWork::Charge(c)) => c.verify()?,
                         _ => work
@@ -534,6 +598,9 @@ pub(super) fn run_group_work(
     loop {
         if let Some(current) = work.current.take() {
             work.current = match current {
+                GroupAppWork::LostVoid(app) => {
+                    run_lost_void_work(app, paths, shared, native).map(GroupAppWork::LostVoid)
+                }
                 GroupAppWork::Charge(app) => {
                     run_charge_work(app, paths, shared, native, charge).map(GroupAppWork::Charge)
                 }

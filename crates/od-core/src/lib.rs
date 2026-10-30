@@ -38,6 +38,35 @@ pub mod game_launch;
 pub mod group_run;
 pub mod intel_board;
 pub mod intel_board_flow;
+pub mod lost_void;
+pub mod lost_void_application;
+pub mod lost_void_battle;
+pub mod lost_void_bounty;
+pub mod lost_void_choice;
+pub mod lost_void_claim_record;
+pub mod lost_void_classic_teams;
+pub mod lost_void_deploy;
+pub mod lost_void_entry;
+pub mod lost_void_event;
+pub mod lost_void_gear;
+pub mod lost_void_interact;
+pub mod lost_void_level;
+pub mod lost_void_loading;
+pub mod lost_void_matrix;
+pub mod lost_void_motion;
+pub mod lost_void_navigation;
+pub mod lost_void_npc;
+pub mod lost_void_record;
+pub mod lost_void_record_store;
+pub mod lost_void_recovery;
+pub mod lost_void_recovery_menu;
+pub mod lost_void_roster;
+pub mod lost_void_scene;
+pub mod lost_void_settlement;
+pub mod lost_void_store;
+pub mod lost_void_strategy;
+pub mod lost_void_team_plan;
+pub mod lost_void_transition;
 pub mod mail;
 pub mod map_transport;
 pub mod model_resources;
@@ -163,10 +192,24 @@ pub struct RunRecord {
     pub charge: Option<Box<charge_application::ChargeAppProgress>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    pub lost_void: Option<Box<lost_void_application::LostVoidAppProgress>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub group: Option<group_run::GroupProgress>,
 }
 
 impl RunRecord {
+    fn lost_void_is_current(&self) -> bool {
+        self.lost_void.is_some()
+            && self.group.as_ref().is_none_or(|group| {
+                group.current_index.is_some_and(|index| {
+                    group
+                        .steps
+                        .get(index)
+                        .is_some_and(|step| step.app_id == "lost_void")
+                })
+            })
+    }
     fn charge_is_current(&self) -> bool {
         self.charge.is_some()
             && self.group.as_ref().is_none_or(|g| {
@@ -178,6 +221,7 @@ impl RunRecord {
         use group_run::GroupStepState;
         self.state == RunState::Succeeded
             && self.charge.as_ref().is_none_or(|p| p.completed())
+            && self.lost_void.as_ref().is_none_or(|p| p.completed())
             && self.finished_at.is_some_and(|at| at >= self.started_at)
             && self.matches_account_context()
             && self.inputs_released()
@@ -211,6 +255,7 @@ impl RunRecord {
     pub fn inputs_released(&self) -> bool {
         self.input_probe.as_ref().is_none_or(|p| p.released)
             && self.charge.as_ref().is_none_or(|p| p.inputs_released)
+            && self.lost_void.as_ref().is_none_or(|p| p.inputs_released)
             && self
                 .input_pipeline
                 .as_ref()
@@ -230,6 +275,25 @@ impl RunRecord {
         let Some(context) = &self.context else {
             return false;
         };
+        if self
+            .lost_void
+            .as_ref()
+            .is_some_and(|p| !p.matches_record(self))
+            || self.lost_void.is_none()
+                && (self.app_id == "lost_void"
+                    || self.group.as_ref().is_some_and(|group| {
+                        group.steps.iter().enumerate().any(|(index, step)| {
+                            step.app_id == "lost_void"
+                                && (!matches!(
+                                    step.state,
+                                    group_run::GroupStepState::Pending
+                                        | group_run::GroupStepState::Skipped
+                                ) || group.current_index == Some(index))
+                        })
+                    }))
+        {
+            return false;
+        }
         if self.charge.is_none()
             && (self.app_id == "charge_plan"
                 || self.group.as_ref().is_some_and(|g| {
@@ -490,6 +554,7 @@ pub struct RunEvent {
 pub struct RunSlot {
     current: Option<RunRecord>,
     group_schedule: Option<group_run::GroupSchedule>,
+    frozen_lost_void: Option<lost_void::LostVoidConfig>,
 }
 
 impl RunSlot {
@@ -501,14 +566,27 @@ impl RunSlot {
         let mut schedule = group_run::GroupSchedule::new(plan)?;
         let permit = schedule.start_next(Utc::now())?.ok_or("应用组无需执行")?;
         if plan.context.app_ids.iter().any(|id| {
-            !matches!(id.as_str(), "email" | "coffee" | "charge_plan")
-                && !basic_daily::APP_IDS.contains(&id.as_str())
+            !matches!(
+                id.as_str(),
+                "email" | "coffee" | "charge_plan" | "lost_void"
+            ) && !basic_daily::APP_IDS.contains(&id.as_str())
         }) {
             return Err("当前分项没有可用日常执行器");
         }
         config.validate()?;
         plan.coffee_config.validate()?;
         plan.daily_config.validate()?;
+        if plan
+            .items
+            .iter()
+            .any(|item| item.app_id == "lost_void" && item.decision == run_plan::PlanDecision::Run)
+        {
+            plan.lost_void_config.validate()?;
+            plan.lost_void_combat
+                .as_ref()
+                .ok_or("迷失之地缺少冻结战斗设置")?
+                .validate()?;
+        }
         if plan
             .items
             .iter()
@@ -570,6 +648,12 @@ impl RunSlot {
         debug_assert!(schedule.permitted_app(&permit).is_none());
         self.current.as_mut().expect("运行已创建").group = Some(schedule.progress().clone());
         self.group_schedule = Some(schedule);
+        self.frozen_lost_void = plan
+            .context
+            .app_ids
+            .iter()
+            .any(|id| id == "lost_void")
+            .then(|| plan.lost_void_config.clone());
         self.prepare_group_app(config, plan)?;
         Ok(self.current.as_ref().expect("运行已创建").clone())
     }
@@ -581,6 +665,20 @@ impl RunSlot {
     ) -> Result<(), &'static str> {
         let run = self.current.as_mut().ok_or("当前没有任务")?;
         match self.group_schedule.as_ref().and_then(|s| s.current_app()) {
+            Some("lost_void") => {
+                let context = run.context.as_ref().ok_or("迷失之地缺少账号上下文")?;
+                run.lost_void = Some(Box::new(lost_void_application::LostVoidAppProgress::new(
+                    lost_void_application::LostVoidAppContext {
+                        run_id: run.id,
+                        instance_id: context.instance_id,
+                        group_id: context.group_id.clone(),
+                        config_revision: context.config_revision,
+                        region: plan.game_day.region,
+                    },
+                    plan.lost_void_config.clone(),
+                    lost_void_application::DEFAULT_APPLICATION_TIMEOUT_MS,
+                )?));
+            }
             Some("charge_plan") => {
                 let context = run.context.as_ref().ok_or("体力缺少账号上下文")?;
                 let revision =
@@ -664,6 +762,13 @@ impl RunSlot {
     }
 
     pub fn advance_group(&mut self, plan: &run_plan::GroupPlan) -> Result<RunRecord, &'static str> {
+        if self
+            .frozen_lost_void
+            .as_ref()
+            .is_some_and(|config| config != &plan.lost_void_config)
+        {
+            return Err("迷失之地配置与整组开始前冻结的参数不符");
+        }
         if self.current.as_ref().and_then(|run| run.context.as_ref()) != Some(&plan.context) {
             return Err("后继计划与冻结的账号或应用组不符");
         }
@@ -886,7 +991,8 @@ impl RunSlot {
                 && run.coffee.is_none()
                 && run.daily.is_empty()
                 && run.combat.is_none()
-                && run.charge.is_none())
+                && run.charge.is_none()
+                && run.lost_void.is_none())
         {
             return Err("流程运行 ID 已过期");
         }
@@ -907,6 +1013,11 @@ impl RunSlot {
             RunState::Pausing
         };
         run.message = "已请求暂停，正在等待队列静止与输入释放".into();
+        if run.lost_void_is_current()
+            && let Some(progress) = &mut run.lost_void
+        {
+            progress.request_state(run.state);
+        }
         if run.charge_is_current()
             && let Some(p) = &mut run.charge
         {
@@ -923,7 +1034,8 @@ impl RunSlot {
                 && run.coffee.is_none()
                 && run.daily.is_empty()
                 && run.combat.is_none()
-                && run.charge.is_none())
+                && run.charge.is_none()
+                && run.lost_void.is_none())
         {
             return Err("流程运行 ID 已过期");
         }
@@ -938,6 +1050,11 @@ impl RunSlot {
             run.group = Some(schedule.progress().clone());
         }
         run.state = RunState::Running;
+        if run.lost_void_is_current()
+            && let Some(progress) = &mut run.lost_void
+        {
+            progress.request_state(RunState::Running);
+        }
         if run.charge_is_current()
             && let Some(p) = &mut run.charge
         {
@@ -1248,7 +1365,8 @@ impl RunSlot {
 
     pub fn begin(&mut self, app_id: &str) -> Result<RunRecord, &'static str> {
         if self.current.as_ref().is_some_and(|run| {
-            (run.group.is_some() || run.combat.is_some()) && !run.inputs_released()
+            (run.group.is_some() || run.combat.is_some() || run.lost_void.is_some())
+                && !run.inputs_released()
         }) {
             return Err("上次应用组输入尚未确认释放，请先恢复遗留输入");
         }
@@ -1271,9 +1389,11 @@ impl RunSlot {
             daily: Vec::new(),
             combat: None,
             charge: None,
+            lost_void: None,
             group: None,
         };
         self.group_schedule = None;
+        self.frozen_lost_void = None;
         self.current = Some(run.clone());
         Ok(run)
     }
@@ -1301,6 +1421,11 @@ impl RunSlot {
                 run.finished_at = Some(Utc::now());
             }
             run.message = "已请求停止，正在等待原生队列及输入释放".into();
+            if run.lost_void_is_current()
+                && let Some(progress) = &mut run.lost_void
+            {
+                progress.request_state(run.state);
+            }
             if run.charge_is_current()
                 && let Some(p) = &mut run.charge
             {
@@ -1325,6 +1450,25 @@ impl RunSlot {
         }
         if run.state.is_terminal() {
             return Err("任务已结束，不能覆盖结果");
+        }
+        if run.lost_void_is_current() {
+            use lost_void_application::LostVoidAppEnd;
+            if state == RunState::Succeeded {
+                return Err("迷失之地成功必须经过专用完成证明");
+            }
+            let mut progress = (**run.lost_void.as_ref().ok_or("迷失之地摘要缺失")?).clone();
+            if state == RunState::Stopped && !progress.inputs_released {
+                return Err("迷失之地输入尚未释放，不能确认停止");
+            }
+            progress.state = state;
+            progress.end = Some(if state == RunState::Stopped {
+                LostVoidAppEnd::Stopped
+            } else {
+                LostVoidAppEnd::Failed
+            });
+            progress.completion = None;
+            progress.returned_world = false;
+            return self.update_lost_void(id, progress, message);
         }
         if run.charge_is_current() && state == RunState::Succeeded {
             return Err("体力成功必须经过本次专用完成证明");

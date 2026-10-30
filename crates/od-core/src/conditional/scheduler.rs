@@ -60,6 +60,12 @@ impl Scheduler {
         self.last_scene.fill(None);
         self.states.reset();
     }
+    /// 同次战斗重读画面：撤销动作与视觉状态，保留已提交自定义状态及场景冷却。
+    pub fn refresh_observation(&mut self) {
+        self.active = None;
+        self.generation += 1;
+        self.states.reset_observation();
+    }
     pub fn complete(&mut self, generation: u64) -> Result<()> {
         ensure!(
             self.active

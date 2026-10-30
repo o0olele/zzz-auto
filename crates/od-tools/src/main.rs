@@ -12,6 +12,22 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Tool {
+    /// 生成迷失之地全画面与入口识别资源。
+    LostVoidSceneBundle {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "sdk/models")]
+        models: PathBuf,
+        #[arg(long, default_value = "resources/generated/lost-void-scene")]
+        output: PathBuf,
+    },
+    /// 固定迷失之地藏品与调查战略目录及来源哈希。
+    LostVoidCatalog {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long, default_value = "resources/lost-void")]
+        output: PathBuf,
+    },
     /// 生成模拟室培养详情选关资源。
     AgentMissionBundle {
         #[arg(long)]
@@ -648,8 +664,50 @@ fn main() -> Result<()> {
         Tool::SdkManifest { directory, output } => {
             od_tools::inventory::sdk_manifest(&directory, &output)
         }
+        Tool::LostVoidSceneBundle {
+            reference,
+            models,
+            output,
+        } => {
+            println!(
+                "{}",
+                od_tools::lost_void_scene::build_bundle(&reference, &models, &output)?
+            );
+            Ok(())
+        }
+        Tool::LostVoidCatalog { reference, output } => {
+            println!("{}", od_tools::lost_void::extract(&reference, &output)?);
+            Ok(())
+        }
         Tool::Types { output } => {
             let declarations = [
+                od_core::lost_void::LostVoidConfig::decl(),
+                od_core::lost_void::LostVoidChallenge::decl(),
+                od_core::lost_void::LostVoidTask::decl(),
+                od_core::lost_void::LostVoidMission::decl(),
+                od_core::lost_void::LostVoidDecision::decl(),
+                od_core::lost_void_settlement::CompletionKind::decl(),
+                od_core::lost_void_record::LostVoidProgress::decl(),
+                od_core::lost_void_record_store::LostVoidApplicationPlanning::decl(),
+                od_core::lost_void_application::LostVoidAppPhase::decl(),
+                od_core::lost_void_application::LostVoidAppEnd::decl(),
+                od_core::lost_void_application::LostVoidAppCompletion::decl(),
+                od_core::lost_void_application::LostVoidAppContext::decl(),
+                od_core::lost_void_application::LostVoidAppProgress::decl(),
+                format!(
+                    "const lostVoidDefaults = {} as LostVoidConfig;",
+                    serde_json::to_string(&od_core::lost_void::LostVoidConfig::default())?
+                ),
+                format!(
+                    "const lostVoidRegions = {} as const;",
+                    serde_json::to_string(&od_core::lost_void::REGIONS)?
+                ),
+                format!(
+                    "const lostVoidStrategies = {} as readonly string[];",
+                    serde_json::to_string(
+                        &od_core::lost_void::strategies().map_err(anyhow::Error::msg)?
+                    )?
+                ),
                 od_core::world_patrol::WorldPatrolConfig::decl(),
                 od_core::world_patrol::PatrolRetryAction::decl(),
                 od_core::world_patrol::PatrolProgress::decl(),

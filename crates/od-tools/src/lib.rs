@@ -17,6 +17,8 @@ pub mod ether_synthesis_entry;
 pub mod expert_challenge;
 pub mod flash_model;
 pub mod inventory;
+pub mod lost_void;
+pub mod lost_void_scene;
 pub mod mail;
 pub mod map_transport;
 pub mod models;

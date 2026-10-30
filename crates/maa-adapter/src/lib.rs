@@ -33,6 +33,26 @@ pub mod ether_synthesis;
 pub mod ether_synthesis_entry;
 pub mod expert_challenge;
 pub mod intel_board;
+pub mod lost_void_battle;
+pub mod lost_void_battle_hud;
+pub mod lost_void_bounty;
+pub mod lost_void_choice;
+pub mod lost_void_classic_teams;
+pub mod lost_void_deploy;
+pub mod lost_void_entry;
+pub mod lost_void_event;
+pub mod lost_void_gear;
+pub mod lost_void_interact;
+pub mod lost_void_loading;
+pub mod lost_void_matrix;
+pub mod lost_void_navigation;
+pub mod lost_void_npc;
+pub mod lost_void_recovery;
+pub mod lost_void_roster;
+pub mod lost_void_scene;
+pub mod lost_void_settlement;
+pub mod lost_void_store;
+pub mod lost_void_strategy;
 mod mail_bundle;
 mod map_transport;
 pub mod navigation;
@@ -168,6 +188,9 @@ pub struct NativeSession {
     ether_synthesis_entry_bundle: Option<PathBuf>,
     charge_navigation_bundle: Option<PathBuf>,
     charge_transport_bundle: Option<PathBuf>,
+    lost_void_scene_bundle: Option<PathBuf>,
+    lost_void_loading_trace:
+        std::sync::Arc<std::sync::Mutex<Option<lost_void_loading::LoadingTrace>>>,
     agent_transport_bundle: Option<PathBuf>,
     agent_goal_bundle: Option<PathBuf>,
     agent_mission_bundle: Option<PathBuf>,
@@ -330,6 +353,8 @@ impl NativeSession {
             ether_synthesis_entry_bundle: None,
             charge_navigation_bundle: None,
             charge_transport_bundle: None,
+            lost_void_scene_bundle: None,
+            lost_void_loading_trace: std::sync::Arc::new(std::sync::Mutex::new(None)),
             agent_transport_bundle: None,
             agent_goal_bundle: None,
             agent_mission_bundle: None,
@@ -630,6 +655,15 @@ impl NativeSession {
 
     pub fn release_inputs(&mut self) -> Result<()> {
         self.release_inputs_observed(&AtomicBool::new(false), &mut None)
+    }
+
+    /// 深读页面前确认原生任务和所有登记输入均已收尾。
+    pub fn inputs_released(&self) -> bool {
+        !self.tasker.running()
+            && !self.input_cleanup_pending
+            && !self.pipeline_controller_pending
+            && self.held_keys.is_empty()
+            && self.held_contacts.is_empty()
     }
 }
 

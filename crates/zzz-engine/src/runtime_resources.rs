@@ -309,6 +309,14 @@ fn safe_patrol_path(name: &str) -> bool {
             .all(|part| matches!(part, std::path::Component::Normal(_)))
 }
 
+fn safe_lost_void_path(name: &str) -> bool {
+    name.starts_with("generated/lost-void-scene/")
+        && !name.contains([':', '\\'])
+        && Path::new(name)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
 fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
     ensure!(
         matches!(manifest.schema_version, 1..=4)
@@ -348,7 +356,10 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
                     && safe_patrol_path(&file.path))
                 || (manifest.schema_version == 4
                     && manifest.protocol_version >= 48
-                    && safe_charge_path(&file.path)))
+                    && safe_charge_path(&file.path))
+                || (manifest.schema_version == 4
+                    && manifest.protocol_version >= 54
+                    && safe_lost_void_path(&file.path)))
                 && paths.insert(file.path.as_str()),
             "资源文件未登记或重复"
         );
@@ -366,10 +377,22 @@ fn validate_manifest(manifest: &ResourceManifest) -> Result<()> {
             && total <= MAX_ARCHIVE,
         "运行资源包不完整或过大"
     );
+    ensure!(
+        !paths.iter().any(|name| safe_lost_void_path(name))
+            || paths.contains(crate::lost_void_resources::SCENE_MANIFEST),
+        "迷失之地资源缺少配套场景清单"
+    );
     Ok(())
 }
 
 fn validate_semantics(root: &Path, protocol: u32) -> Result<()> {
+    if root
+        .join(crate::lost_void_resources::SCENE_DIRECTORY)
+        .try_exists()?
+    {
+        ensure!(protocol >= 54, "迷失之地运行资源需要协议 v54");
+        crate::lost_void_resources::validate(root)?;
+    }
     validate_charge_bundles(root)?;
     if root.join("generated/world-patrol").try_exists()? {
         maa_adapter::world_patrol::validate_bundle(&root.join("generated/world-patrol"))?;
@@ -639,6 +662,27 @@ pub fn pack(source: &Path, version: &str, output: &Path) -> Result<PackedResourc
             }
         }
     }
+    let lost_void = source.join(crate::lost_void_resources::SCENE_DIRECTORY);
+    if lost_void.try_exists()? {
+        ensure!(manifest.schema_version == 4, "迷失之地需要配套战斗资源");
+        crate::lost_void_resources::validate(&source)?;
+        let mut scene_files = Vec::new();
+        for entry in walkdir::WalkDir::new(&lost_void).min_depth(1) {
+            let entry = entry?;
+            check_path(entry.path())?;
+            if entry.file_type().is_file() {
+                scene_files.push(
+                    entry
+                        .path()
+                        .strip_prefix(&source)?
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+        scene_files.sort();
+        names.extend(scene_files);
+    }
     for name in names {
         let path = source.join(&name);
         check_path(&path)?;
@@ -728,7 +772,8 @@ fn extract(
                     || safe_temple_path(entry.name())
                     || safe_combat_path(entry.name())
                     || safe_patrol_path(entry.name())
-                    || safe_charge_path(entry.name()))
+                    || safe_charge_path(entry.name())
+                    || safe_lost_void_path(entry.name()))
                 && names.insert(entry.name().to_owned()),
             "ZIP 包含多余、重复或非法条目"
         );

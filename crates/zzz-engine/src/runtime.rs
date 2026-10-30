@@ -322,6 +322,21 @@ impl Engine {
         )
     }
 
+    /// 仅供独立测试仓；公开命令仍走相同工作线程，控制器不会连接游戏。
+    pub fn for_lost_void_fixture(
+        paths: EnginePaths,
+        callback: impl maa_adapter::CustomControllerCallback + 'static,
+    ) -> anyhow::Result<Self> {
+        let resources = paths.resources.join("generated/lost-void-scene");
+        Self::with_factory(
+            paths,
+            Some(Box::new(move || {
+                NativeSession::for_custom_controller(callback, &resources, InputMode::Foreground)
+            })),
+            true,
+        )
+    }
+
     pub fn for_combat_fixture(
         paths: EnginePaths,
         callback: impl maa_adapter::CustomControllerCallback + 'static,
@@ -818,6 +833,7 @@ impl Engine {
                                 || run.coffee.is_some()
                                 || run.combat.is_some()
                                 || run.charge.is_some()
+                                || run.lost_void.is_some()
                                 || !run.daily.is_empty())
                     })
                     .ok_or_else(|| {
@@ -1055,6 +1071,7 @@ impl Engine {
             .as_ref()
             .or(plan.world_patrol_combat.as_ref())
             .or(plan.charge_combat.as_ref())
+            .or(plan.lost_void_combat.as_ref())
             .map(|p| &p.script_revision)
             != combat_revision.as_ref()
         {
@@ -1083,7 +1100,11 @@ impl Engine {
                 item.enabled
                     && matches!(
                         item.app_id.as_str(),
-                        "redemption_code" | "intel_board" | "world_patrol" | "charge_plan"
+                        "redemption_code"
+                            | "intel_board"
+                            | "world_patrol"
+                            | "charge_plan"
+                            | "lost_void"
                     )
             })
         {
@@ -1092,6 +1113,7 @@ impl Engine {
         let history = self.history.clone();
         let combat_root = self.combat_root.clone();
         let combat_data = self.combat_data.clone();
+        let execution_root = self.execution_root.clone();
         tokio::task::spawn_blocking(move || {
             let completed = history
                 .daily_completions(instance_id, plan.game_day, now)
@@ -1229,6 +1251,8 @@ impl Engine {
                 ));
                 plan.world_patrol_combat = Some(frozen);
             }
+            crate::lost_void_run_plan::preview(&mut plan, &config, &execution_root, &combat_data)
+                .map_err(native_error)?;
             Ok(plan)
         })
         .await
@@ -1803,31 +1827,11 @@ impl Engine {
             if state.record_error.is_some() {
                 return Err(ApiError::new("history_error", "请先重试保存运行记录"));
             }
-            if state.slot.current().is_some_and(|run| {
-                run.charge.as_ref().is_some_and(|p| !p.inputs_released)
-                    || run
-                        .combat
-                        .as_ref()
-                        .is_some_and(|value| !value.inputs_released)
-                    || !run.daily.iter().all(|value| value.inputs_released)
-                    || run
-                        .mail
-                        .as_ref()
-                        .is_some_and(|value| !value.inputs_released)
-                    || run.map.as_ref().is_some_and(|value| !value.inputs_released)
-                    || run
-                        .coffee
-                        .as_ref()
-                        .is_some_and(|value| !value.inputs_released)
-                    || run
-                        .input_probe
-                        .as_ref()
-                        .is_some_and(|value| !value.released)
-                    || run
-                        .input_pipeline
-                        .as_ref()
-                        .is_some_and(|value| !value.pipeline.released)
-            }) {
+            if state
+                .slot
+                .current()
+                .is_some_and(|run| !run.inputs_released())
+            {
                 return Err(ApiError::new(
                     "input_recovery_required",
                     "输入尚未确认释放，请先恢复遗留输入",

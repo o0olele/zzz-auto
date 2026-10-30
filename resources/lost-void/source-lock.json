@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "sources": {
+    "assets/game_data/hollow_zero/lost_void/lost_void_artifact_data.yml": "fb98fcb38e1aeb80a65048b03d84f3551129a4f8a407bfe8f570bc921e7dd60f",
+    "assets/game_data/hollow_zero/lost_void/lost_void_investigation_strategy.yml": "9e8b2f07aae251e6acf6269d5f339d140acc7037f31df56a6ac1ec4e52bd2db3"
+  }
+}

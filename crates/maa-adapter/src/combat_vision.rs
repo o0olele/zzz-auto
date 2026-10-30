@@ -196,6 +196,10 @@ pub struct CombatFrame {
     pub captured: Instant,
 }
 impl CombatFrame {
+    pub fn recognition_image(&self) -> &RecognitionImage {
+        &self.image
+    }
+
     pub fn age_ms(&self) -> u32 {
         self.captured.elapsed().as_millis().min(u32::MAX as u128) as u32
     }
@@ -284,6 +288,7 @@ pub struct CombatRecognizer {
     raw: Arc<Mutex<Option<crate::RawRecognitionControl>>>,
     quick: Option<(String, f64)>,
     chain: Option<(Vec<Option<String>>, f64)>,
+    agent_scope: Option<Vec<usize>>,
 }
 impl CombatRecognizer {
     /// 只读取同一截图中的固定普通结算区域；调用方须确认已进入战斗，
@@ -355,10 +360,39 @@ impl CombatRecognizer {
             raw: Arc::new(Mutex::new(None)),
             quick: None,
             chain: None,
+            agent_scope: None,
         }
     }
     pub fn cancellation_handle(&self) -> Arc<Mutex<Option<crate::RawRecognitionControl>>> {
         self.raw.clone()
+    }
+    /// 本次完整实际队伍已确认后限制正常前后台头像候选；None 恢复通用识别。
+    /// 重置状态或暂停不改变冻结名单，不能用这个设置补齐未识别的成员。
+    pub fn set_agent_scope(&mut self, ids: Option<&[String]>) -> Result<()> {
+        let scope = ids
+            .map(|ids| {
+                ensure!(
+                    (1..=3).contains(&ids.len()),
+                    "战斗头像候选须为完整 1..3 名成员"
+                );
+                let mut found = Vec::new();
+                for id in ids {
+                    let index = self
+                        .bundle
+                        .spec
+                        .agents
+                        .iter()
+                        .position(|a| &a.id == id)
+                        .context("战斗头像候选不在冻结目录")?;
+                    ensure!(!found.contains(&index), "战斗头像候选不能重复");
+                    found.push(index);
+                }
+                Ok(found)
+            })
+            .transpose()?;
+        self.agent_scope = scope;
+        self.reset();
+        Ok(())
     }
     pub fn reset(&mut self) {
         self.candidates.clear();
@@ -411,7 +445,11 @@ impl CombatRecognizer {
         rect: [i32; 4],
         cancel: &AtomicBool,
     ) -> Result<Option<usize>> {
-        let candidates: Vec<usize> = if self.stable >= 5 && !self.candidates.is_empty() {
+        let candidates: Vec<usize> = if let Some(scope) = &self.agent_scope
+            && matches!(prefix, "avatar_1_" | "avatar_2_")
+        {
+            scope.clone()
+        } else if self.stable >= 5 && !self.candidates.is_empty() {
             self.candidates.clone()
         } else {
             (0..self.bundle.spec.agents.len()).collect()

@@ -1,4 +1,5 @@
 import { SuibianTempleSummary } from './SuibianTempleSettings';
+import { LostVoidSummary } from './LostVoidSettings';
 import { ChargePlanSummary } from './ChargePlanSettings';
 import { RedemptionConfigSummary } from './RedemptionSettings';
 import { dismantleSummary } from './DismantleSettings';
@@ -93,6 +94,7 @@ function RecoveryContents({ config, apps }: { config: AccountConfig; apps: AppDe
     <p>录像店设置：{randomPlaySummary(group.random_play)}。</p>
     <p>情报板设置：{intelBoardSummary(group.intel_board)}。</p>
     <SuibianTempleSummary settings={group.suibian_temple}/>
+    <LostVoidSummary settings={group.lost_void}/>
     <ChargePlanSummary settings={group.charge_plan}/>
     <ol aria-label="恢复后应用顺序" className="group-plan">{group.apps.map(item => <li key={item.app_id}>{apps.find(app => app.id === item.app_id)?.name ?? item.app_id} · {item.enabled ? '启用' : '禁用'}</li>)}</ol>
     <details><summary>保留的账号编号（{config.reserved_instance_ids?.length ?? 0} 个）</summary><p className="resource-path">{config.reserved_instance_ids?.join('、') || '无'}</p></details>

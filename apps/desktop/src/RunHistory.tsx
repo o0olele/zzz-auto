@@ -3,6 +3,7 @@ import { SuibianTempleStatus } from './SuibianTempleSettings';
 import { RedemptionStatus } from './RedemptionSettings';
 import { RandomPlayStatus } from './RandomPlaySettings';
 import { TeamCheckStatus } from './TeamSettings';
+import { LostVoidStatus } from './LostVoidStatus';
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Field, Input, MessageBar, MessageBarBody, Select, Spinner } from '@fluentui/react-components';
 import { trialAppOptions, type AccountConfig, type HistoryCursor, type HistoryPage, type HistoryQuery, type HistoryItem } from './generated/protocol';
@@ -15,7 +16,7 @@ const appName = (id: string) => trialAppOptions.find(app => app.id === id)?.labe
 
 function outcome(item: HistoryItem) {
   if (item.interrupted) return '异常中断';
-  if (item.record.mail?.state === 'timed_out' || item.record.coffee?.state === 'timed_out' || item.record.daily?.some(app => app.state === 'timed_out')) return '超时';
+  if (item.record.lost_void?.end === 'timed_out' || item.record.charge?.outcome === 'timed_out' || item.record.mail?.state === 'timed_out' || item.record.coffee?.state === 'timed_out' || item.record.daily?.some(app => app.state === 'timed_out')) return '超时';
   const names: Record<string, string> = { ...outcomes, running: '运行中', pausing: '暂停中', paused: '已暂停', stopping: '停止中' };
   return names[item.record.state] ?? item.record.state;
 }
@@ -122,6 +123,7 @@ export function RunHistory({ connected }: { connected: boolean }) {
         {item.record.context?.standalone && <p>独立应用运行</p>}
         {item.record.context?.rerun_completed && <p>本次重新运行已完成应用</p>}
         <p>{item.interrupted ? '上次引擎退出前未保存终态，实际结束时间未知，不会自动继续。' : item.record.message}</p>
+        {item.record.lost_void && <LostVoidStatus progress={item.record.lost_void}/>}
         {item.record.daily?.filter(app => app.redemption).map(app => <RedemptionStatus key={app.app_id} progress={app.redemption!}/>)}
         {item.record.daily?.filter(app => app.random_play).map(app => <RandomPlayStatus key={app.app_id} progress={app.random_play!}/>)}
         {item.record.daily?.filter(app => app.team_check).map(app => <TeamCheckStatus key={app.app_id} progress={app.team_check!}/>)}

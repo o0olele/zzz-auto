@@ -1,9 +1,11 @@
 //! 单个只读识别线程；在途一帧，待处理只保留最新一帧，不发送输入。
+use crate::combat_performance::PerformanceTrace;
 use anyhow::{Context, Result};
 use maa_adapter::{
     CombatVision,
     combat_vision::{CombatFrame, CombatObservation, CombatRecognizer},
 };
+use serde_json::json;
 use std::{
     collections::BTreeMap,
     sync::{
@@ -22,12 +24,15 @@ struct Work {
     intervals: BTreeMap<String, f64>,
     dodge_only: bool,
     refresh_agents: bool,
+    trace: Option<PerformanceTrace>,
+    submitted: std::time::Instant,
 }
 pub(crate) struct Observed {
     pub frame: CombatFrame,
     pub at: f64,
     pub observation: CombatObservation,
     epoch: u64,
+    completed: std::time::Instant,
 }
 pub(crate) struct EarlyFlash {
     pub states: Vec<od_core::conditional::StateUpdate>,
@@ -49,6 +54,7 @@ pub(crate) struct CombatWorker {
     busy: bool,
     epoch: u64,
     refresh_agents: bool,
+    trace: Option<PerformanceTrace>,
 }
 impl CombatWorker {
     pub fn new(
@@ -75,9 +81,26 @@ impl CombatWorker {
                     if work.refresh_agents {
                         recognizer.refresh_agents();
                     }
+                    let recognition_started = std::time::Instant::now();
+                    if let Some(trace) = &work.trace {
+                        trace.event("recognition_start", json!({
+                            "frame_id": trace.stamp(work.frame.captured), "epoch": work.epoch,
+                            "queue_wait_us": work.submitted.elapsed().as_micros() as u64,
+                            "submit_age_us": work.submitted.saturating_duration_since(work.frame.captured).as_micros() as u64,
+                            "frame_age_us": work.frame.captured.elapsed().as_micros() as u64,
+                            "intervals": work.intervals, "refresh_agents": work.refresh_agents,
+                        }));
+                    }
                     let flash_output = output.clone();
+                    let flash_trace = work.trace.clone();
                     let (at, epoch, captured) = (work.at, work.epoch, work.frame.captured);
                     recognizer.set_flash_observer(Some(Arc::new(move |states| {
+                        if let Some(trace) = &flash_trace {
+                            trace.event("flash_ready", json!({
+                                "frame_id": trace.stamp(captured), "epoch": epoch,
+                                "frame_age_us": captured.elapsed().as_micros() as u64,
+                            }));
+                        }
                         let _ = flash_output.send(Message::Flash(EarlyFlash {
                             states: states.to_vec(),
                             at,
@@ -104,9 +127,23 @@ impl CombatWorker {
                                 at: work.at,
                                 epoch: work.epoch,
                                 observation,
+                                completed: std::time::Instant::now(),
                             }
                         });
                     recognizer.set_flash_observer(None);
+                    if let Some(trace) = &work.trace {
+                        match &result {
+                            Ok(result) => trace.event("recognition_complete", json!({
+                                "frame_id": trace.stamp(result.frame.captured), "epoch": result.epoch,
+                                "recognition_us": recognition_started.elapsed().as_micros() as u64,
+                                "frame_age_us": result.frame.captured.elapsed().as_micros() as u64,
+                                "stages": result.frame.performance(),
+                                "in_battle": result.observation.in_battle, "team": result.observation.team,
+                                "states": result.observation.states.len(),
+                            })),
+                            Err(error) => trace.event("recognition_error", json!({"frame_id": trace.stamp(captured), "epoch": epoch, "error": format!("{error:#}")})),
+                        }
+                    }
                     if output.send(Message::Complete(result)).is_err() {
                         break;
                     }
@@ -123,9 +160,25 @@ impl CombatWorker {
             busy: false,
             epoch: 0,
             refresh_agents: false,
+            trace: None,
         })
     }
-    pub fn capture(&mut self, frame: CombatFrame, at: f64) {
+    pub fn set_trace(&mut self, trace: Option<PerformanceTrace>) {
+        self.trace = trace;
+    }
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+    pub fn capture(&mut self, mut frame: CombatFrame, at: f64) {
+        if let Some(trace) = &self.trace {
+            frame.enable_performance();
+            if let Some((old, _)) = &self.pending {
+                trace.event(
+                    "pending_replaced",
+                    json!({"frame_id": trace.stamp(old.captured)}),
+                );
+            }
+        }
         self.pending = Some((frame, at));
     }
     pub fn needs_submission(&self) -> bool {
@@ -146,6 +199,8 @@ impl CombatWorker {
                     intervals,
                     dodge_only,
                     refresh_agents: std::mem::take(&mut self.refresh_agents),
+                    trace: self.trace.clone(),
+                    submitted: std::time::Instant::now(),
                 })
                 .map_err(|_| anyhow::anyhow!("战斗识别任务投递失败"))?;
             self.busy = true;
@@ -163,6 +218,14 @@ impl CombatWorker {
                 Ok(Message::Complete(result)) => {
                     self.busy = false;
                     let observed = result?;
+                    if let Some(trace) = &self.trace {
+                        trace.event("recognition_consumed", json!({
+                            "frame_id": trace.stamp(observed.frame.captured), "epoch": observed.epoch,
+                            "accepted_epoch": observed.epoch == self.epoch,
+                            "receive_wait_us": observed.completed.elapsed().as_micros() as u64,
+                            "frame_age_us": observed.frame.captured.elapsed().as_micros() as u64,
+                        }));
+                    }
                     return Ok((observed.epoch == self.epoch).then_some(observed));
                 }
                 Err(TryRecvError::Empty) => return Ok(None),
@@ -171,6 +234,9 @@ impl CombatWorker {
         }
     }
     pub fn refresh_agents(&mut self) {
+        if let Some(trace) = &self.trace {
+            trace.event("epoch_refresh", json!({"old_epoch": self.epoch}));
+        }
         self.epoch += 1;
         self.pending = None;
         self.refresh_agents = true;

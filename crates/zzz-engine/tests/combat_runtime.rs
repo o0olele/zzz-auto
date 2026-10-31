@@ -111,6 +111,10 @@ scenes:
         ..Default::default()
     };
     let mut run = CombatRun::new(uuid::Uuid::new_v4(), config, script)?;
+    let performance_path = run.enable_performance(
+        &root.join("artifacts/combat-performance-runtime"),
+        "fixture",
+    )?;
     let control = run.control();
     run.execute(&mut native, &mut recognizer, false, |progress| {
         if progress.frames >= 5 {
@@ -127,6 +131,25 @@ scenes:
         "慢帧不能清除已执行的 BUFF 状态并再次按 E：{keys:?}"
     );
     assert!(keys.contains(&(69, false)), "E 必须释放");
+    drop(run);
+    let events: Vec<serde_json::Value> = std::fs::read_to_string(performance_path)?
+        .lines()
+        .map(serde_json::from_str)
+        .collect::<Result<_, _>>()?;
+    assert!(
+        events.iter().any(|e| e["event"] == "capture"
+            && e["data"]["timing"]["wait_us"].as_u64().unwrap() >= 290_000)
+    );
+    assert!(events.iter().any(|e| e["event"] == "recognition_complete"
+        && e["data"]["stages"]["battle_button"]["calls"] == 1));
+    assert!(
+        events
+            .iter()
+            .any(|e| (e["event"] == "input" && e["data"]["sent"] == true)
+                || e["event"] == "input_aborted")
+    );
+    assert!(events.iter().any(|e| e["event"] == "stale_frame"));
+    assert_eq!(events.last().unwrap()["data"]["queue_dropped"], 0);
     Ok(())
 }
 
@@ -176,8 +199,12 @@ fn full_generic_script_keeps_acting_while_discovering_the_team() -> anyhow::Resu
     let mut run = CombatRun::new(uuid::Uuid::new_v4(), config, script)?;
     let control = run.control();
     let started = std::time::Instant::now();
+    let performance_path = run.enable_performance(
+        &root.join("artifacts/combat-performance-runtime"),
+        "fixture",
+    )?;
     run.execute(&mut native, &mut recognizer, false, |progress| {
-        if progress.frames >= 60 {
+        if progress.frames >= 60 && started.elapsed() >= std::time::Duration::from_secs(3) {
             control.stop();
         }
     })?;
@@ -197,6 +224,33 @@ fn full_generic_script_keeps_acting_while_discovering_the_team() -> anyhow::Resu
     assert!(run.progress.stale_frames <= 2, "除模型冷启动外不能持续丢帧");
     assert!(run.progress.actions >= 10, "完整脚本必须持续出招");
     assert!(run.progress.inputs_released);
+    drop(run);
+    let events: Vec<serde_json::Value> = std::fs::read_to_string(performance_path)?
+        .lines()
+        .map(serde_json::from_str)
+        .collect::<Result<_, _>>()?;
+    let stages: Vec<_> = events
+        .iter()
+        .filter(|e| e["event"] == "recognition_complete")
+        .map(|e| &e["data"]["stages"])
+        .collect();
+    for stage in [
+        "flash",
+        "flash_prepare",
+        "flash_inference",
+        "agents",
+        "avatar_team",
+        "agent_state",
+        "template",
+    ] {
+        assert!(
+            stages
+                .iter()
+                .any(|s| s[stage]["calls"].as_u64().unwrap_or(0) > 0),
+            "缺少 {stage} 阶段诊断"
+        );
+    }
+    assert_eq!(events.last().unwrap()["data"]["queue_dropped"], 0);
     Ok(())
 }
 

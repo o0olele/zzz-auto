@@ -11,6 +11,7 @@ pub use basic_daily::{
 mod coffee_run;
 pub mod combat_contours;
 mod combat_input;
+pub use combat_input::CombatInputJob;
 pub mod combat_vision;
 mod combat_reader;
 pub use combat_reader::{CombatReader, CombatVision};
@@ -221,6 +222,7 @@ pub struct NativeSession {
     patrol_steering: od_core::world_patrol::PatrolSteering,
     held_contacts: BTreeSet<i32>,
     input_cleanup_pending: bool,
+    combat_capture: Option<combat_vision::CombatCapture>,
     pipeline_controller_pending: bool,
     _lease: Option<GameLease>,
     _gpu_lease: Option<GpuLease>,
@@ -411,6 +413,7 @@ impl NativeSession {
             patrol_steering: Default::default(),
             held_contacts: BTreeSet::new(),
             input_cleanup_pending: false,
+            combat_capture: None,
             pipeline_controller_pending: false,
             _lease: lease,
             _gpu_lease: gpu_lease,
@@ -630,6 +633,7 @@ impl NativeSession {
     /// 深读页面前确认原生任务和所有登记输入均已收尾。
     pub fn inputs_released(&self) -> bool {
         !self.tasker.running()
+            && self.combat_capture.is_none()
             && !self.input_cleanup_pending
             && !self.pipeline_controller_pending
             && self.held_keys.is_empty()

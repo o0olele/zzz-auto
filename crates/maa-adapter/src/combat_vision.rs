@@ -215,8 +215,74 @@ pub struct CombatFrame {
     pub(crate) image: RecognitionImage,
     pub captured: Instant,
     crops: RefCell<BTreeMap<[i32; 4], RecognitionImage>>,
+    pub capture_timing: CombatCaptureTiming,
+    performance: Option<Box<CombatFramePerformance>>,
+}
+
+pub(crate) struct CombatCapture {
+    id: i64,
+    captured: Instant,
+    post_us: u64,
+}
+
+#[derive(Default)]
+struct CombatFramePerformance {
+    stages: RefCell<BTreeMap<&'static str, CombatStageTiming>>,
+}
+
+#[derive(Default, Debug, serde::Serialize)]
+pub struct CombatCaptureTiming {
+    pub post_us: u64,
+    pub wait_us: u64,
+    pub read_us: u64,
+}
+
+#[derive(Default, Clone, Debug, serde::Serialize)]
+pub struct CombatStageTiming {
+    pub calls: u64,
+    pub total_us: u64,
+}
+
+// 只在独立战斗诊断开启时计时；作用域退出也覆盖取消和错误返回。
+struct CombatStage<'a> {
+    frame: &'a CombatFrame,
+    name: &'static str,
+    started: Option<Instant>,
+}
+impl Drop for CombatStage<'_> {
+    fn drop(&mut self) {
+        if let Some(started) = self.started {
+            self.frame
+                .record_stage(self.name, started.elapsed().as_micros() as u64);
+        }
+    }
 }
 impl CombatFrame {
+    pub fn enable_performance(&mut self) {
+        self.performance = Some(Box::default());
+    }
+
+    pub fn performance(&self) -> Option<BTreeMap<&'static str, CombatStageTiming>> {
+        self.performance.as_ref().map(|p| p.stages.borrow().clone())
+    }
+
+    fn stage(&self, name: &'static str) -> CombatStage<'_> {
+        CombatStage {
+            frame: self,
+            name,
+            started: self.performance.as_ref().map(|_| Instant::now()),
+        }
+    }
+
+    fn record_stage(&self, name: &'static str, us: u64) {
+        if let Some(performance) = &self.performance {
+            let mut stages = performance.stages.borrow_mut();
+            let stage = stages.entry(name).or_default();
+            stage.calls += 1;
+            stage.total_us += us;
+        }
+    }
+
     pub fn recognition_image(&self) -> &RecognitionImage {
         &self.image
     }
@@ -250,10 +316,70 @@ impl CombatFrame {
     }
 }
 impl NativeSession {
+    pub fn combat_capture_pending(&self) -> bool {
+        self.combat_capture.is_some()
+    }
+
+    pub fn start_combat_frame(&mut self, cancel: &AtomicBool) -> Result<bool> {
+        ensure!(self.combat_capture.is_none(), "战斗截图仍在途");
+        ensure!(!self.tasker.running(), "Pipeline 运行中不能提交战斗截图");
+        if cancel.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        let captured = Instant::now();
+        let id = self.controller.post_screencap()?;
+        ensure!(id > 0, "Maa 拒绝战斗截图");
+        self.combat_capture = Some(CombatCapture {
+            id,
+            captured,
+            post_us: captured.elapsed().as_micros() as u64,
+        });
+        Ok(true)
+    }
+
+    /// 只查询状态；完成后读取唯一截图缓存，调用者不能同时追加第二次截图。
+    pub fn poll_combat_frame(&mut self, cancel: &AtomicBool) -> Result<Option<CombatFrame>> {
+        let Some(pending) = &self.combat_capture else {
+            return Ok(None);
+        };
+        let status = self.controller.status(pending.id);
+        ensure!(
+            status != maa_framework::MaaStatus::INVALID,
+            "战斗截图 ID 无效"
+        );
+        if !status.done() {
+            return Ok(None);
+        }
+        let pending = self.combat_capture.take().expect("在途截图已检查");
+        ensure!(
+            self.controller.wait(pending.id).is_success(),
+            "战斗截图失败"
+        );
+        if cancel.load(Ordering::Acquire) {
+            return Ok(None);
+        }
+        let wait_us =
+            (pending.captured.elapsed().as_micros() as u64).saturating_sub(pending.post_us);
+        self.read_combat_frame(pending.captured, pending.post_us, wait_us)
+            .map(Some)
+    }
+
+    /// 必须先释放输入；排空旧截图后才能继续或交接本控制器。
+    pub fn finish_combat_capture(&mut self) -> Result<()> {
+        if let Some(pending) = self.combat_capture.take() {
+            ensure!(
+                self.controller.wait(pending.id).is_success(),
+                "战斗在途截图收尾失败"
+            );
+        }
+        Ok(())
+    }
+
     /// 应用开始前载入战斗资源，保留同一 Tasker、控制器与运行控制权。
     pub fn load_combat_bundle(&mut self, root: &Path) -> Result<CombatRecognizer> {
         ensure!(
             !self.tasker.running()
+                && self.combat_capture.is_none()
                 && !self.input_cleanup_pending
                 && !self.pipeline_controller_pending
                 && self.held_keys.is_empty()
@@ -286,18 +412,32 @@ impl NativeSession {
     }
 
     pub fn combat_frame(&self, cancel: &AtomicBool) -> Result<Option<CombatFrame>> {
+        ensure!(self.combat_capture.is_none(), "异步战斗截图尚未收尾");
         if cancel.load(Ordering::Acquire) {
             return Ok(None);
         }
         let captured = Instant::now();
+        let job = self.controller.post_screencap()?;
+        let post_us = captured.elapsed().as_micros() as u64;
+        let wait_at = Instant::now();
         ensure!(
-            self.wait_input_job(self.controller.post_screencap()?, cancel, &mut None)?
-                .is_success(),
+            self.wait_input_job(job, cancel, &mut None)?.is_success(),
             "战斗截图失败"
         );
+        let wait_us = wait_at.elapsed().as_micros() as u64;
         if cancel.load(Ordering::Acquire) {
             return Ok(None);
         }
+        self.read_combat_frame(captured, post_us, wait_us).map(Some)
+    }
+
+    fn read_combat_frame(
+        &self,
+        captured: Instant,
+        post_us: u64,
+        wait_us: u64,
+    ) -> Result<CombatFrame> {
+        let read_at = Instant::now();
         let buffer = self.controller.cached_image()?;
         ensure!(
             buffer.width() == 1920
@@ -306,14 +446,20 @@ impl NativeSession {
                 && buffer.image_type() == 16,
             "战斗截图须为连续 1080p BGR8"
         );
-        Ok(Some(CombatFrame {
+        Ok(CombatFrame {
             image: RecognitionImage {
                 buffer,
                 prepare_us: captured.elapsed().as_micros() as u64,
             },
             captured,
             crops: RefCell::new(BTreeMap::new()),
-        }))
+            capture_timing: CombatCaptureTiming {
+                post_us,
+                wait_us,
+                read_us: read_at.elapsed().as_micros() as u64,
+            },
+            performance: None,
+        })
     }
 }
 
@@ -612,6 +758,7 @@ impl CombatRecognizer {
         rect: [i32; 4],
         threshold: f64,
     ) -> Result<Option<f64>> {
+        let _stage = frame.stage("template");
         let Some(template) = self.bundle.template(key) else {
             return Ok(None);
         };
@@ -627,6 +774,12 @@ impl CombatRecognizer {
         rect: [i32; 4],
         cancel: &AtomicBool,
     ) -> Result<Option<usize>> {
+        let _stage = frame.stage("avatar");
+        let _kind = frame.stage(match prefix {
+            "avatar_quick_" => "avatar_quick",
+            "avatar_chain_" => "avatar_chain",
+            _ => "avatar_team",
+        });
         if cancel.load(Ordering::Acquire) {
             return Ok(None);
         }
@@ -769,6 +922,8 @@ impl CombatRecognizer {
         dodge_only: bool,
         cancel: &AtomicBool,
     ) -> Result<CombatObservation> {
+        let _total = frame.stage("observe");
+        let battle_stage = frame.stage("battle_button");
         let in_battle = self
             .matched(
                 session,
@@ -778,6 +933,7 @@ impl CombatRecognizer {
                 0.9,
             )?
             .is_some();
+        drop(battle_stage);
         let mut observation = CombatObservation {
             in_battle,
             ..Default::default()
@@ -820,6 +976,7 @@ impl CombatRecognizer {
                     *intervals.get("check_dodge_interval").unwrap_or(&0.02),
                 )
             {
+                let _stage = frame.stage("flash");
                 let control = crate::RawRecognitionControl::default();
                 *self.raw.lock().expect("战斗推理取消锁失效") = Some(control.clone());
                 if cancel.load(Ordering::Acquire) {
@@ -844,6 +1001,15 @@ impl CombatRecognizer {
                     }
                     Err(error) => return Err(error),
                 };
+                for (name, us) in [
+                    ("flash_setup", result.timing.session_setup_us),
+                    ("flash_prepare", result.timing.prepare_us),
+                    ("flash_inference", result.timing.completion_us),
+                    ("flash_details", result.timing.details_us),
+                    ("flash_raw_total", result.timing.total_us),
+                ] {
+                    frame.record_stage(name, us);
+                }
                 let state = match result.detail["adaptation"]["class_index"].as_i64() {
                     Some(1) => Some("闪避识别-红光"),
                     Some(2) => Some("闪避识别-黄光"),
@@ -864,6 +1030,7 @@ impl CombatRecognizer {
                 now,
                 *intervals.get("check_agent_interval").unwrap_or(&0.5),
             ) {
+                let _stage = frame.stage("agents");
                 let mut found: Vec<Option<usize>> = Vec::new();
                 for (name, prefix) in [
                     ("头像-3-1", "avatar_1_"),
@@ -1080,6 +1247,7 @@ impl CombatRecognizer {
                     }
                 }
             }
+            let quick_stage = frame.stage("quick_check");
             if self.due(
                 "quick",
                 now,
@@ -1102,7 +1270,9 @@ impl CombatRecognizer {
                     observation.states.push(update(name, None, false));
                 }
             }
+            drop(quick_stage);
             if self.due("backup", now, 1.0) {
+                let _stage = frame.stage("backup");
                 let pixels = frame.image.buffer.raw_data().context("战斗帧像素缺失")?;
                 let ratio = |rect: [i32; 4], test: fn([u8; 3]) -> bool| {
                     let [left, top, right, bottom] = rect;
@@ -1138,6 +1308,7 @@ impl CombatRecognizer {
                     .get("target_state/target_lock")
                     .and_then(|t| t.rect)
             {
+                let _stage = frame.stage("target");
                 let pixels = frame.image.buffer.raw_data().context("战斗帧像素缺失")?;
                 if crate::combat_contours::contours(
                     pixels,
@@ -1153,6 +1324,7 @@ impl CombatRecognizer {
                 }
             }
         } else if !dodge_only {
+            let _stage = frame.stage("chain");
             let pixels = frame.image.buffer.raw_data().context("战斗帧像素缺失")?;
             if crate::combat_contours::contours(
                 pixels,
@@ -1216,6 +1388,7 @@ impl CombatRecognizer {
         definition: &AgentStateDef,
         template_id: &str,
     ) -> Result<i64> {
+        let _stage = frame.stage("agent_state");
         let key = format!("agent_state/{template_id}");
         let Some(template) = self.bundle.spec.templates.get(&key) else {
             return Ok(0);

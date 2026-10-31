@@ -1623,6 +1623,21 @@ impl Engine {
                 .expect("战斗进度已创建")
                 .script_revision
                 .clone();
+            match run.enable_performance(
+                &engine.combat_data,
+                state.capture_method.unwrap_or_default(),
+            ) {
+                Ok(path) => state.event(
+                    Some(record.id),
+                    "info",
+                    format!("战斗性能日志：{}", path.display()),
+                ),
+                Err(error) => state.event(
+                    Some(record.id),
+                    "warn",
+                    format!("战斗性能日志未启用：{error:#}"),
+                ),
+            }
             let control = run.control();
             let recognizer = maa_adapter::combat_vision::CombatRecognizer::new(bundle);
             state.combat_recognition = Some(recognizer.cancellation_handle());

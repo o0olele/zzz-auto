@@ -14,6 +14,7 @@ pub mod charge_transport;
 pub mod charge_worker;
 pub mod coffee;
 pub mod combat;
+mod combat_performance;
 mod combat_worker;
 pub mod compendium;
 pub mod ether_synthesis;

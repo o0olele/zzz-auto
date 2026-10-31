@@ -11,6 +11,7 @@ use od_core::{
     conditional::{Action, ButtonWay, Decision, Scheduler, Script, StateUpdate},
     pipeline::{Interrupt, PipelineControl, PipelineRequest},
 };
+use serde_json::json;
 use std::{
     collections::{BTreeMap, VecDeque},
     time::{Duration, Instant},
@@ -51,9 +52,44 @@ pub fn script_catalog(
 enum Step {
     Action(Action),
     Button(String, bool),
+    ButtonConfirmed(String, bool),
+    NativeInput(String, od_core::InputProbeAction, bool),
+    Move(i32),
     Delay(f64),
     ClearInputs,
     ReleaseTurn,
+}
+
+struct PendingInput {
+    job: maa_adapter::CombatInputJob,
+    started: Instant,
+    data: serde_json::Value,
+    trace: Option<crate::combat_performance::PerformanceTrace>,
+    finished: bool,
+    refresh_agents: bool,
+}
+impl PendingInput {
+    fn poll(&mut self, native: &mut NativeSession) -> Result<bool> {
+        let result = native.poll_combat_input(&mut self.job);
+        if !matches!(&result, Ok(false)) {
+            self.finished = true;
+            if let Some(trace) = &self.trace {
+                self.data["duration_us"] = json!(self.started.elapsed().as_micros() as u64);
+                self.data["sent"] = json!(result.as_ref().is_ok_and(|done| *done));
+                trace.event("input", self.data.take());
+            }
+        }
+        result
+    }
+}
+impl Drop for PendingInput {
+    fn drop(&mut self) {
+        if !self.finished
+            && let Some(trace) = &self.trace
+        {
+            trace.event("input_aborted", self.data.take());
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +145,7 @@ pub struct CombatRun {
     end_tracker: BattleEndTracker,
     parent_deadline: Option<Instant>,
     patrol_ui_timeout: Option<u16>,
+    performance: Option<crate::combat_performance::PerformanceLog>,
 }
 impl CombatRun {
     pub fn new(id: Uuid, config: CombatConfig, script: Script) -> Result<Self> {
@@ -128,7 +165,25 @@ impl CombatRun {
             end_tracker: BattleEndTracker::default(),
             parent_deadline: None,
             patrol_ui_timeout: None,
+            performance: None,
         })
+    }
+    pub fn enable_performance(
+        &mut self,
+        data: &std::path::Path,
+        capture: impl serde::Serialize,
+    ) -> Result<std::path::PathBuf> {
+        ensure!(self.performance.is_none(), "战斗性能日志已经开启");
+        let (log, path) = crate::combat_performance::PerformanceLog::start(
+            data,
+            self.id,
+            json!({
+                "config": self.progress.config, "script_revision": self.progress.script_revision,
+                "capture_method": capture,
+            }),
+        )?;
+        self.performance = Some(log);
+        Ok(path)
     }
     /// 应用内战斗与外层流程共用请求句柄，结束当前战斗不能结束整个应用。
     pub fn new_segment(
@@ -273,6 +328,12 @@ impl CombatRun {
             self.control.finish();
             self.progress.state = RunState::Failed;
             self.message = format!("战斗失败：{error:#}");
+            if let Some(log) = &self.performance {
+                log.trace().event(
+                    "run_state",
+                    json!({"progress": self.progress, "message": self.message}),
+                );
+            }
             publish(self.progress.clone());
             return Err(error);
         }
@@ -286,6 +347,12 @@ impl CombatRun {
                 self.progress.state = RunState::Stopped;
                 self.message = "战斗已停止，输入已释放".into();
             }
+        }
+        if let Some(log) = &self.performance {
+            log.trace().event(
+                "run_state",
+                json!({"progress": self.progress, "message": self.message}),
+            );
         }
         publish(self.progress.clone());
         Ok(())
@@ -553,6 +620,7 @@ impl CombatRun {
         ) -> Result<CombatFrameGate>,
         mut worker: crate::combat_worker::CombatWorker,
     ) -> Result<Option<InnerEnd>> {
+        worker.set_trace(self.performance.as_ref().map(|log| log.trace()));
         let result = self.execute_loop(
             native,
             recognizer,
@@ -566,8 +634,10 @@ impl CombatRun {
         );
         // 输入先释放，再等待在途识别；慢推理不能拖长持有按键。
         let released = native.release_inputs();
+        let capture = native.finish_combat_capture();
         let state = worker.finish();
         released?;
+        capture?;
         *recognizer = state?;
         result
     }
@@ -589,6 +659,13 @@ impl CombatRun {
             check_end,
             mut worker,
         } = options;
+        let trace = self.performance.as_ref().map(|log| log.trace());
+        if let Some(trace) = &trace {
+            trace.event(
+                "loop_start",
+                json!({"asynchronous": worker.is_some(), "elapsed_seconds": self.elapsed}),
+            );
+        }
         native.check_combat_input_mode(self.progress.config.mode)?;
         recognizer.reset();
         self.progress.team.clear();
@@ -699,9 +776,22 @@ impl CombatRun {
         let mut team_ready = false;
         let mut patrol_visible_frames = 0_u8;
         let mut patrol_last_hud = Instant::now();
+        let mut latest_source = None;
+        let mut pending_input: Option<PendingInput> = None;
+        let mut capture_origin = None;
+        let mut release_deadline = None;
+        let mut loop_performance = trace
+            .as_ref()
+            .map(crate::combat_performance::LoopPerformance::new);
         self.progress.inputs_released = false;
         publish(self.progress.clone())?;
         loop {
+            if let Some(performance) = &mut loop_performance {
+                performance.iteration();
+            }
+            let _loop_span = trace
+                .as_ref()
+                .map(|trace| trace.span("slow_loop", json!({}), 50_000));
             if self.control.requested().is_some() {
                 return Ok(None);
             }
@@ -711,6 +801,18 @@ impl CombatRun {
                 "应用总运行预算已耗尽"
             );
             let mut now = self.elapsed + started.elapsed().as_secs_f64();
+            if let Some(input) = &mut pending_input
+                && input.poll(native)?
+            {
+                if input.refresh_agents {
+                    recognizer.refresh_agents();
+                    if let Some(background) = worker.as_mut() {
+                        background.refresh_agents();
+                    }
+                    team_ready = false;
+                }
+                pending_input = None;
+            }
             ensure!(
                 now * 1000.0 < self.progress.config.timeout_ms as f64,
                 "战斗运行达到超时上限"
@@ -719,11 +821,15 @@ impl CombatRun {
             let release_due = matches!(queue.front(), Some(Step::Delay(_)))
                 && matches!(
                     queue.get(1),
-                    Some(Step::Button(_, false) | Step::ReleaseTurn)
+                    Some(
+                        Step::Button(_, false) | Step::NativeInput(_, _, false) | Step::ReleaseTurn
+                    )
                 )
                 || (matches!(
                     queue.front(),
-                    Some(Step::Button(_, false) | Step::ReleaseTurn)
+                    Some(
+                        Step::Button(_, false) | Step::NativeInput(_, _, false) | Step::ReleaseTurn
+                    )
                 ) && until.is_none_or(|deadline| {
                     let blocking = if worker.is_some() {
                         (capture_seconds + 0.005).max(0.02)
@@ -738,9 +844,17 @@ impl CombatRun {
                 let mut early = Vec::new();
                 completed = background.poll(&mut early)?;
                 for flash in early {
+                    if let Some(trace) = &trace {
+                        trace.event("flash_consumed", json!({
+                            "frame_id": trace.stamp(flash.captured),
+                            "frame_age_us": flash.captured.elapsed().as_micros() as u64,
+                            "accepted_age": flash.captured.elapsed().as_millis() <= u128::from(self.progress.config.max_frame_age_ms),
+                        }));
+                    }
                     if flash.captured.elapsed().as_millis()
                         <= u128::from(self.progress.config.max_frame_age_ms)
                     {
+                        latest_source = Some(flash.captured);
                         pending_states.extend(flash.states);
                         last_fresh = Some(flash.at);
                         refresh_pending = false;
@@ -749,24 +863,65 @@ impl CombatRun {
                             self.elapsed + started.elapsed().as_secs_f64() + 0.02;
                     }
                 }
+                let capture_poll_started = Instant::now();
+                if let Some(frame) = native.poll_combat_frame(&cancel)? {
+                    let (frame_at, epoch) =
+                        capture_origin.take().context("战斗截图缺少提交代际")?;
+                    capture_seconds = frame.recognition_image().prepare_us as f64 / 1_000_000.0;
+                    if let Some(trace) = &trace {
+                        trace.event(
+                            "capture",
+                            json!({
+                                "frame_id": trace.stamp(frame.captured),
+                                "capture_us": frame.recognition_image().prepare_us,
+                                "main_thread_us": capture_poll_started.elapsed().as_micros() as u64,
+                                "timing": frame.capture_timing, "asynchronous": true,
+                                "accepted_epoch": epoch == background.epoch(),
+                            }),
+                        );
+                    }
+                    if epoch == background.epoch() {
+                        background.capture(frame, frame_at);
+                    }
+                }
                 // 先消费已完成结果，避免新截图再次延后闪光事件的调度。
-                let input_ready = until.is_none()
-                    && matches!(
-                        queue.front(),
-                        Some(Step::Button(_, _) | Step::ClearInputs | Step::ReleaseTurn)
-                    );
+                let input_ready = pending_input.is_some()
+                    || (until.is_none()
+                        && matches!(
+                            queue.front(),
+                            Some(
+                                Step::Button(_, _)
+                                    | Step::ButtonConfirmed(_, _)
+                                    | Step::NativeInput(_, _, _)
+                                    | Step::Move(_)
+                                    | Step::ClearInputs
+                                    | Step::ReleaseTurn
+                            )
+                        ));
+                let prioritize_flash = now < flash_dispatch_until && until.is_none();
+                let may_capture = !release_due && !input_ready && !prioritize_flash;
+                if completed.is_none()
+                    && !native.combat_capture_pending()
+                    && now >= next_frame
+                    && let Some(performance) = &mut loop_performance
+                {
+                    if release_due {
+                        performance.defer("timed_release");
+                    } else if input_ready {
+                        performance.defer("input_ready");
+                    } else if prioritize_flash {
+                        performance.defer("flash_dispatch");
+                    }
+                }
                 if completed.is_none()
                     && now >= next_frame
-                    && !release_due
-                    && !input_ready
-                    && !(now < flash_dispatch_until && until.is_none())
+                    && !native.combat_capture_pending()
+                    && may_capture
                 {
-                    let capture_started = Instant::now();
-                    let Some(frame) = native.combat_frame(&cancel)? else {
+                    if !native.start_combat_frame(&cancel)? {
                         return Ok(None);
-                    };
-                    capture_seconds = capture_started.elapsed().as_secs_f64();
-                    background.capture(frame, now);
+                    }
+                    capture_origin = Some((now, background.epoch()));
                     next_frame = now + self.progress.config.frame_interval_ms as f64 / 1000.0;
                 }
                 if background.needs_submission() {
@@ -798,6 +953,7 @@ impl CombatRun {
                     };
                     (frame, now, None)
                 };
+                latest_source = Some(frame.captured);
                 self.progress.frames += 1;
                 if self.control.requested().is_some() {
                     return Ok(None);
@@ -835,6 +991,7 @@ impl CombatRun {
                 if gate != CombatFrameGate::Proceed {
                     native.release_inputs()?;
                     ledger.clear();
+                    pending_input = None;
                     queue.clear();
                     until = None;
                     if gate == CombatFrameGate::Refresh {
@@ -879,6 +1036,7 @@ impl CombatRun {
                     {
                         native.release_inputs()?;
                         ledger.clear();
+                        pending_input = None;
                         queue.clear();
                         until = None;
                         self.scheduler.pause();
@@ -935,6 +1093,7 @@ impl CombatRun {
                     // 结算识别可能耗时，先释放战斗输入并丢弃尚未执行的动作。
                     native.release_inputs()?;
                     ledger.clear();
+                    pending_input = None;
                     queue.clear();
                     until = None;
                     pending_states.clear();
@@ -976,9 +1135,13 @@ impl CombatRun {
                     next_frame = frame_at + self.progress.config.frame_interval_ms as f64 / 1000.0;
                 }
                 if frame.age_ms() > self.progress.config.max_frame_age_ms {
+                    if let Some(trace) = &trace {
+                        trace.event("stale_frame", json!({"frame_id": trace.stamp(frame.captured), "frame_age_us": frame.captured.elapsed().as_micros() as u64}));
+                    }
                     self.progress.stale_frames += 1;
                     native.release_inputs()?;
                     ledger.clear();
+                    pending_input = None;
                     queue.clear();
                     until = None;
                     self.refresh_observation(&mut pending_states)?;
@@ -1027,6 +1190,9 @@ impl CombatRun {
             if now - last_audio >= 0.02
                 && let Some((capture, detector)) = &mut audio
             {
+                let _span = trace
+                    .as_ref()
+                    .map(|trace| trace.span("audio", json!({}), 0));
                 last_audio = now;
                 let (samples, dropped) = capture.drain()?;
                 if dropped > 0 {
@@ -1053,6 +1219,7 @@ impl CombatRun {
                 if self.sequence.is_some() || !queue.is_empty() || !ledger.is_empty() {
                     native.release_inputs()?;
                     ledger.clear();
+                    pending_input = None;
                     queue.clear();
                     until = None;
                 }
@@ -1064,16 +1231,42 @@ impl CombatRun {
                 team_ready = false;
                 pending_states.clear();
             } else {
-                let decision = self
-                    .scheduler
-                    .tick(now, &std::mem::take(&mut pending_states))?;
+                let scheduler_started = Instant::now();
+                // 原生确认后的逻辑状态必须先提交，避免实际已切人却被抢占丢掉队伍更新。
+                let decision = if matches!(queue.front(), Some(Step::ButtonConfirmed(_, _)))
+                    && pending_input.is_none()
+                {
+                    Decision::Idle
+                } else {
+                    self.scheduler
+                        .tick(now, &std::mem::take(&mut pending_states))?
+                };
+                if let Some(trace) = &trace {
+                    let decision_name = match &decision {
+                        Decision::Start(_) => "start",
+                        Decision::Replace(_) => "replace",
+                        Decision::Interrupt => "interrupt",
+                        Decision::Idle => "idle",
+                    };
+                    if decision_name != "idle" || scheduler_started.elapsed().as_millis() >= 5 {
+                        trace.event("decision", json!({
+                            "decision": decision_name,
+                            "scheduler_us": scheduler_started.elapsed().as_micros() as u64,
+                            "latest_source_frame_id": latest_source.map(|at| trace.stamp(at)),
+                            "source_age_us": latest_source.map(|at| at.elapsed().as_micros() as u64),
+                        }));
+                    }
+                }
                 let replacing = matches!(decision, Decision::Replace(_));
                 match decision {
                     Decision::Start(execution) | Decision::Replace(execution) => {
-                        if replacing {
-                            self.progress.preemptions += 1;
+                        if replacing || pending_input.is_some() {
+                            if replacing {
+                                self.progress.preemptions += 1;
+                            }
                             native.release_inputs()?;
                             ledger.clear();
+                            pending_input = None;
                         }
                         queue.clear();
                         until = None;
@@ -1088,6 +1281,7 @@ impl CombatRun {
                     Decision::Interrupt => {
                         native.release_inputs()?;
                         ledger.clear();
+                        pending_input = None;
                         queue.clear();
                         until = None;
                         self.sequence = None;
@@ -1095,10 +1289,12 @@ impl CombatRun {
                     }
                     Decision::Idle => {}
                 }
-                if until.is_some_and(|deadline| now >= deadline) {
+                let elapsed_deadline = until.filter(|deadline| now >= *deadline);
+                if elapsed_deadline.is_some() {
+                    release_deadline = elapsed_deadline;
                     until = None;
                 }
-                if queue.is_empty() && until.is_none() {
+                if queue.is_empty() && until.is_none() && pending_input.is_none() {
                     if let Some(generation) = self.sequence.take() {
                         self.scheduler.complete(generation)?;
                     }
@@ -1122,119 +1318,211 @@ impl CombatRun {
                         }
                     }
                 }
-                if until.is_none()
+                if pending_input.is_none()
+                    && until.is_none()
                     && let Some(step) = queue.pop_front()
                 {
+                    let confirmed = matches!(&step, Step::ButtonConfirmed(_, _));
                     match step {
-                        Step::Delay(seconds) => until = Some(now + seconds),
+                        Step::NativeInput(name, action, pressed) => {
+                            let input_started = Instant::now();
+                            let input_at = self.elapsed + started.elapsed().as_secs_f64();
+                            let Some(job) = native.start_combat_input(action, pressed, &cancel)?
+                            else {
+                                return Ok(None);
+                            };
+                            pending_input = Some(PendingInput {
+                                job,
+                                started: input_started,
+                                trace: trace.clone(),
+                                finished: false,
+                                refresh_agents: pressed
+                                    && (name.starts_with("切换角色-")
+                                        || name.starts_with("连携技-")),
+                                data: json!({
+                                    "button": name, "pressed": pressed, "handler": self.progress.handler,
+                                    "started_us": trace.as_ref().map(|trace| trace.stamp(input_started)),
+                                    "latest_source_frame_id": trace.as_ref().and_then(|trace| latest_source.map(|at| trace.stamp(at))),
+                                    "source_age_us": latest_source.map(|at| input_started.saturating_duration_since(at).as_micros() as u64),
+                                    "release_start_lateness_us": if pressed { None } else { release_deadline.map(|deadline: f64| ((input_at - deadline).max(0.0) * 1_000_000.0) as u64) },
+                                }),
+                            });
+                        }
+                        Step::Move(dx) => {
+                            let input_started = Instant::now();
+                            let Some(job) = native.start_combat_turn(dx, &cancel)? else {
+                                return Ok(None);
+                            };
+                            pending_input = Some(PendingInput {
+                                job,
+                                started: input_started,
+                                trace: trace.clone(),
+                                finished: false,
+                                refresh_agents: false,
+                                data: json!({"button":"转向", "pressed":true, "started_us": trace.as_ref().map(|trace| trace.stamp(input_started))}),
+                            });
+                        }
+                        Step::Delay(seconds) => {
+                            until = Some(now + seconds);
+                            release_deadline = None;
+                        }
                         Step::ClearInputs => {
                             native.release_inputs()?;
                             ledger.clear();
+                            pending_input = None;
                         }
                         Step::ReleaseTurn => {
-                            for (action, down) in ledger.set("__turn", Vec::new(), false) {
-                                if !native.combat_input(action, down, &cancel)? {
+                            for (action, down) in
+                                ledger.set("__turn", Vec::new(), false).into_iter().rev()
+                            {
+                                if asynchronous {
+                                    queue.push_front(Step::NativeInput(
+                                        "__turn".into(),
+                                        action,
+                                        down,
+                                    ));
+                                } else if !native.combat_input(action, down, &cancel)? {
                                     return Ok(None);
                                 }
                             }
                         }
-                        Step::Button(name, pressed) => {
-                            for (action, down) in ledger.set(
-                                &name,
-                                self.progress
-                                    .config
-                                    .binding(&name)
-                                    .map_err(anyhow::Error::msg)?,
-                                pressed,
-                            ) {
-                                if !native.combat_input(action, down, &cancel)? {
-                                    return Ok(None);
+                        Step::Button(name, pressed) | Step::ButtonConfirmed(name, pressed) => {
+                            if asynchronous && !confirmed {
+                                let actions = ledger.set(
+                                    &name,
+                                    self.progress
+                                        .config
+                                        .binding(&name)
+                                        .map_err(anyhow::Error::msg)?,
+                                    pressed,
+                                );
+                                queue.push_front(Step::ButtonConfirmed(name.clone(), pressed));
+                                for (action, down) in actions.into_iter().rev() {
+                                    queue.push_front(Step::NativeInput(name.clone(), action, down));
                                 }
-                            }
-                            pending_states.push(StateUpdate {
-                                name: format!(
-                                    "按键-{name}-{}",
-                                    if pressed { "按下" } else { "松开" }
-                                ),
-                                at: self.elapsed + started.elapsed().as_secs_f64(),
-                                value: None,
-                                add: None,
-                                time_add: None,
-                                clear: false,
-                            });
-                            if pressed {
+                            } else {
+                                if !confirmed {
+                                    for (action, down) in ledger.set(
+                                        &name,
+                                        self.progress
+                                            .config
+                                            .binding(&name)
+                                            .map_err(anyhow::Error::msg)?,
+                                        pressed,
+                                    ) {
+                                        let input_started = Instant::now();
+                                        let input_at =
+                                            self.elapsed + started.elapsed().as_secs_f64();
+                                        let result = native.combat_input(action, down, &cancel);
+                                        if let Some(trace) = &trace {
+                                            trace.event("input", json!({
+                                        "button": name, "pressed": down, "handler": self.progress.handler,
+                                        "started_us": trace.stamp(input_started),
+                                        "duration_us": input_started.elapsed().as_micros() as u64,
+                                        "sent": result.as_ref().is_ok_and(|sent| *sent),
+                                        "latest_source_frame_id": latest_source.map(|at| trace.stamp(at)),
+                                        "source_age_us": latest_source.map(|at| input_started.saturating_duration_since(at).as_micros() as u64),
+                                        "release_start_lateness_us": if down { None } else { elapsed_deadline.map(|deadline: f64| ((input_at - deadline).max(0.0) * 1_000_000.0) as u64) },
+                                    }));
+                                        }
+                                        if !result? {
+                                            return Ok(None);
+                                        }
+                                    }
+                                }
                                 pending_states.push(StateUpdate {
-                                    name: format!("按键-{name}"),
-                                    at: now,
+                                    name: format!(
+                                        "按键-{name}-{}",
+                                        if pressed { "按下" } else { "松开" }
+                                    ),
+                                    at: self.elapsed + started.elapsed().as_secs_f64(),
                                     value: None,
                                     add: None,
                                     time_add: None,
                                     clear: false,
                                 });
-                                if name.starts_with("切换角色-") || name.starts_with("连携技-")
-                                {
-                                    recognizer.refresh_agents();
-                                    if let Some(background) = worker.as_mut() {
-                                        background.refresh_agents();
-                                    }
-                                }
-                                let team = &mut self.progress.team;
-                                if team.len() > 1 {
-                                    if name == "切换角色-下一个" {
-                                        team.rotate_left(1);
-                                    } else if name == "切换角色-上一个" {
-                                        team.rotate_right(1);
-                                    } else if name == "连携技-左" || name == "连携技-右" {
-                                        let index = usize::from(name == "连携技-右");
-                                        if let Some(Some(target)) = observation.chain.get(index)
-                                            && let Some(position) =
-                                                team.iter().position(|n| n == target)
-                                        {
-                                            team.rotate_left(position);
-                                        }
-                                    }
+                                if pressed {
+                                    pending_states.push(StateUpdate {
+                                        name: format!("按键-{name}"),
+                                        at: now,
+                                        value: None,
+                                        add: None,
+                                        time_add: None,
+                                        clear: false,
+                                    });
                                     if name.starts_with("切换角色-") || name.starts_with("连携技-")
                                     {
-                                        for (position, name) in team.iter().enumerate() {
-                                            if let Some(agent) = recognizer
-                                                .bundle
-                                                .spec
-                                                .agents
-                                                .iter()
-                                                .find(|a| &a.name == name)
+                                        recognizer.refresh_agents();
+                                        if let Some(background) = worker.as_mut() {
+                                            background.refresh_agents();
+                                        }
+                                    }
+                                    let team = &mut self.progress.team;
+                                    if team.len() > 1 {
+                                        if name == "切换角色-下一个" {
+                                            team.rotate_left(1);
+                                        } else if name == "切换角色-上一个" {
+                                            team.rotate_right(1);
+                                        } else if name == "连携技-左" || name == "连携技-右"
+                                        {
+                                            let index = usize::from(name == "连携技-右");
+                                            if let Some(Some(target)) = observation.chain.get(index)
+                                                && let Some(position) =
+                                                    team.iter().position(|n| n == target)
                                             {
-                                                let prefix = if position == 0 {
-                                                    "前台-".into()
-                                                } else {
-                                                    format!("后台-{position}-")
-                                                };
-                                                for suffix in [&agent.name, &agent.kind] {
-                                                    pending_states.push(StateUpdate {
-                                                        name: format!("{prefix}{suffix}"),
-                                                        at: now,
-                                                        value: None,
-                                                        add: None,
-                                                        time_add: None,
-                                                        clear: false,
-                                                    });
-                                                }
-                                                if position == 0 {
-                                                    pending_states.push(StateUpdate {
-                                                        name: format!("切换角色-{}", agent.name),
-                                                        at: now,
-                                                        value: None,
-                                                        add: None,
-                                                        time_add: None,
-                                                        clear: false,
-                                                    });
-                                                    pending_states.push(StateUpdate {
-                                                        name: format!("切换角色-{}", agent.kind),
-                                                        at: now,
-                                                        value: None,
-                                                        add: None,
-                                                        time_add: None,
-                                                        clear: false,
-                                                    });
+                                                team.rotate_left(position);
+                                            }
+                                        }
+                                        if name.starts_with("切换角色-")
+                                            || name.starts_with("连携技-")
+                                        {
+                                            for (position, name) in team.iter().enumerate() {
+                                                if let Some(agent) = recognizer
+                                                    .bundle
+                                                    .spec
+                                                    .agents
+                                                    .iter()
+                                                    .find(|a| &a.name == name)
+                                                {
+                                                    let prefix = if position == 0 {
+                                                        "前台-".into()
+                                                    } else {
+                                                        format!("后台-{position}-")
+                                                    };
+                                                    for suffix in [&agent.name, &agent.kind] {
+                                                        pending_states.push(StateUpdate {
+                                                            name: format!("{prefix}{suffix}"),
+                                                            at: now,
+                                                            value: None,
+                                                            add: None,
+                                                            time_add: None,
+                                                            clear: false,
+                                                        });
+                                                    }
+                                                    if position == 0 {
+                                                        pending_states.push(StateUpdate {
+                                                            name: format!(
+                                                                "切换角色-{}",
+                                                                agent.name
+                                                            ),
+                                                            at: now,
+                                                            value: None,
+                                                            add: None,
+                                                            time_add: None,
+                                                            clear: false,
+                                                        });
+                                                        pending_states.push(StateUpdate {
+                                                            name: format!(
+                                                                "切换角色-{}",
+                                                                agent.kind
+                                                            ),
+                                                            at: now,
+                                                            value: None,
+                                                            add: None,
+                                                            time_add: None,
+                                                            clear: false,
+                                                        });
+                                                    }
                                                 }
                                             }
                                         }
@@ -1321,6 +1609,7 @@ impl CombatRun {
                                         // 目标身份或方向尚不可靠，不能继续队列里的攻击动作。
                                         native.release_inputs()?;
                                         ledger.clear();
+                                        pending_input = None;
                                         queue.clear();
                                         until = None;
                                         self.refresh_observation(&mut pending_states)?;
@@ -1363,18 +1652,34 @@ impl CombatRun {
                                             y: 0,
                                         };
                                         if distance != 0.0 {
+                                            let mut inputs = Vec::new();
                                             for (action, down) in
                                                 ledger.set("__turn", vec![action], true)
                                             {
-                                                if !native.combat_input(action, down, &cancel)? {
+                                                if asynchronous {
+                                                    inputs.push(Step::NativeInput(
+                                                        "__turn".into(),
+                                                        action,
+                                                        down,
+                                                    ));
+                                                } else if !native
+                                                    .combat_input(action, down, &cancel)?
+                                                {
                                                     return Ok(None);
                                                 }
                                             }
                                             queue.push_front(Step::ReleaseTurn);
                                             queue.push_front(Step::Delay(distance.abs() / 1000.0));
+                                            for input in inputs.into_iter().rev() {
+                                                queue.push_front(input);
+                                            }
                                         }
                                     } else if distance.round() as i32 != 0 {
-                                        native.combat_turn(distance.round() as i32, &cancel)?;
+                                        if asynchronous {
+                                            queue.push_front(Step::Move(distance.round() as i32));
+                                        } else {
+                                            native.combat_turn(distance.round() as i32, &cancel)?;
+                                        }
                                     }
                                 }
                             }
@@ -1383,6 +1688,9 @@ impl CombatRun {
                 }
             }
             if now - last_publish >= 0.1 {
+                let _span = trace
+                    .as_ref()
+                    .map(|trace| trace.span("publish", json!({}), 0));
                 self.progress.states = self
                     .scheduler
                     .states
@@ -1394,10 +1702,22 @@ impl CombatRun {
                 publish(self.progress.clone())?;
                 last_publish = now;
             }
-            std::thread::sleep(Duration::from_millis(2));
+            let sleep_us = if asynchronous { 1000 } else { 2000 };
+            let _sleep_span = trace
+                .as_ref()
+                .map(|trace| trace.span("slow_sleep", json!({"requested_us": sleep_us}), 5_000));
+            let sleep_started = Instant::now();
+            std::thread::sleep(Duration::from_micros(sleep_us));
+            if let Some(performance) = &mut loop_performance {
+                performance.sleep(sleep_started.elapsed().as_micros() as u64);
+            }
         }
     }
 }
+
+#[cfg(test)]
+#[path = "combat_io_tests.rs"]
+mod io_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1549,6 +1869,7 @@ scenes:
                 },
                 script,
             )?;
+            run.enable_performance(&root.join("artifacts/combat-performance-timers"), "fixture")?;
             let control = run.control();
             let worker = crate::combat_worker::CombatWorker::new(
                 SlowReader {

@@ -40,7 +40,8 @@ impl NativeSession {
             Ok(())
         };
         let released = self.release_inputs();
-        let errors: Vec<_> = [stopped, released]
+        let capture = self.finish_combat_capture();
+        let errors: Vec<_> = [stopped, released, capture]
             .into_iter()
             .filter_map(Result::err)
             .map(|error| format!("{error:#}"))

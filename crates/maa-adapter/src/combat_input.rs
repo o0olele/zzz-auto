@@ -2,6 +2,13 @@ use crate::{InputProbeAction, InputProbeConfig, NativeSession};
 use anyhow::{Context, Result, ensure};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub struct CombatInputJob {
+    id: i64,
+    controller: usize,
+    button: Option<(InputProbeAction, bool)>,
+    done: bool,
+}
+
 impl NativeSession {
     /// 一次只投递一个动作并等待原生完成，持有集合在投递前登记。
     pub fn combat_input(
@@ -10,6 +17,21 @@ impl NativeSession {
         pressed: bool,
         cancel: &AtomicBool,
     ) -> Result<bool> {
+        let Some(mut job) = self.start_combat_input(action, pressed, cancel)? else {
+            return Ok(false);
+        };
+        while !self.poll_combat_input(&mut job)? {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        Ok(true)
+    }
+
+    pub fn start_combat_input(
+        &mut self,
+        action: InputProbeAction,
+        pressed: bool,
+        cancel: &AtomicBool,
+    ) -> Result<Option<CombatInputJob>> {
         let mode = self.input_mode.context("战斗控制器未设置输入方式")?;
         InputProbeConfig {
             mode,
@@ -24,7 +46,7 @@ impl NativeSession {
             "Pipeline 尚未退出，不能交接战斗输入"
         );
         if pressed && cancel.load(Ordering::Acquire) {
-            return Ok(false);
+            return Ok(None);
         }
         if pressed {
             if let Some(window) = &self.game_window {
@@ -80,9 +102,37 @@ impl NativeSession {
                 }
             }
         };
-        let status = self.wait_input_job(id, cancel, &mut None)?;
-        ensure!(status.is_success(), "战斗原生输入执行失败");
-        if !pressed {
+        ensure!(id > 0, "Maa 拒绝战斗输入");
+        Ok(Some(CombatInputJob {
+            id,
+            controller: self.controller.raw() as usize,
+            button: Some((action, pressed)),
+            done: false,
+        }))
+    }
+
+    pub fn poll_combat_input(&mut self, job: &mut CombatInputJob) -> Result<bool> {
+        ensure!(
+            job.controller == self.controller.raw() as usize,
+            "战斗输入不属于当前控制器"
+        );
+        if job.done {
+            return Ok(true);
+        }
+        let status = self.controller.status(job.id);
+        ensure!(
+            status != maa_framework::MaaStatus::INVALID,
+            "Maa 返回无效战斗输入 ID"
+        );
+        if !status.done() {
+            return Ok(false);
+        }
+        ensure!(
+            self.controller.wait(job.id).is_success(),
+            "战斗原生输入执行失败"
+        );
+        job.done = true;
+        if let Some((action, false)) = job.button {
             match action {
                 InputProbeAction::Key { key } => {
                     self.held_keys.remove(&key);
@@ -96,6 +146,20 @@ impl NativeSession {
         Ok(true)
     }
     pub fn combat_turn(&mut self, dx: i32, cancel: &AtomicBool) -> Result<bool> {
+        let Some(mut job) = self.start_combat_turn(dx, cancel)? else {
+            return Ok(false);
+        };
+        while !self.poll_combat_input(&mut job)? {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        Ok(true)
+    }
+
+    pub fn start_combat_turn(
+        &mut self,
+        dx: i32,
+        cancel: &AtomicBool,
+    ) -> Result<Option<CombatInputJob>> {
         ensure!(
             dx != 0 && dx.unsigned_abs() <= 10000,
             "转向位移须为非零且不超过 10000"
@@ -104,16 +168,18 @@ impl NativeSession {
         ensure!(!mode.is_gamepad(), "手柄转向须使用右摇杆");
         ensure!(!self.tasker.running(), "Pipeline 尚未退出");
         if cancel.load(Ordering::Acquire) {
-            return Ok(false);
+            return Ok(None);
         }
         if let Some(window) = &self.game_window {
             od_platform::check_keyboard_target(window, true)?;
         }
         let id = self.controller.post_relative_move(dx, 0)?;
-        ensure!(
-            self.wait_input_job(id, cancel, &mut None)?.is_success(),
-            "Maa 相对转向失败，请检查控制方式"
-        );
-        Ok(true)
+        ensure!(id > 0, "Maa 拒绝相对转向");
+        Ok(Some(CombatInputJob {
+            id,
+            controller: self.controller.raw() as usize,
+            button: None,
+            done: false,
+        }))
     }
 }

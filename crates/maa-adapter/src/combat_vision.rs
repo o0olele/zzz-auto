@@ -1,3 +1,4 @@
+pub use crate::combat_plan::CombatRecognitionPlan;
 use crate::{CombatVision, NativeSession, RecognitionImage};
 use anyhow::{Context, Result, ensure};
 use od_core::{
@@ -490,6 +491,7 @@ pub struct CombatRecognizer {
     avatar_template: BTreeMap<(String, [i32; 4]), (usize, String)>,
     agent_scope: Option<Vec<usize>>,
     flash_observer: Option<FlashObserver>,
+    plan: Option<Arc<CombatRecognitionPlan>>,
 }
 pub type FlashObserver = Arc<dyn Fn(&[StateUpdate]) + Send + Sync>;
 impl CombatRecognizer {
@@ -571,6 +573,7 @@ impl CombatRecognizer {
             avatar_template: BTreeMap::new(),
             agent_scope: None,
             flash_observer: None,
+            plan: None,
         }
     }
     pub fn cancellation_handle(&self) -> Arc<Mutex<Option<crate::RawRecognitionControl>>> {
@@ -579,6 +582,10 @@ impl CombatRecognizer {
     /// 独立后台识别可先发布闪光，避免等待较慢的头像和角色状态。
     pub fn set_flash_observer(&mut self, observer: Option<FlashObserver>) {
         self.flash_observer = observer;
+    }
+    /// 未设置时保留离线检查入口的全量识别。
+    pub fn set_recognition_plan(&mut self, plan: Arc<CombatRecognitionPlan>) {
+        self.plan = Some(plan);
     }
     /// 本次完整实际队伍已确认后限制正常前后台头像候选；None 恢复通用识别。
     /// 重置状态或暂停不改变冻结名单，不能用这个设置补齐未识别的成员。
@@ -923,6 +930,7 @@ impl CombatRecognizer {
         cancel: &AtomicBool,
     ) -> Result<CombatObservation> {
         let _total = frame.stage("observe");
+        let plan = self.plan.clone();
         let battle_stage = frame.stage("battle_button");
         let in_battle = self
             .matched(
@@ -938,13 +946,13 @@ impl CombatRecognizer {
             in_battle,
             ..Default::default()
         };
-        if in_battle {
+        if in_battle && plan.as_ref().is_none_or(|p| p.quick) {
             observation.quick_assist = self
                 .quick
                 .as_ref()
                 .filter(|(_, at)| now - at <= 1.0)
                 .map(|(name, _)| name.clone());
-        } else {
+        } else if !in_battle && plan.as_ref().is_none_or(|p| p.chain) {
             observation.chain = self
                 .chain
                 .as_ref()
@@ -969,7 +977,8 @@ impl CombatRecognizer {
             return Ok(observation);
         }
         if observation.in_battle {
-            if intervals.get("flash_enabled").copied().unwrap_or(1.0) > 0.0
+            if plan.as_ref().is_none_or(|p| p.flash)
+                && intervals.get("flash_enabled").copied().unwrap_or(1.0) > 0.0
                 && self.due(
                     "flash",
                     now,
@@ -1025,11 +1034,13 @@ impl CombatRecognizer {
             if dodge_only {
                 return Ok(observation);
             }
-            if self.due(
-                "agents",
-                now,
-                *intervals.get("check_agent_interval").unwrap_or(&0.5),
-            ) {
+            if plan.as_ref().is_none_or(|p| p.agents)
+                && self.due(
+                    "agents",
+                    now,
+                    *intervals.get("check_agent_interval").unwrap_or(&0.5),
+                )
+            {
                 let _stage = frame.stage("agents");
                 let mut found: Vec<Option<usize>> = Vec::new();
                 for (name, prefix) in [
@@ -1110,11 +1121,20 @@ impl CombatRecognizer {
                                 false,
                             ));
                         }
-                        for (key, suffix) in [
+                        for (common_index, (key, suffix)) in [
                             ("ENERGY", "能量"),
                             ("SPECIAL", "特殊技可用"),
                             ("ULTIMATE", "终结技可用"),
-                        ] {
+                        ]
+                        .into_iter()
+                        .enumerate()
+                        {
+                            if plan
+                                .as_ref()
+                                .is_some_and(|p| !p.common[*index][position][common_index])
+                            {
+                                continue;
+                            }
                             let total = if team.len() == 2 || (team.len() == 1 && key == "ENERGY") {
                                 2
                             } else {
@@ -1158,7 +1178,13 @@ impl CombatRecognizer {
                                 ));
                             }
                         }
-                        for definition in &agent.states {
+                        for (state_index, definition) in agent.states.iter().enumerate() {
+                            if plan
+                                .as_ref()
+                                .is_some_and(|p| !p.agent_states[*index][state_index])
+                            {
+                                continue;
+                            }
                             let suffix = if team.len() == 2 && position == 1 {
                                 "2_2".to_string()
                             } else {
@@ -1184,11 +1210,17 @@ impl CombatRecognizer {
                 // 也须提供真实能量状态，让通用脚本的“未知角色”分支能够出招。
                 if team.first().is_none_or(Option::is_none) {
                     let total = if team.len() == 2 { 2 } else { 3 };
-                    for (key, suffix) in [
+                    for (common_index, (key, suffix)) in [
                         ("ENERGY", "能量"),
                         ("SPECIAL", "特殊技可用"),
                         ("ULTIMATE", "终结技可用"),
-                    ] {
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        if plan.as_ref().is_some_and(|p| !p.front_common[common_index]) {
+                            continue;
+                        }
                         let definition = self
                             .bundle
                             .spec
@@ -1220,6 +1252,9 @@ impl CombatRecognizer {
                     }
                 }
                 for key in ["GUARD_BREAK", "SWITCH_BAN"] {
+                    if plan.as_ref().is_some_and(|p| !p.shared.contains(key)) {
+                        continue;
+                    }
                     if let Some(definition) = self.bundle.spec.common.get(key) {
                         let value =
                             self.agent_state(session, frame, definition, &definition.template_id)?;
@@ -1235,7 +1270,9 @@ impl CombatRecognizer {
                 } else {
                     "LIFE_DEDUCTION_21"
                 };
-                if let Some(definition) = self.bundle.spec.common.get(key) {
+                if plan.as_ref().is_none_or(|p| p.shared.contains(key))
+                    && let Some(definition) = self.bundle.spec.common.get(key)
+                {
                     let value =
                         self.agent_state(session, frame, definition, &definition.template_id)?;
                     if value >= definition.min_value_trigger_state {
@@ -1247,18 +1284,24 @@ impl CombatRecognizer {
                     }
                 }
             }
-            let quick_stage = frame.stage("quick_check");
-            if self.due(
-                "quick",
-                now,
-                *intervals.get("check_quick_interval").unwrap_or(&0.5),
-            ) && let Some(index) = self.avatar(
-                session,
-                frame,
-                "avatar_quick_",
-                self.area("按键-切换角色")?,
-                cancel,
-            )? {
+            let quick_stage = plan
+                .as_ref()
+                .is_none_or(|p| p.quick)
+                .then(|| frame.stage("quick_check"));
+            if plan.as_ref().is_none_or(|p| p.quick)
+                && self.due(
+                    "quick",
+                    now,
+                    *intervals.get("check_quick_interval").unwrap_or(&0.5),
+                )
+                && let Some(index) = self.avatar(
+                    session,
+                    frame,
+                    "avatar_quick_",
+                    self.area("按键-切换角色")?,
+                    cancel,
+                )?
+            {
                 let agent = &self.bundle.spec.agents[index];
                 observation.quick_assist = Some(agent.name.clone());
                 self.quick = Some((agent.name.clone(), now));
@@ -1271,7 +1314,7 @@ impl CombatRecognizer {
                 }
             }
             drop(quick_stage);
-            if self.due("backup", now, 1.0) {
+            if plan.as_ref().is_none_or(|p| p.backup) && self.due("backup", now, 1.0) {
                 let _stage = frame.stage("backup");
                 let pixels = frame.image.buffer.raw_data().context("战斗帧像素缺失")?;
                 let ratio = |rect: [i32; 4], test: fn([u8; 3]) -> bool| {
@@ -1299,7 +1342,8 @@ impl CombatRecognizer {
                 }
             }
             let target_interval = *intervals.get("target_lock_interval").unwrap_or(&1.0);
-            if target_interval > 0.0
+            if plan.as_ref().is_none_or(|p| p.target)
+                && target_interval > 0.0
                 && self.due("target", now, target_interval)
                 && let Some(rect) = self
                     .bundle
@@ -1323,7 +1367,7 @@ impl CombatRecognizer {
                         .push(update("目标-近距离锁定".into(), None, false));
                 }
             }
-        } else if !dodge_only {
+        } else if !dodge_only && plan.as_ref().is_none_or(|p| p.chain) {
             let _stage = frame.stage("chain");
             let pixels = frame.image.buffer.raw_data().context("战斗帧像素缺失")?;
             if crate::combat_contours::contours(

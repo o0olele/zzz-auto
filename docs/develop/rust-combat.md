@@ -48,6 +48,10 @@ M5 增加供应用流程调用的 `CombatRun::new_segment / execute_segment`：�
 
 声音路径由 Windows 输出回录产生 PCM，转单声道与 32 kHz 后，采用四阶 1 kHz Butterworth 高通、双向滤波、无去均值标准化及 FFT 相关。配置和报告明确保留算法与阈值，靠近阈值的真实音频仍须对照旧版。设备错误应显示并使当前声音会话停止，不自动改选其他设备继续输入。
 
+识别需求现在由展开后的 `Script.states`、递归动作及运行选项编译为 `CombatRecognitionPlan`，启动 / 继续时同时应用到同步识别器和后台工作线程。角色公共条按角色、槽位和能量 / 特殊技 / 终结技分别选择，角色专有状态只检查脚本引用项；快速支援、连携、后援、锁定和闪光分别开关。按名字切人、快速支援动作和连携按键保留必要的队伍与头像发现依赖；应用内普通结算 / 锄大地边界继续读取连携证明。自动终结技即使未出现在脚本表达式中，也必须识别前台终结技按钮。攻击按钮、头像真实匹配、未知前台的公共条回退和原有节流规则继续保留。未设置计划的离线识别器仍执行全量检查，性能日志新增一次性的 `recognition_plan` 记录。
+
+原始闪光会话复用 640×640 BGR 缓冲和 RGB NCHW 浮点缓冲，`cvResize` 同步借用原截图 ROI 与整帧行跨度，取消原先的裁图复制；原有偶数舍入、线性缩放和右 / 下 114 填充不变。每次预处理重写填充和全部张量元素，切换 ROI 或取消后不能沿用旧内容。256 项归一化表逐项使用 float64 除以 255 后转 float32，与旧转换逐位一致。ORT 使用借用输入张量，同步调用返回前由会话锁保护缓冲生命周期；CPU / DirectML 继续共用原取消和 GPU 租约规则。
+
 静音包显式填零；断续、积压与超过 150 ms 的停顿清空旧音频并重置检测器。回录缓冲有 0.5 秒上限。相关性按模板长度归一，严格大于阈值才触发，触发后清窗并去重。非 32 kHz WAV 使用固定窗化 sinc 重采样，回录的格式转换由 WASAPI 共享模式完成；两者与旧 librosa / 设备链路的实际差异没有用纯信号测试代替。声音默认关闭，默认阈值 0.1 仅作为旧配置起点。手柄转向使用右摇杆与显式速度参数，键鼠使用 Maa 相对位移，实际灵敏度与方向须分别标定。
 
 ## 桌面、配置与恢复
@@ -84,6 +88,10 @@ cargo run -p zzz-engine --locked -- combat-replay --scripts resources/generated/
 
 异步路径的 `capture_us` 和 `input.duration_us` 表示请求到主循环确认的存续时间，不再表示主线程阻塞；`capture.main_thread_us` 单独记录查询与读回图片的主线程耗时。未确认就被中断或抢占的输入写作 `input_aborted`，它可能已经在原生队列中生效，不能当作“未发送”；对应输入仍由已登记持有集合统一释放。独立战斗循环间隔为 1ms，应用内同步循环仍为 2ms。
 
+运行中的抢占、中断、切人和慢帧清理也使用可轮询释放：依次确认登记按键、触摸通道和 `inactive`，每次查询最多确认一个请求并提交下一个。等待期间继续消费识别结果、处理调度和发布进度，禁止追加截图及执行后续动作；新的抢占复用正在执行的释放。会话持有释放进度，暂停、停止、错误和控制器交接均排空原请求，不能遗失任务后重复清理或提前交出释放证明。任一通道失败仍尝试其余通道和 `inactive`，保留失败登记并结束当前战斗。应用内路径保持同步清理。
+
+`release_start` 记录清理原因，`release_complete` 包含整体存续时间、主线程查询 / 提交累计耗时和成功标记；`release_handoff` 只表示未完成清理转入同步收尾。不能把整体释放存续时间当作主循环阻塞时间，也不能把 handoff 当作释放完成。
+
 诊断使用容量 2048 的非阻塞通道和后台缓冲写入，约每秒刷新，单次运行最多保留约 128MiB。通道满或达到容量时不会等待磁盘；`footer.queue_dropped` 和 `size_limit_omitted` 报告丢失。没有 footer、非零丢失计数或写入失败时不能把文件视作完整运行统计。诊断文件不包含截图或音频内容。
 
 分析命令输出阶段均值、P50 / P95 / P99、截图与识别起点间隔、分开计算的吞吐及日志完整性：
@@ -111,6 +119,30 @@ python scripts/analyze-combat-performance.py '<数据目录>/logs/combat-perform
 完整识别完成到主循环接收的等待平均 13.074 → 1.649ms，P95 30.936 → 3.664ms，平均下降约 87.4%；接收时平均帧龄 63.622 → 53.467ms。84 次早期闪光发布到接收平均 2.432ms、P95 4.314ms，优化前 63 次分别为 14.862ms、31.129ms。识别线程两次任务间空等平均 20.647 → 11.881ms。截图请求存续时间仍约 26.487ms，但主线程查询和图片读回平均只占 3.350ms；识别计算平均 22.660ms，与上轮 21.861ms 接近，支持此次改善主要来自减少调度等待的判断。
 
 剩余长尾仍需处理：完整结果等待最大 140.688ms（P99 28.428ms），41 次超过 50ms 的主循环中有 21 次包含抢占 / 中断决策。最长循环约 158ms，从一次 `replace` 开始，重叠一张约 167ms 的截图；代码中的抢占和 `ClearInputs` 仍同步执行 `release_inputs`，逐项等待松键及 `post_inactive`，与此阻塞现象一致。现有事件不能进一步区分其中某个松键、inactive 或 SDK 内部等待各占多少。下一步应优先把运行中的抢占 / 切人释放改为可轮询完成，仍须在释放确认后启动替代序列；终态 / 交接仍必须等待全部释放。新输入请求的 P50 为 2.001ms、P95 26.048ms，长尾含提前提交后在同一控制器中排队的时间，不应与旧同步调用直接当作输入延迟回归。1 个 `input_aborted` 位于启动后约 4.33s，最终输入释放成功；它表示未被主循环确认即被撤销，不能解释为没有原生输入。对比与长循环事件见 `artifacts/combat-live-comparison-68fe6749.json`，完整阶段汇总见 `artifacts/combat-performance-68fe6749.json`。
+
+运行中释放优化通过 11 项引擎单元 / 时序及 3 项完整运行回归。模拟控制器注入 300ms 松键延迟，抢占与切人两次释放存续为 302.568ms、321.077ms，主线程查询 / 提交累计分别为 0.788ms、0.650ms；等待中仍发布进度，抢占用例的完整识别结果也在释放期间被消费，替代动作均在释放确认后发送。另覆盖释放期间暂停、同 ID 恢复后重新采集截图并从新动作开始，以及某个按键释放失败时继续清理其他按键和鼠标通道、保留恢复登记。完整通用脚本回归处理 90 帧、0 过期帧、25 个动作。日志见 `artifacts/combat-release-tests.log`、`artifacts/combat-release-runtime-tests.log`；分析脚本已验证新释放字段和 footer 完整性，样本汇总见 `artifacts/combat-release-performance-summary.json`。这些是开发构建、固定图片和模拟输入结果；真实 Release 战斗长尾仍待复测。
+
+```powershell
+cargo test -p zzz-engine --lib combat:: --offline --target-dir target/m4 -- --include-ignored --nocapture --test-threads=1
+cargo test -p zzz-engine --test combat_runtime --offline --target-dir target/m4 -- --ignored --nocapture --test-threads=1
+cargo clippy -p zzz-engine -p maa-adapter --all-targets --offline --target-dir target/m4
+```
+
+上述 Clippy 检查完成，新增战斗代码无告警；地图探索、Python 开发桥及地图运行测试的既有告警仍保留，详情见 `artifacts/combat-release-clippy.log`。
+
+按需识别与闪光缓冲复用验证：7 项适配层单元 / SDK 缓冲用例、11 项引擎战斗单元 / 时序、3 项完整运行回归和 1 项识别对照通过。识别对照包含 9 个内置脚本及普通攻击、前台能量、角色技能别名、角色专有状态、自动终结技 5 个场景，各读取 20 帧，共 280 帧，脚本引用的状态与全量识别逐项一致。普通攻击场景省略头像、角色条、支援、后援及锁定阶段；角色条场景也验证未使用的支援 / 锁定阶段没有执行。递归动作、触发器和父级打断条件的依赖另由单元回归覆盖。完整通用脚本运行 84 帧、0 过期帧、25 个动作，未进行同边界实机吞吐对照。
+
+同张固定图、同进程开发构建（适配层 opt-level=2），关闭闪光，每帧先全量再按需识别；“全配队通用”20 帧平均识别计算为 41.006 → 31.718ms，约减少 22.65%。纯攻击 / 闪避脚本原先已有快速路径，不能把它们与全量识别的差值记作本轮额外收益。闪光合成像素微基准热态各运行 30 次，显式裁图 + float64 转换参考为平均 4.974ms，新路径为 2.201ms；该统计不含模型推理。5 次跨宽高比 / 边缘 ROI 的 BGR、RGB NCHW 输入完全一致，3 种 ROI 的真实 CPU 模型输出逐位一致；0..255 所有字节值及取消后缓冲完整重写另有回归。BGR 容量保持 1,228,800 字节，浮点缓冲保持 4,915,200 字节，重复识别未重新分配这两块内存。这些是固定输入计算成本，不代表游戏 FPS、伤害或闪避成功率，Release 实机仍待复测。
+
+原始输出见 `artifacts/combat-plan-unit-tests.log`、`combat-plan-recognition-tests.log`、`combat-plan-engine-tests.log` 和 `combat-plan-runtime-tests.log`；对照及统计口径保存在 `artifacts/combat-plan-comparison.json` 与 `combat-plan-performance-summary.json`。命名切人的运行回归还移除了条件中的角色状态引用，单独确认动作本身能开启头像发现，记录见 `artifacts/combat-plan-implicit-switch-tests.log`。Clippy 无新增告警，既有地图 / Python 开发桥告警仍保留。
+
+```powershell
+cargo test -p maa-adapter --lib --offline --target-dir target/m4 -- --include-ignored --nocapture --test-threads=1
+cargo test -p maa-adapter --test combat_recognition_plan --offline --target-dir target/m4 -- --ignored --nocapture --test-threads=1
+cargo test --manifest-path zzz-od-test/test/zzz_auto/rust/Cargo.toml --target-dir target/m4 --offline --test raw_flash --test flash --test raw_cancel --test combat_segment -- --nocapture --test-threads=1 --skip cli_cancel_timer_returns_structured_terminal_error_and_rejects_unsupported_kind
+```
+
+外部验证仓补充 48 项回归全部通过：子战斗 27、闪光适配 7、原始取消 6、原始闪光 8。覆盖 CPU / DirectML 输入数值、阈值相邻 float32 值、推理中取消后复用会话、GPU 排他及应用内暂停 / 交接；日志见 `artifacts/combat-plan-sdk-tests.log`。CLI 取消用例绑定旧 `target/debug/zzz-engine.exe`，上述命令显式跳过；其余 SDK / CPU / DirectML 与子战斗回归使用当前源码链接的库。
 
 2026 年 10 月 31 日新增普通战斗回归：同一张 `screens/战斗画面/默认.webp` 在修复前，前六次完整头像发现耗时约 1051..1364ms；修复后 40 次普通识别为 74..115ms，开启闪光并完成模型冷启动后为 100..104ms。遮挡头像的合成画面验证缓存身份不会被当作新匹配。完整“全配队通用”脚本在模拟控制器上运行 60 帧，0 帧丢弃、24 个动作，并发现完整队伍；另插入一次 300ms 截图延迟，确认输入释放且不重复补 BUFF。上述数据为本机固定图与模拟输入结果，尚未验证真实游戏的闪避成功率、连携与切人响应。
 

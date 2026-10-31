@@ -2,6 +2,19 @@ use crate::{InputProbeAction, InputProbeConfig, NativeSession};
 use anyhow::{Context, Result, ensure};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[derive(Clone, Copy)]
+enum ReleaseInput {
+    Key(i32),
+    Contact(i32),
+    Inactive,
+}
+
+pub(crate) struct CombatRelease {
+    remaining: std::collections::VecDeque<ReleaseInput>,
+    pending: Option<(i64, ReleaseInput)>,
+    errors: Vec<String>,
+}
+
 pub struct CombatInputJob {
     id: i64,
     controller: usize,
@@ -10,6 +23,82 @@ pub struct CombatInputJob {
 }
 
 impl NativeSession {
+    /// 运行中清理沿用控制器队列；每次查询至多确认一个请求、提交一个请求。
+    /// 状态归会话持有，中断或调用者退出后仍由 release_inputs 排空。
+    pub fn start_combat_release(&mut self) -> Result<()> {
+        ensure!(
+            !self.tasker.running(),
+            "Pipeline 尚未退出，不能交接战斗输入"
+        );
+        ensure!(!self.pipeline_controller_pending, "Pipeline 控制器尚未收尾");
+        if self.combat_release.is_none() {
+            self.input_cleanup_pending = true;
+            self.combat_release = Some(CombatRelease {
+                remaining: self
+                    .held_keys
+                    .iter()
+                    .copied()
+                    .map(ReleaseInput::Key)
+                    .chain(
+                        self.held_contacts
+                            .iter()
+                            .copied()
+                            .map(ReleaseInput::Contact),
+                    )
+                    .chain([ReleaseInput::Inactive])
+                    .collect(),
+                pending: None,
+                errors: Vec::new(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn poll_combat_release(&mut self) -> Result<bool> {
+        let Some(mut release) = self.combat_release.take() else {
+            return Ok(true);
+        };
+        if let Some((id, input)) = release.pending.take() {
+            let status = self.controller.status(id);
+            if status != maa_framework::MaaStatus::INVALID && !status.done() {
+                release.pending = Some((id, input));
+                self.combat_release = Some(release);
+                return Ok(false);
+            }
+            if status != maa_framework::MaaStatus::INVALID && self.controller.wait(id).is_success()
+            {
+                match input {
+                    ReleaseInput::Key(key) => {
+                        self.held_keys.remove(&key);
+                    }
+                    ReleaseInput::Contact(contact) => {
+                        self.held_contacts.remove(&contact);
+                    }
+                    ReleaseInput::Inactive => {}
+                }
+            } else {
+                release.errors.push(release_error(input));
+            }
+        }
+        if let Some(input) = release.remaining.pop_front() {
+            let result = match input {
+                ReleaseInput::Key(key) => self.controller.post_key_up(key),
+                ReleaseInput::Contact(contact) => self.controller.post_touch_up(contact),
+                ReleaseInput::Inactive => self.controller.post_inactive(),
+            };
+            match result {
+                Ok(id) if id > 0 => release.pending = Some((id, input)),
+                _ => release.errors.push(release_error(input)),
+            }
+            self.combat_release = Some(release);
+            return Ok(false);
+        }
+        // 失败的持有登记和恢复标记保留；其余通道及 inactive 仍已尝试清理。
+        ensure!(release.errors.is_empty(), "{}", release.errors.join("；"));
+        self.input_cleanup_pending = false;
+        Ok(true)
+    }
+
     /// 一次只投递一个动作并等待原生完成，持有集合在投递前登记。
     pub fn combat_input(
         &mut self,
@@ -32,6 +121,7 @@ impl NativeSession {
         pressed: bool,
         cancel: &AtomicBool,
     ) -> Result<Option<CombatInputJob>> {
+        ensure!(self.combat_release.is_none(), "战斗输入释放尚未完成");
         let mode = self.input_mode.context("战斗控制器未设置输入方式")?;
         InputProbeConfig {
             mode,
@@ -160,6 +250,7 @@ impl NativeSession {
         dx: i32,
         cancel: &AtomicBool,
     ) -> Result<Option<CombatInputJob>> {
+        ensure!(self.combat_release.is_none(), "战斗输入释放尚未完成");
         ensure!(
             dx != 0 && dx.unsigned_abs() <= 10000,
             "转向位移须为非零且不超过 10000"
@@ -181,5 +272,13 @@ impl NativeSession {
             button: None,
             done: false,
         }))
+    }
+}
+
+fn release_error(input: ReleaseInput) -> String {
+    match input {
+        ReleaseInput::Key(key) => format!("按键 {key} 释放失败"),
+        ReleaseInput::Contact(contact) => format!("鼠标 / 手柄通道 {contact} 释放失败"),
+        ReleaseInput::Inactive => "控制器恢复输入失败".into(),
     }
 }

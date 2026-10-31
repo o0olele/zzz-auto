@@ -92,6 +92,69 @@ impl Drop for PendingInput {
     }
 }
 
+struct InputRelease {
+    asynchronous: bool,
+    trace: Option<crate::combat_performance::PerformanceTrace>,
+    pending: Option<(Instant, &'static str, u64, u64)>,
+}
+impl InputRelease {
+    fn start(&mut self, native: &mut NativeSession, reason: &'static str) -> Result<()> {
+        if !self.asynchronous {
+            return native.release_inputs();
+        }
+        if self.pending.is_none() {
+            let started = Instant::now();
+            native.start_combat_release()?;
+            self.pending = Some((started, reason, 0, 0));
+            if let Some(trace) = &self.trace {
+                trace.event("release_start", json!({"reason": reason}));
+            }
+            self.poll(native)?;
+        }
+        Ok(())
+    }
+    fn poll(&mut self, native: &mut NativeSession) -> Result<()> {
+        let Some((started, reason, main_thread_us, polls)) = self.pending.as_mut() else {
+            return Ok(());
+        };
+        let poll_started = Instant::now();
+        let result = native.poll_combat_release();
+        *main_thread_us += poll_started.elapsed().as_micros() as u64;
+        *polls += 1;
+        if !matches!(&result, Ok(false)) {
+            if let Some(trace) = &self.trace {
+                trace.event(
+                    "release_complete",
+                    json!({
+                        "reason": reason, "started_us": trace.stamp(*started),
+                        "duration_us": started.elapsed().as_micros() as u64,
+                        "main_thread_us": main_thread_us, "polls": polls,
+                        "success": result.is_ok(),
+                    }),
+                );
+            }
+            self.pending = None;
+        }
+        result.map(|_| ())
+    }
+}
+impl Drop for InputRelease {
+    fn drop(&mut self) {
+        if let Some((started, reason, _, _)) = self.pending
+            && let Some(trace) = &self.trace
+        {
+            // 暂停、停止或错误后由 NativeSession 同步排空，不能记成释放完成。
+            trace.event(
+                "release_handoff",
+                json!({
+                    "reason": reason, "started_us": trace.stamp(started),
+                    "duration_us": started.elapsed().as_micros() as u64,
+                }),
+            );
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CombatSegmentEnd {
     Result(NormalBattleResult),
@@ -721,18 +784,23 @@ impl CombatRun {
                 );
             }
         }
-        let recognition_dodge_only = self.scheduler.script.states.iter().all(|name| {
-            name.starts_with("闪避识别-")
-                || name.starts_with("自定义-")
-                || name.starts_with("按键-")
-                || name == "按键可用-普通攻击"
-        });
-        let flash_enabled = self
-            .scheduler
-            .script
-            .states
-            .iter()
-            .any(|name| name == "闪避识别-红光" || name == "闪避识别-黄光");
+        let plan = std::sync::Arc::new(
+            maa_adapter::combat_vision::CombatRecognitionPlan::for_script(
+                &recognizer.bundle.spec,
+                &self.scheduler.script,
+                self.progress.config.auto_ultimate,
+                check_end || self.patrol_ui_timeout.is_some(),
+            ),
+        );
+        let recognition_dodge_only = plan.dodge_only();
+        let flash_enabled = plan.flash_enabled();
+        if let Some(trace) = &trace {
+            trace.event("recognition_plan", json!(&*plan));
+        }
+        recognizer.set_recognition_plan(plan.clone());
+        if let Some(background) = worker.as_mut() {
+            background.set_recognition_plan(plan);
+        }
         let cancel = self.control.cancellation();
         let delay = Instant::now();
         while delay.elapsed() < Duration::from_millis(self.progress.config.start_delay_ms as u64) {
@@ -778,6 +846,12 @@ impl CombatRun {
         let mut patrol_last_hud = Instant::now();
         let mut latest_source = None;
         let mut pending_input: Option<PendingInput> = None;
+        let asynchronous = worker.is_some();
+        let mut input_release = InputRelease {
+            asynchronous,
+            trace: trace.clone(),
+            pending: None,
+        };
         let mut capture_origin = None;
         let mut release_deadline = None;
         let mut loop_performance = trace
@@ -801,6 +875,7 @@ impl CombatRun {
                 "应用总运行预算已耗尽"
             );
             let mut now = self.elapsed + started.elapsed().as_secs_f64();
+            input_release.poll(native)?;
             if let Some(input) = &mut pending_input
                 && input.poll(native)?
             {
@@ -838,7 +913,6 @@ impl CombatRun {
                     };
                     deadline - now <= blocking
                 }));
-            let asynchronous = worker.is_some();
             let mut completed = None;
             if let Some(background) = worker.as_mut() {
                 let mut early = Vec::new();
@@ -885,7 +959,8 @@ impl CombatRun {
                     }
                 }
                 // 先消费已完成结果，避免新截图再次延后闪光事件的调度。
-                let input_ready = pending_input.is_some()
+                let input_ready = input_release.pending.is_some()
+                    || pending_input.is_some()
                     || (until.is_none()
                         && matches!(
                             queue.front(),
@@ -905,7 +980,9 @@ impl CombatRun {
                     && now >= next_frame
                     && let Some(performance) = &mut loop_performance
                 {
-                    if release_due {
+                    if input_release.pending.is_some() {
+                        performance.defer("input_release");
+                    } else if release_due {
                         performance.defer("timed_release");
                     } else if input_ready {
                         performance.defer("input_ready");
@@ -1139,7 +1216,7 @@ impl CombatRun {
                         trace.event("stale_frame", json!({"frame_id": trace.stamp(frame.captured), "frame_age_us": frame.captured.elapsed().as_micros() as u64}));
                     }
                     self.progress.stale_frames += 1;
-                    native.release_inputs()?;
+                    input_release.start(native, "stale_frame")?;
                     ledger.clear();
                     pending_input = None;
                     queue.clear();
@@ -1217,7 +1294,7 @@ impl CombatRun {
             });
             if !fresh {
                 if self.sequence.is_some() || !queue.is_empty() || !ledger.is_empty() {
-                    native.release_inputs()?;
+                    input_release.start(native, "stale_observation")?;
                     ledger.clear();
                     pending_input = None;
                     queue.clear();
@@ -1264,7 +1341,7 @@ impl CombatRun {
                             if replacing {
                                 self.progress.preemptions += 1;
                             }
-                            native.release_inputs()?;
+                            input_release.start(native, "replace")?;
                             ledger.clear();
                             pending_input = None;
                         }
@@ -1279,7 +1356,7 @@ impl CombatRun {
                         queue.extend(execution.actions.into_iter().map(Step::Action));
                     }
                     Decision::Interrupt => {
-                        native.release_inputs()?;
+                        input_release.start(native, "interrupt")?;
                         ledger.clear();
                         pending_input = None;
                         queue.clear();
@@ -1294,7 +1371,11 @@ impl CombatRun {
                     release_deadline = elapsed_deadline;
                     until = None;
                 }
-                if queue.is_empty() && until.is_none() && pending_input.is_none() {
+                if queue.is_empty()
+                    && until.is_none()
+                    && pending_input.is_none()
+                    && input_release.pending.is_none()
+                {
                     if let Some(generation) = self.sequence.take() {
                         self.scheduler.complete(generation)?;
                     }
@@ -1319,6 +1400,7 @@ impl CombatRun {
                     }
                 }
                 if pending_input.is_none()
+                    && input_release.pending.is_none()
                     && until.is_none()
                     && let Some(step) = queue.pop_front()
                 {
@@ -1367,7 +1449,7 @@ impl CombatRun {
                             release_deadline = None;
                         }
                         Step::ClearInputs => {
-                            native.release_inputs()?;
+                            input_release.start(native, "clear_inputs")?;
                             ledger.clear();
                             pending_input = None;
                         }
@@ -1607,7 +1689,7 @@ impl CombatRun {
                                         }
                                     } else {
                                         // 目标身份或方向尚不可靠，不能继续队列里的攻击动作。
-                                        native.release_inputs()?;
+                                        input_release.start(native, "unknown_switch_target")?;
                                         ledger.clear();
                                         pending_input = None;
                                         queue.clear();
@@ -1718,6 +1800,10 @@ impl CombatRun {
 #[cfg(test)]
 #[path = "combat_io_tests.rs"]
 mod io_tests;
+
+#[cfg(test)]
+#[path = "combat_release_tests.rs"]
+mod release_tests;
 
 #[cfg(test)]
 mod tests {

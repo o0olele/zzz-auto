@@ -97,6 +97,7 @@ def analyze(path):
             "latest_source_frame_id/source_age_us describe the latest consumed frame, not proven flash-to-input causality.",
             "Input duration includes target validation and native completion; asynchronous mode also includes controller queueing and completion polling. It is not game response latency.",
             "With asynchronous capture/input, capture_us and input duration_us are I/O lifetimes, not main-thread blocking time; capture main_thread_us measures polling/readback only.",
+            "release_complete duration_us is the full release lifetime; main_thread_us sums completion polling/submission time. release_handoff transfers unfinished cleanup to synchronous shutdown and is not release completion.",
             "Capture-start interval distributions exclude gaps between loop_start segments (pause/resume).",
             "An incomplete trace cannot be treated as complete-run counts or throughput.",
         ],

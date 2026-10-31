@@ -3,12 +3,17 @@ use ort::{
     execution_providers::DirectMLExecutionProvider,
     session::Session,
     tensor::TensorElementType,
-    value::{Tensor, ValueType},
+    value::{TensorRef, ValueType},
 };
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{ffi::CStr, path::Path, sync::Mutex, time::Instant};
+use std::{
+    ffi::CStr,
+    path::Path,
+    sync::{Mutex, OnceLock},
+    time::Instant,
+};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 
 use crate::{
@@ -121,6 +126,17 @@ pub(crate) fn bgr_to_rgb_tensor_controlled(
     size: [i32; 2],
     control: Option<&RawRecognitionControl>,
 ) -> Result<Vec<f32>> {
+    let mut tensor = Vec::new();
+    bgr_to_rgb_tensor_into(bgr, size, control, &mut tensor)?;
+    Ok(tensor)
+}
+
+fn bgr_to_rgb_tensor_into(
+    bgr: &[u8],
+    size: [i32; 2],
+    control: Option<&RawRecognitionControl>,
+    tensor: &mut Vec<f32>,
+) -> Result<()> {
     let [width, height] = size;
     ensure!(
         (1..=1920).contains(&width) && (1..=1080).contains(&height),
@@ -131,7 +147,9 @@ pub(crate) fn bgr_to_rgb_tensor_controlled(
         bgr.len() == plane * 3,
         "原始张量须来自模型输入尺寸的 BGR 图像"
     );
-    let mut tensor = vec![0f32; plane * 3];
+    tensor.resize(plane * 3, 0.0);
+    static NORMALIZED: OnceLock<[f32; 256]> = OnceLock::new();
+    let normalized = NORMALIZED.get_or_init(|| std::array::from_fn(|v| (v as f64 / 255.0) as f32));
     for (position, pixel) in bgr.chunks_exact(3).enumerate() {
         if position % 4096 == 0
             && let Some(control) = control
@@ -140,10 +158,10 @@ pub(crate) fn bgr_to_rgb_tensor_controlled(
         }
         for (channel, source) in [2, 1, 0].into_iter().enumerate() {
             // 旧版先 NumPy float64 除法，最后 astype(float32)，不使用 f32 乘倒数。
-            tensor[channel * plane + position] = (f64::from(pixel[source]) / 255.0) as f32;
+            tensor[channel * plane + position] = normalized[pixel[source] as usize];
         }
     }
-    Ok(tensor)
+    Ok(())
 }
 
 pub fn raw_flash_decision(scores: [f32; 3], config: &FlashConfig) -> Result<Value> {
@@ -177,6 +195,8 @@ pub(crate) struct RawClassifier {
     runtime: RawRuntimeInfo,
     sha256: String,
     device: InferenceDevice,
+    bgr: Vec<u8>,
+    tensor: Vec<f32>,
 }
 
 pub(crate) fn tensor_shape(ty: &ValueType, expected: &[i64]) -> bool {
@@ -241,6 +261,8 @@ impl RawClassifier {
             runtime,
             sha256,
             device,
+            bgr: Vec::new(),
+            tensor: Vec::new(),
         })
     }
 }
@@ -294,11 +316,15 @@ pub(crate) fn recognize_raw_flash_cached(
     let classifier = cached.as_mut().unwrap();
     control.checkpoint(RawRecognitionPhase::Preprocessing)?;
     let prepare_at = Instant::now();
-    let prepared = flash::prepare_flash_image(image, config.roi)?;
-    let tensor = Tensor::from_array((
-        [1, 3, 640, 640],
-        bgr_to_rgb_tensor_controlled(&prepared.bgr, [640, 640], Some(control))?,
-    ))?;
+    let scaled_size = flash::prepare_flash_image_into(image, config.roi, &mut classifier.bgr)?;
+    bgr_to_rgb_tensor_into(
+        &classifier.bgr,
+        [640, 640],
+        Some(control),
+        &mut classifier.tensor,
+    )?;
+    // 同步推理借用会话内缓冲；run 返回之前不能重写或释放输入。
+    let tensor = TensorRef::from_array_view(([1, 3, 640, 640], classifier.tensor.as_slice()))?;
     let prepare_us = prepare_at.elapsed().as_micros() as u64;
     let completion_at = Instant::now();
     let options = control.start_inference()?;
@@ -325,7 +351,7 @@ pub(crate) fn recognize_raw_flash_cached(
         InferenceDevice::Cpu => Value::Null,
         InferenceDevice::DirectMl(_) => json!(true),
     };
-    detail["adaptation"]["scaled_size"] = json!(prepared.scaled_size);
+    detail["adaptation"]["scaled_size"] = json!(scaled_size);
     let details_us = details_at.elapsed().as_micros() as u64;
     Ok(RecognitionMeasurement {
         detail,
@@ -340,3 +366,7 @@ pub(crate) fn recognize_raw_flash_cached(
         },
     })
 }
+
+#[cfg(test)]
+#[path = "raw_flash_buffer_tests.rs"]
+mod tests;

@@ -152,6 +152,15 @@ impl NativeSession {
         cancel: &AtomicBool,
         stopped_at: &mut Option<Instant>,
     ) -> Result<()> {
+        if self.combat_release.is_some() {
+            loop {
+                observe_cancel(cancel, stopped_at);
+                if self.poll_combat_release()? {
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
         self.input_cleanup_pending = true;
         let mut errors = Vec::new();
         for key in self.held_keys.clone() {

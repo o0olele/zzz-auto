@@ -169,6 +169,29 @@ pub(crate) fn prepare_letterbox_bgr(
             && bgr.len() == (width * height * 3) as usize,
         "闪光输入须为连续的 8 位 BGR 图像"
     );
+    let mut pixels = Vec::new();
+    let scaled_size = prepare_letterbox_into(bgr, width, height, width * 3, target, &mut pixels)?;
+    Ok(FlashImage {
+        bgr: pixels,
+        scaled_size,
+    })
+}
+
+fn prepare_letterbox_into(
+    bgr: &[u8],
+    width: i32,
+    height: i32,
+    stride: i32,
+    target: [i32; 2],
+    pixels: &mut Vec<u8>,
+) -> Result<[i32; 2]> {
+    ensure!(
+        (1..=1920).contains(&width)
+            && (1..=1080).contains(&height)
+            && stride >= width * 3
+            && bgr.len() >= (height as usize - 1) * stride as usize + width as usize * 3,
+        "闪光输入的 BGR 尺寸或行跨度无效"
+    );
     let [target_width, target_height] = target;
     ensure!(
         (1..=1920).contains(&target_width) && (1..=1080).contains(&target_height),
@@ -185,10 +208,12 @@ pub(crate) fn prepare_letterbox_bgr(
     let api = cv_api()?;
     let source = Header::new(api, width, height)?;
     let destination = Header::new(api, scaled_width, scaled_height)?;
-    let mut pixels = vec![114; (target_width * target_height * 3) as usize];
+    pixels.resize((target_width * target_height * 3) as usize, 114);
+    // 每次重写填充，避免更换 ROI / 宽高比后沿用上一帧内容。
+    pixels.fill(114);
     // cvResize 只读来源像素；图像头分别使用真实行跨度，释放头不会释放 Rust 数据。
     unsafe {
-        (api.set)(source.raw, bgr.as_ptr() as *mut c_void, width * 3);
+        (api.set)(source.raw, bgr.as_ptr() as *mut c_void, stride);
         (api.set)(
             destination.raw,
             pixels.as_mut_ptr().cast(),
@@ -196,10 +221,7 @@ pub(crate) fn prepare_letterbox_bgr(
         );
         (api.resize)(source.raw, destination.raw, 1); // CV_INTER_LINEAR
     }
-    Ok(FlashImage {
-        bgr: pixels,
-        scaled_size: [scaled_width, scaled_height],
-    })
+    Ok([scaled_width, scaled_height])
 }
 
 pub fn flash_decision(native: &Value, config: &FlashConfig) -> Result<Value> {
@@ -273,6 +295,16 @@ impl NativeSession {
 }
 
 pub(crate) fn prepare_flash_image(image: &RecognitionImage, roi: [i32; 4]) -> Result<FlashImage> {
+    let mut bgr = Vec::new();
+    let scaled_size = prepare_flash_image_into(image, roi, &mut bgr)?;
+    Ok(FlashImage { bgr, scaled_size })
+}
+
+pub(crate) fn prepare_flash_image_into(
+    image: &RecognitionImage,
+    roi: [i32; 4],
+    bgr: &mut Vec<u8>,
+) -> Result<[i32; 2]> {
     ensure!(
         image.buffer.width() == 1920
             && image.buffer.height() == 1080
@@ -280,11 +312,18 @@ pub(crate) fn prepare_flash_image(image: &RecognitionImage, roi: [i32; 4]) -> Re
         "闪光适配要求原始 1920×1080 BGR 图像"
     );
     let [x, y, w, h] = roi;
+    ensure!(
+        x >= 0
+            && y >= 0
+            && w > 0
+            && h > 0
+            && x.checked_add(w).is_some_and(|right| right <= 1920)
+            && y.checked_add(h).is_some_and(|bottom| bottom <= 1080),
+        "闪光 ROI 超出 1920×1080"
+    );
     let source = image.buffer.raw_data().context("闪光图像像素为空")?;
-    let mut crop = Vec::with_capacity((w * h * 3) as usize);
-    for row in y..y + h {
-        let offset = ((row * 1920 + x) * 3) as usize;
-        crop.extend_from_slice(&source[offset..offset + (w * 3) as usize]);
-    }
-    prepare_flash_bgr(&crop, w, h)
+    let offset = ((y * 1920 + x) * 3) as usize;
+    let source = source.get(offset..).context("闪光 ROI 像素不足")?;
+    // 同步 cvResize 直接借用原图 ROI，保留整帧行跨度，无整帧裁图复制。
+    prepare_letterbox_into(source, w, h, 1920 * 3, [FLASH_SIZE, FLASH_SIZE], bgr)
 }

@@ -12,8 +12,9 @@ mod coffee_run;
 pub mod combat_contours;
 mod combat_input;
 pub use combat_input::CombatInputJob;
-pub mod combat_vision;
+mod combat_plan;
 mod combat_reader;
+pub mod combat_vision;
 pub use combat_reader::{CombatReader, CombatVision};
 mod combat_template;
 pub use combat_template::CombatTemplate;
@@ -223,6 +224,7 @@ pub struct NativeSession {
     held_contacts: BTreeSet<i32>,
     input_cleanup_pending: bool,
     combat_capture: Option<combat_vision::CombatCapture>,
+    combat_release: Option<combat_input::CombatRelease>,
     pipeline_controller_pending: bool,
     _lease: Option<GameLease>,
     _gpu_lease: Option<GpuLease>,
@@ -414,6 +416,7 @@ impl NativeSession {
             held_contacts: BTreeSet::new(),
             input_cleanup_pending: false,
             combat_capture: None,
+            combat_release: None,
             pipeline_controller_pending: false,
             _lease: lease,
             _gpu_lease: gpu_lease,
@@ -634,6 +637,7 @@ impl NativeSession {
     pub fn inputs_released(&self) -> bool {
         !self.tasker.running()
             && self.combat_capture.is_none()
+            && self.combat_release.is_none()
             && !self.input_cleanup_pending
             && !self.pipeline_controller_pending
             && self.held_keys.is_empty()

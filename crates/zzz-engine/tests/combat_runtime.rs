@@ -284,6 +284,7 @@ fn named_switch_waits_for_discovery_and_does_not_attack_the_wrong_agent() -> any
         InputMode::Foreground,
     )?;
     let mut recognizer = native.load_combat_bundle(&root.join("resources/generated/combat"))?;
+    // 条件不引用角色状态；按名字切人的动作本身仍须开启头像发现。
     let script = Script::parse(
         "switch-discovery",
         "switch-discovery.yml",
@@ -294,7 +295,7 @@ check_agent_interval: 0.02
 scenes:
   - interval: 0
     handlers:
-      - states: "[按键可用-普通攻击] & ![前台-露西]"
+      - states: "[按键可用-普通攻击]"
         operations:
           - op_name: 切换角色
             agent_name: 叶瞬光

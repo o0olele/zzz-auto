@@ -3,7 +3,7 @@ use crate::combat_performance::PerformanceTrace;
 use anyhow::{Context, Result};
 use maa_adapter::{
     CombatVision,
-    combat_vision::{CombatFrame, CombatObservation, CombatRecognizer},
+    combat_vision::{CombatFrame, CombatObservation, CombatRecognitionPlan, CombatRecognizer},
 };
 use serde_json::json;
 use std::{
@@ -26,6 +26,7 @@ struct Work {
     refresh_agents: bool,
     trace: Option<PerformanceTrace>,
     submitted: std::time::Instant,
+    plan: Option<Arc<CombatRecognitionPlan>>,
 }
 pub(crate) struct Observed {
     pub frame: CombatFrame,
@@ -55,6 +56,7 @@ pub(crate) struct CombatWorker {
     epoch: u64,
     refresh_agents: bool,
     trace: Option<PerformanceTrace>,
+    plan: Option<Arc<CombatRecognitionPlan>>,
 }
 impl CombatWorker {
     pub fn new(
@@ -80,6 +82,9 @@ impl CombatWorker {
                     }
                     if work.refresh_agents {
                         recognizer.refresh_agents();
+                    }
+                    if let Some(plan) = work.plan {
+                        recognizer.set_recognition_plan(plan);
                     }
                     let recognition_started = std::time::Instant::now();
                     if let Some(trace) = &work.trace {
@@ -161,10 +166,14 @@ impl CombatWorker {
             epoch: 0,
             refresh_agents: false,
             trace: None,
+            plan: None,
         })
     }
     pub fn set_trace(&mut self, trace: Option<PerformanceTrace>) {
         self.trace = trace;
+    }
+    pub fn set_recognition_plan(&mut self, plan: Arc<CombatRecognitionPlan>) {
+        self.plan = Some(plan);
     }
     pub fn epoch(&self) -> u64 {
         self.epoch
@@ -201,6 +210,7 @@ impl CombatWorker {
                     refresh_agents: std::mem::take(&mut self.refresh_agents),
                     trace: self.trace.clone(),
                     submitted: std::time::Instant::now(),
+                    plan: self.plan.clone(),
                 })
                 .map_err(|_| anyhow::anyhow!("战斗识别任务投递失败"))?;
             self.busy = true;

@@ -258,6 +258,21 @@ enum Action {
         image: PathBuf,
         #[arg(long, default_value = "observation", value_parser = ["observation", "cargo"])]
         target: String,
+        #[arg(long)]
+        python_observation: bool,
+    },
+    /// 开发阶段运行 Python 空洞探索决策，实际输入和战斗复用原生运行槽。
+    MapExplorationDev {
+        #[arg(long)]
+        hwnd: String,
+        #[arg(long, default_value_t = 1)]
+        instance_id: u32,
+        #[arg(long, default_value = "one_dragon")]
+        group_id: String,
+        #[arg(long)]
+        allow_input: bool,
+        #[arg(long, default_value_t = 60_000)]
+        cancel_after_ms: u64,
     },
     BasicDailyBundleCheck {
         #[arg(long)]
@@ -450,18 +465,25 @@ enum RuntimeResourceAction {
 struct ResourceChangeArgs {
     #[arg(
         long,
-        required_unless_present = "rollback",
-        conflicts_with = "rollback"
+        required_unless_present_any = ["rollback", "bundled"],
+        conflicts_with_all = ["rollback", "bundled"]
     )]
     id: Option<String>,
-    #[arg(long, required_unless_present = "id", conflicts_with = "id")]
+    #[arg(long, required_unless_present_any = ["id", "bundled"], conflicts_with_all = ["id", "bundled"])]
     rollback: bool,
+    #[arg(long, required_unless_present_any = ["id", "rollback"], conflicts_with_all = ["id", "rollback"])]
+    bundled: bool,
     #[arg(long)]
     revision: String,
 }
 
 impl ResourceChangeArgs {
     fn request(self) -> od_core::runtime_resources::RuntimeResourceRequest {
+        if self.bundled {
+            return od_core::runtime_resources::RuntimeResourceRequest::UseBundled {
+                revision: self.revision,
+            };
+        }
         match self.id {
             Some(id) => od_core::runtime_resources::RuntimeResourceRequest::Activate {
                 id,
@@ -961,6 +983,7 @@ async fn run() -> Result<()> {
                 | Action::SuibianTempleBundleCheck { .. }
                 | Action::WorldPatrolBundleCheck { .. }
                 | Action::MapExplorationInspect { .. }
+                | Action::MapExplorationDev { .. }
                 | Action::BasicDailyBundleCheck { .. }
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
@@ -1133,6 +1156,119 @@ async fn run() -> Result<()> {
         }
         Action::CombatInspect { ref bundle, .. } => {
             maa_adapter::combat_vision::CombatBundle::load(&std::path::absolute(bundle)?)?;
+        }
+        Action::MapExplorationDev {
+            hwnd,
+            instance_id,
+            group_id,
+            allow_input,
+            cancel_after_ms,
+        } => {
+            ensure!(cfg!(debug_assertions), "Python 测试仅供开发版使用");
+            ensure!(allow_input, "游戏实测必须显式提供 --allow-input");
+            ensure!(
+                (1000..=1_800_000).contains(&cancel_after_ms),
+                "测试时长须为 1 秒到 30 分钟"
+            );
+            ensure!(
+                zzz_engine::python_script::DevelopmentConfig::read()?.is_some(),
+                "请在 python-scripts/development.json 启用 Python 开发脚本"
+            );
+            let engine = Engine::with_resources(paths, explicit_resources)?;
+            let ready = std::time::Instant::now();
+            while !engine.snapshot().sdk.ready {
+                ensure!(
+                    ready.elapsed() < Duration::from_secs(15),
+                    "{}",
+                    engine.snapshot().sdk.message
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            let od_protocol::Payload::AccountConfig(config) =
+                engine.execute(od_protocol::Command::AccountConfig).await?
+            else {
+                anyhow::bail!("无法读取测试账号");
+            };
+            engine
+                .execute(od_protocol::Command::Attach {
+                    hwnd,
+                    capture_method: config.general.capture_method,
+                })
+                .await?;
+            let od_protocol::Payload::GroupPlan(plan) = engine
+                .execute(od_protocol::Command::PreviewStandalone {
+                    instance_id,
+                    group_id: group_id.clone(),
+                    app_id: "map_exploration".into(),
+                })
+                .await?
+            else {
+                anyhow::bail!("无法预览空洞探索计划");
+            };
+            ensure!(
+                plan.executable,
+                "空洞探索预检失败：{}",
+                plan.blockers.join("；")
+            );
+            let revision = plan
+                .exploration_combat
+                .as_ref()
+                .context("缺少冻结战斗脚本")?
+                .script_revision
+                .clone();
+            let od_protocol::Payload::Run(run) = engine
+                .execute(od_protocol::Command::StartStandaloneTrial {
+                    combat_revision: Some(revision),
+                    instance_id,
+                    group_id,
+                    app_id: "map_exploration".into(),
+                    revision: config.revision,
+                    game_day: plan.game_day.date,
+                    allow_input: true,
+                    confirm_account: true,
+                })
+                .await?
+            else {
+                anyhow::bail!("无法启动空洞探索测试");
+            };
+            eprintln!("Python 空洞探索测试 {} 已启动；Ctrl+C 停止并松键", run.id);
+            let signal = tokio::signal::ctrl_c();
+            tokio::pin!(signal);
+            let started = std::time::Instant::now();
+            let mut stopping = false;
+            let mut previous = String::new();
+            loop {
+                if let Some(current) = engine.snapshot().run
+                    && current.id == run.id
+                {
+                    if let Some(progress) = current.daily.first()
+                        && progress.stage != previous
+                    {
+                        previous = progress.stage.clone();
+                        eprintln!(
+                            "{}",
+                            serde_json::json!({"run_id":run.id,"stage":progress.stage,"inputs_released":progress.inputs_released})
+                        );
+                    }
+                    if current.state.is_terminal() {
+                        engine.shutdown().await?;
+                        let failed = current.state == od_core::RunState::Failed;
+                        print(current)?;
+                        ensure!(!failed, "Python 空洞探索测试失败，具体原因见运行记录");
+                        return Ok(());
+                    }
+                }
+                if !stopping && started.elapsed().as_millis() >= u128::from(cancel_after_ms) {
+                    engine
+                        .execute(od_protocol::Command::Stop { run_id: run.id })
+                        .await?;
+                    stopping = true;
+                }
+                tokio::select! {
+                    _=&mut signal, if !stopping => {engine.execute(od_protocol::Command::Stop {run_id:run.id}).await?;stopping=true;},
+                    _=tokio::time::sleep(Duration::from_millis(100))=>{}
+                }
+            }
         }
         Action::Combat {
             hwnd,
@@ -1775,6 +1911,7 @@ async fn run() -> Result<()> {
             bundle,
             image,
             target,
+            python_observation,
         } => {
             let bundle = maa_adapter::world_patrol::validate_bundle(&bundle)?;
             let mut native = NativeSession::for_fixture(&image, &bundle, InferenceDevice::Cpu)?;
@@ -1784,7 +1921,11 @@ async fn run() -> Result<()> {
             } else {
                 od_core::map_exploration::ExplorationTarget::Observation
             };
-            print(native.inspect_map_exploration(target)?)
+            print(if python_observation {
+                native.inspect_map_exploration_script(target)?
+            } else {
+                native.inspect_map_exploration(target)?
+            })
         }
         Action::CombatInspect {
             bundle,

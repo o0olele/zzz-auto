@@ -90,7 +90,7 @@ impl GroupWork {
                     .find(|p| p.app_id == app)
                     .cloned()
                     .ok_or_else(|| anyhow::anyhow!("缺少空洞探索检查点"))?;
-                let run = crate::map_exploration::ExplorationRun::new(
+                let mut run = crate::map_exploration::ExplorationRun::new(
                     record.id,
                     progress,
                     self.exploration
@@ -98,6 +98,9 @@ impl GroupWork {
                         .ok_or_else(|| anyhow::anyhow!("缺少空洞探索预检脚本"))?,
                     self.plan.game_day.clone(),
                 )?;
+                if !self.fixture {
+                    run.enable_development_script()?;
+                }
                 let control = run.control();
                 (
                     GroupAppWork::Exploration(Box::new(ExplorationWork {
@@ -501,15 +504,15 @@ impl Engine {
         let control = match work.prepare(&record) {
             Ok(control) => control,
             Err(error) => {
-                let message = format!("分项创建失败，未投递输入：{error:#}");
+                let message = format!("应用准备失败，未投递游戏动作：{error:#}");
                 if let Some(failed) = fail_current(state, message.clone())
-                    && let Err(error) = self.history.save(&failed)
+                    && let Err(save_error) = self.history.save(&failed)
                 {
                     state.failed_save = Some(failed);
-                    state.record_error = Some(error.to_string());
+                    state.record_error = Some(save_error.to_string());
                 }
-                state.event(Some(record.id), "error", message);
-                return Err(native_error(error));
+                state.event(Some(record.id), "error", message.clone());
+                return Err(native_error(anyhow::anyhow!(message)));
             }
         };
         if let Err(error) = self.history.save(&record) {

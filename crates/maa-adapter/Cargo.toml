@@ -24,3 +24,6 @@ ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+
+[build-dependencies]
+cc = "=1.8.0"

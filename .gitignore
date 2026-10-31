@@ -11,3 +11,7 @@
 *.log
 *.tsbuildinfo
 .env
+**/__pycache__/
+*.py[cod]
+/python-scripts/.venv/
+/python-scripts/development.local.json

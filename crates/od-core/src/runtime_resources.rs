@@ -50,17 +50,26 @@ pub enum RuntimeResourceRequest {
     Rollback {
         revision: String,
     },
+    UseBundled {
+        revision: String,
+    },
 }
 
 impl RuntimeResourceRequest {
     pub fn changes_selection(&self) -> bool {
-        matches!(self, Self::Activate { .. } | Self::Rollback { .. })
+        matches!(
+            self,
+            Self::Activate { .. } | Self::Rollback { .. } | Self::UseBundled { .. }
+        )
     }
 
     pub fn requires_engine_exit(&self) -> bool {
         matches!(
             self,
-            Self::Install { .. } | Self::Activate { .. } | Self::Rollback { .. }
+            Self::Install { .. }
+                | Self::Activate { .. }
+                | Self::Rollback { .. }
+                | Self::UseBundled { .. }
         )
     }
 
@@ -93,7 +102,7 @@ impl RuntimeResourceRequest {
                     && hash(sha256)
             }
             Self::Activate { id, revision } => hash(id) && hash(revision),
-            Self::Rollback { revision } => hash(revision),
+            Self::Rollback { revision } | Self::UseBundled { revision } => hash(revision),
         };
         if valid {
             Ok(())

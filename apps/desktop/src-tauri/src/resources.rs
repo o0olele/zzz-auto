@@ -623,6 +623,9 @@ async fn helper(
             Some(RuntimeResourceRequest::Rollback { revision }) => {
                 command.args(["--rollback", "--revision", &revision]);
             }
+            Some(RuntimeResourceRequest::UseBundled { revision }) => {
+                command.args(["--bundled", "--revision", &revision]);
+            }
             Some(
                 RuntimeResourceRequest::Download { .. } | RuntimeResourceRequest::Discover { .. },
             ) => return Err(offline("下载入口无效")),

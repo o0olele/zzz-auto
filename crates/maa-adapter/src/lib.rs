@@ -12,6 +12,10 @@ mod coffee_run;
 pub mod combat_contours;
 mod combat_input;
 pub mod combat_vision;
+mod combat_reader;
+pub use combat_reader::{CombatReader, CombatVision};
+mod combat_template;
+pub use combat_template::CombatTemplate;
 mod engagement_reward;
 pub use coffee_run::{
     CoffeeRunObservation, validate_coffee_approach_bundle, validate_coffee_run_bundle,
@@ -101,7 +105,6 @@ use anyhow::{Context, Result, bail, ensure};
 use base64::Engine;
 use chrono::Utc;
 use maa_framework::{
-    MaaStatus,
     buffer::MaaImageBuffer,
     common::{GamepadType, Win32InputMethod, Win32ScreencapMethod},
     controller::Controller,
@@ -176,9 +179,9 @@ pub struct NativeSession {
     pipeline_subscriptions: Vec<events::PipelineSubscription>,
     tasker: Tasker,
     recognition_tasker: Tasker,
-    raw_flash: Mutex<Option<raw_inference::RawClassifier>>,
+    raw_flash: Arc<Mutex<Option<raw_inference::RawClassifier>>>,
     raw_detectors: Mutex<BTreeMap<String, yolo::RawDetector>>,
-    inference_gate: Mutex<()>,
+    inference_gate: Arc<Mutex<()>>,
     resource_root: PathBuf,
     map_bundle: Option<PathBuf>,
     coffee_bundle: Option<PathBuf>,
@@ -367,9 +370,9 @@ impl NativeSession {
             pipeline_subscriptions: Vec::new(),
             tasker,
             recognition_tasker,
-            raw_flash: Mutex::new(None),
+            raw_flash: Arc::new(Mutex::new(None)),
             raw_detectors: Mutex::new(BTreeMap::new()),
-            inference_gate: Mutex::new(()),
+            inference_gate: Arc::new(Mutex::new(())),
             resource_root: path,
             map_bundle: None,
             coffee_bundle: None,
@@ -599,71 +602,7 @@ impl NativeSession {
         kind: &str,
         params: &serde_json::Value,
     ) -> Result<RecognitionMeasurement> {
-        let started = Instant::now();
-        ensure!(
-            [
-                "OCR",
-                "TemplateMatch",
-                "FeatureMatch",
-                "ColorMatch",
-                "NeuralNetworkClassify",
-                "NeuralNetworkDetect"
-            ]
-            .contains(&kind),
-            "不支持的识别类型"
-        );
-        let enqueue_at = Instant::now();
-        let job =
-            self.recognition_tasker
-                .post_recognition(kind, &params.to_string(), &image.buffer)?;
-        let enqueue_us = enqueue_at.elapsed().as_micros() as u64;
-        let completion_at = Instant::now();
-        let status = job.wait();
-        ensure!(
-            status.is_success() || status == MaaStatus::FAILED,
-            "Maa 识别调用状态无效：{status}"
-        );
-        let completion_us = completion_at.elapsed().as_micros() as u64;
-        let details_at = Instant::now();
-        // SDK 返回 MaaTaskId；1.25.2 的 job.get 把它当成 MaaRecoId。
-        // 按任务 → 节点 → 识别详情读取，保持使用固定官方绑定。
-        let task = self
-            .recognition_tasker
-            .get_task_detail(job.id)?
-            .context("Maa 未返回识别任务详情")?;
-        let detail = task
-            .nodes
-            .into_iter()
-            .flatten()
-            .find_map(|node| node.recognition)
-            .context("Maa 未返回识别详情")?;
-        // 未命中可能返回 Failed，但有完整 recognition 详情，不能当作原生异常。
-        ensure!(
-            status.is_success() || !detail.hit,
-            "Maa 识别任务失败但详情报告命中"
-        );
-        // SDK 可先发布本任务的终态，随后才清除 Tasker 的运行标记。
-        // 仍持有本会话识别锁，在放行下一次识别前等待自己的任务完成收尾。
-        let idle_started = Instant::now();
-        while self.tasker.running() {
-            ensure!(
-                idle_started.elapsed() < Duration::from_secs(1),
-                "Maa 识别完成后任务器未能恢复空闲"
-            );
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        Ok(RecognitionMeasurement {
-            detail: serde_json::to_value(detail)?,
-            native_status: status.to_string(),
-            timing: RecognitionTiming {
-                session_setup_us: 0,
-                prepare_us: 0,
-                enqueue_us,
-                completion_us,
-                details_us: details_at.elapsed().as_micros() as u64,
-                total_us: started.elapsed().as_micros() as u64,
-            },
-        })
+        combat_reader::recognize_maa(&self.recognition_tasker, image, kind, params)
     }
 
     pub fn hold_key_probe(&mut self, key: i32, duration: Duration) -> Result<()> {

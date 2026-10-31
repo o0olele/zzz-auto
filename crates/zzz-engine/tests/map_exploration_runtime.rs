@@ -292,6 +292,18 @@ impl CustomControllerCallback for MapController {
 #[test]
 #[ignore = "需要固定 Maa SDK、战斗模型和生成后的 world-patrol 资源"]
 fn ambiguous_minimap_uses_world_marker_and_releases_when_stuck() -> anyhow::Result<()> {
+    check_ambiguous_minimap_uses_world_marker_and_releases_when_stuck(false)
+}
+
+#[test]
+#[ignore = "需要固定 Maa SDK、战斗模型和生成后的 world-patrol 资源"]
+fn python_ambiguous_minimap_uses_world_marker_and_releases_when_stuck() -> anyhow::Result<()> {
+    check_ambiguous_minimap_uses_world_marker_and_releases_when_stuck(true)
+}
+
+fn check_ambiguous_minimap_uses_world_marker_and_releases_when_stuck(
+    with_python: bool,
+) -> anyhow::Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()?;
@@ -327,6 +339,15 @@ fn ambiguous_minimap_uses_world_marker_and_releases_when_stuck() -> anyhow::Resu
         .map_err(anyhow::Error::msg)?;
     let mut run = ExplorationRun::new(record.id, record.daily[0].clone(), prepared, plan.game_day)?;
     run.progress.stage = "Follow".into();
+    if with_python {
+        let config = zzz_engine::python_script::DevelopmentConfig {
+            enabled: true,
+            python: "python".into(),
+            app: "map_exploration".into(),
+            settings: root.join("python-scripts/configs/map_exploration.json"),
+        };
+        run.use_python_script(&config)?;
+    }
     let control = run.control();
     let page = Arc::new(AtomicUsize::new(23));
     let events = Arc::new(Mutex::new(vec![]));
@@ -409,6 +430,16 @@ fn ambiguous_minimap_uses_world_marker_and_releases_when_stuck() -> anyhow::Resu
 #[test]
 #[ignore = "需要固定 Maa SDK、战斗模型和生成后的 world-patrol 资源"]
 fn arrives_faces_then_interacts_and_verifies_unlock() -> anyhow::Result<()> {
+    check_arrives_faces_then_interacts_and_verifies_unlock(false)
+}
+
+#[test]
+#[ignore = "需要固定 Maa SDK、战斗模型和生成后的 world-patrol 资源"]
+fn python_arrives_faces_then_interacts_and_verifies_unlock() -> anyhow::Result<()> {
+    check_arrives_faces_then_interacts_and_verifies_unlock(true)
+}
+
+fn check_arrives_faces_then_interacts_and_verifies_unlock(with_python: bool) -> anyhow::Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()?;
@@ -444,6 +475,15 @@ fn arrives_faces_then_interacts_and_verifies_unlock() -> anyhow::Result<()> {
         .map_err(anyhow::Error::msg)?;
     let mut run = ExplorationRun::new(record.id, record.daily[0].clone(), prepared, plan.game_day)?;
     run.progress.stage = "Follow".into();
+    if with_python {
+        let config = zzz_engine::python_script::DevelopmentConfig {
+            enabled: true,
+            python: "python".into(),
+            app: "map_exploration".into(),
+            settings: root.join("python-scripts/configs/map_exploration.json"),
+        };
+        run.use_python_script(&config)?;
+    }
     let control = run.control();
     let page = Arc::new(AtomicUsize::new(18));
     let events = Arc::new(Mutex::new(vec![]));
@@ -575,6 +615,18 @@ fn patrol_combat_recognition_fits_the_configured_freshness_budget() -> anyhow::R
 #[test]
 #[ignore = "需要固定 Maa SDK、战斗模型和生成后的 world-patrol 资源"]
 fn follow_holds_w_and_yields_to_stop_pause_lost_guide_or_combat() -> anyhow::Result<()> {
+    check_follow_holds_w_and_yields_to_stop_pause_lost_guide_or_combat(false)
+}
+
+#[test]
+#[ignore = "需要固定 Maa SDK、战斗模型和生成后的 world-patrol 资源"]
+fn python_follow_holds_w_and_yields_to_stop_pause_lost_guide_or_combat() -> anyhow::Result<()> {
+    check_follow_holds_w_and_yields_to_stop_pause_lost_guide_or_combat(true)
+}
+
+fn check_follow_holds_w_and_yields_to_stop_pause_lost_guide_or_combat(
+    with_python: bool,
+) -> anyhow::Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()?;
@@ -628,6 +680,15 @@ fn follow_holds_w_and_yields_to_stop_pause_lost_guide_or_combat() -> anyhow::Res
         let mut run =
             ExplorationRun::new(record.id, record.daily[0].clone(), prepared, plan.game_day)?;
         run.progress.stage = "Follow".into();
+        if with_python {
+            let config = zzz_engine::python_script::DevelopmentConfig {
+                enabled: true,
+                python: "python".into(),
+                app: "map_exploration".into(),
+                settings: root.join("python-scripts/configs/map_exploration.json"),
+            };
+            run.use_python_script(&config)?;
+        }
         let control = run.control();
         let page = Arc::new(AtomicUsize::new(6));
         let events = Arc::new(Mutex::new(vec![]));

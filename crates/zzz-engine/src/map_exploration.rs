@@ -59,6 +59,9 @@ pub struct ExplorationRun {
     arrival_turns: u8,
     arrival_steps: u8,
     battle_frames: u8,
+    python: Option<crate::python_script::ScriptProcess>,
+    python_config: Option<crate::python_script::DevelopmentConfig>,
+    script_epoch: u64,
     day: od_core::daily::GameDay,
 }
 impl ExplorationRun {
@@ -111,11 +114,38 @@ impl ExplorationRun {
             arrival_turns: 0,
             arrival_steps: 0,
             battle_frames: 0,
+            python: None,
+            python_config: None,
+            script_epoch: 0,
             day,
         })
     }
     pub fn control(&self) -> PipelineRequest {
         self.control.requester()
+    }
+    pub fn enable_development_script(&mut self) -> Result<()> {
+        if let Some(config) = crate::python_script::DevelopmentConfig::read()? {
+            self.use_python_script(&config)?;
+        }
+        Ok(())
+    }
+    pub fn use_python_script(
+        &mut self,
+        config: &crate::python_script::DevelopmentConfig,
+    ) -> Result<()> {
+        ensure!(cfg!(debug_assertions), "Python 开发入口仅供 debug 构建使用");
+        let trace = crate::python_script::DevelopmentConfig::directory()
+            .join("../artifacts/python-dev")
+            .join(self.id.to_string())
+            .join("trace.jsonl");
+        self.python.take();
+        self.python = Some(crate::python_script::ScriptProcess::launch(
+            config,
+            Some(&trace),
+        )?);
+        self.python_config = Some(config.clone());
+        self.message = format!("空洞探索 Python 开发测试；回放记录 {}", trace.display());
+        Ok(())
     }
     pub fn interrupt_requested(&self) -> Option<Interrupt> {
         self.control.requested()
@@ -160,6 +190,10 @@ impl ExplorationRun {
         self.arrival_steps = 0;
         self.battle_frames = 0;
         self.progress.state = MailState::Running;
+        self.script_epoch = self.script_epoch.saturating_add(1);
+        if let Some(config) = self.python_config.clone() {
+            self.use_python_script(&config)?;
+        }
         Ok(())
     }
     fn prepare_scan(&mut self) {
@@ -182,6 +216,12 @@ impl ExplorationRun {
         self.marker_progress = None;
         self.marker_blocked = false;
         self.marker_turns = 0;
+    }
+    fn wait_tick(cancel: &std::sync::atomic::AtomicBool) {
+        let wait = Instant::now();
+        while wait.elapsed() < Duration::from_millis(180) && !cancel.load(Ordering::Acquire) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
     fn navigation_lost(
         &mut self,
@@ -467,13 +507,14 @@ impl ExplorationRun {
                         self.target_at = Instant::now();
                         self.lost_at = None;
                         self.reset_road_navigation();
+                        self.script_epoch = self.script_epoch.saturating_add(1);
                     }
                     continue;
                 }
                 let target = self.progress.exploration.as_ref().unwrap().target;
-                let Some(sight) = session.read_map_exploration_with_guide_policy(
+                let Some(mut sight) = session.read_map_exploration_with_guide_policy(
                     target,
-                    !self.guide_untrusted,
+                    self.python.is_none() && !self.guide_untrusted,
                     &cancel,
                 )?
                 else {
@@ -554,6 +595,85 @@ impl ExplorationRun {
                     }
                 }
                 self.progress.inputs_released = false;
+                use crate::python_script::ScriptAction;
+                let script_action = if matches!(
+                    stage.as_str(),
+                    "Follow" | "CrossZone" | "FollowMarker" | "ApproachTarget"
+                ) && !self
+                    .progress
+                    .exploration
+                    .as_ref()
+                    .unwrap()
+                    .interaction_attempted
+                    && let Some(python) = self.python.as_mut()
+                {
+                    let progress = self.progress.exploration.as_ref().unwrap();
+                    let request = serde_json::json!({"context":{
+                        "epoch":format!("{:?}:{}:{}:{}:{}",target,progress.observations,progress.cargo,self.tracking_recoveries,self.script_epoch),
+                        "stage":stage,"target":if target==ExplorationTarget::Observation {"observation"} else {"cargo"},
+                            "time_ms":initial.saturating_add(started.elapsed().as_millis() as u64)},"sight":sight.script_observation(target)});
+                    let Some(decision) = python.decide(request, &cancel)? else {
+                        session.release_inputs()?;
+                        self.progress.inputs_released = true;
+                        continue;
+                    };
+                    ensure!(sight.fresh(), "Python 决策返回时截图已过期，已停止输入");
+                    let valid = match decision.action {
+                        ScriptAction::Wait | ScriptAction::Recover => true,
+                        ScriptAction::Guide => {
+                            sight.world_controls
+                                && sight.mini_map
+                                && sight.heading.is_some()
+                                && decision.guide.is_some_and(|p| {
+                                    (8.0..94.0).contains(
+                                        &od_core::world_patrol::PatrolPoint { x: 105, y: 105 }
+                                            .distance(p),
+                                    ) && (11..199).contains(&p.x)
+                                        && (11..199).contains(&p.y)
+                                })
+                        }
+                        ScriptAction::Road => {
+                            sight.world_controls
+                                && sight.heading.is_some()
+                                && sight.road_route.is_some()
+                        }
+                        ScriptAction::Marker => {
+                            sight.world_controls && sight.world_marker.is_some()
+                        }
+                        ScriptAction::Arrive => {
+                            stage != "ApproachTarget" && sight.arrival_point(target).is_some()
+                        }
+                        ScriptAction::Face => {
+                            stage == "ApproachTarget" && sight.arrival_point(target).is_some()
+                        }
+                        ScriptAction::Interact => sight.interact(target),
+                    };
+                    ensure!(
+                        valid,
+                        "Python 请求 {:?}，当前截图无法确认该动作条件",
+                        decision.action
+                    );
+                    if decision.action == ScriptAction::Guide {
+                        sight.guide = decision.guide;
+                    }
+                    Some(decision.action)
+                } else {
+                    None
+                };
+                let allowed = |action| script_action.is_none_or(|selected| selected == action);
+                if script_action == Some(ScriptAction::Wait) {
+                    session.release_inputs()?;
+                } else if script_action == Some(ScriptAction::Recover) {
+                    self.navigation_lost(session, &sight)?;
+                }
+                if matches!(
+                    script_action,
+                    Some(ScriptAction::Wait | ScriptAction::Recover)
+                ) {
+                    self.progress.inputs_released = true;
+                    Self::wait_tick(&cancel);
+                    continue;
+                }
                 match stage.as_str() {
                     "Inspect" => {
                         if let Some(cancel_button) = sight.nearby_transport_button(false) {
@@ -744,7 +864,7 @@ impl ExplorationRun {
                         }
                     }
                     "ApproachTarget" => {
-                        if sight.interact(target) {
+                        if sight.interact(target) && allowed(ScriptAction::Interact) {
                             session.release_inputs()?;
                             self.progress
                                 .exploration
@@ -764,7 +884,7 @@ impl ExplorationRun {
                                     .interaction_attempted = false;
                                 self.progress.stage = "ApproachTarget".into();
                             }
-                        } else {
+                        } else if allowed(ScriptAction::Face) {
                             ensure!(
                                 self.arrival_turns < 8 && self.arrival_steps < 3,
                                 "已到目标附近并调整人物朝向，但仍未出现该目标的 F 交互提示"
@@ -805,7 +925,7 @@ impl ExplorationRun {
                             if self.stage_at.elapsed() > Duration::from_secs(5) {
                                 self.progress.stage = "Verify".into();
                             }
-                        } else if sight.interact(target) {
+                        } else if sight.interact(target) && allowed(ScriptAction::Interact) {
                             session.release_inputs()?;
                             self.progress
                                 .exploration
@@ -825,19 +945,25 @@ impl ExplorationRun {
                                     .interaction_attempted = false;
                                 self.progress.stage = "Follow".into();
                             }
-                        } else if sight.arrival_point(target).is_some() {
+                        } else if sight.arrival_point(target).is_some()
+                            && allowed(ScriptAction::Arrive)
+                        {
                             session.release_inputs()?;
                             session.reset_patrol_steering();
                             self.arrival_turns = 0;
                             self.arrival_steps = 0;
                             self.progress.stage = "ApproachTarget".into();
-                        } else if sight.guide.is_some() && sight.heading.is_some() {
+                        } else if sight.guide.is_some()
+                            && sight.heading.is_some()
+                            && allowed(ScriptAction::Guide)
+                        {
                             self.lost_at = None;
                             self.reset_road_navigation();
                             self.progress.stage = "Follow".into();
                             session.exploration_walk(&sight, &cancel)?;
                         } else if let Some(route) = &sight.road_route
                             && sight.heading.is_some()
+                            && allowed(ScriptAction::Road)
                         {
                             self.reset_marker_navigation();
                             ensure!(
@@ -861,7 +987,9 @@ impl ExplorationRun {
                                 self.progress.stage = "CrossZone".into();
                                 session.exploration_walk(&sight, &cancel)?;
                             }
-                        } else if let Some(marker) = sight.world_marker {
+                        } else if let Some(marker) = sight.world_marker
+                            && allowed(ScriptAction::Marker)
+                        {
                             let elapsed = self
                                 .marker_started
                                 .get_or_insert_with(Instant::now)
@@ -964,11 +1092,7 @@ impl ExplorationRun {
                     session.release_inputs()?;
                     self.progress.inputs_released = true;
                 }
-                let wait = Instant::now();
-                while wait.elapsed() < Duration::from_millis(180) && !cancel.load(Ordering::Acquire)
-                {
-                    std::thread::sleep(Duration::from_millis(5));
-                }
+                Self::wait_tick(&cancel);
             }
         })();
         let release = slot.as_mut().map_or(Ok(()), |s| s.quiesce());

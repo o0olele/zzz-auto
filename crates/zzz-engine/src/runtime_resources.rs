@@ -968,7 +968,8 @@ pub fn preview_change(
     let mut selection = read_selection(&root)?;
     let expected = match request {
         RuntimeResourceRequest::Activate { revision, .. }
-        | RuntimeResourceRequest::Rollback { revision } => revision,
+        | RuntimeResourceRequest::Rollback { revision }
+        | RuntimeResourceRequest::UseBundled { revision } => revision,
         RuntimeResourceRequest::Discover { .. }
         | RuntimeResourceRequest::Refresh
         | RuntimeResourceRequest::Download { .. }
@@ -993,6 +994,15 @@ pub fn preview_change(
             ensure!(selection.can_rollback, "没有可回滚的上一版本");
             target(&root, bundled, selection.previous.as_deref())?;
             std::mem::swap(&mut selection.current, &mut selection.previous);
+        }
+        RuntimeResourceRequest::UseBundled { .. } => {
+            // 恢复目标必须完整有效；当前及上一独立版本均损坏时也允许显式恢复。
+            // 旧包原样保留，不修改其中的清单、目录或资源字节。
+            target(&root, bundled, None)?;
+            if let Some(current) = selection.current.take() {
+                selection.previous = Some(current);
+                selection.can_rollback = true;
+            }
         }
         RuntimeResourceRequest::Discover { .. }
         | RuntimeResourceRequest::Refresh

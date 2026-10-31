@@ -26,8 +26,8 @@ cargo(['run', '--locked', '-p', 'od-tools', '--', 'coffee-run-bundle', '--refere
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'basic-daily-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
-cargo(['run', '--locked', '-p', 'od-tools', '--', 'lost-void-scene-bundle', '--reference',
-  process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
+// 迷失之地运行资源已留档在本仓，不依赖参考仓当前的 Python 源码。
+cargo(['run', '--locked', '-p', 'od-tools', '--', 'lost-void-scene-bundle']);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'suibian-temple-bundle', '--reference',
   process.env.ZZZ_AUTO_REFERENCE ?? path.join(root, '../ZenlessZoneZero-OneDragon')]);
 cargo(['run', '--locked', '-p', 'od-tools', '--', 'world-patrol-bundle', '--reference',

@@ -90,6 +90,11 @@ enum InnerEnd {
     Normal(NormalBattleResult),
     Yielded,
 }
+struct CombatLoopOptions<'a> {
+    allow_audio: bool,
+    check_end: bool,
+    worker: Option<&'a mut crate::combat_worker::CombatWorker>,
+}
 
 pub struct CombatRun {
     pub id: Uuid,
@@ -173,6 +178,47 @@ impl CombatRun {
         self.sequence = None;
         self.end_tracker.reset_confirmation();
         Ok(())
+    }
+    /// 慢帧撤销视觉判断和动作，不能抹掉已经执行的 BUFF、连招计数及场景冷却。
+    fn refresh_observation(&mut self, pending: &mut Vec<StateUpdate>) -> Result<()> {
+        for update in pending.iter().filter(|s| s.name.starts_with("自定义-")) {
+            self.scheduler.states.apply(update)?;
+        }
+        pending.clear();
+        self.scheduler.refresh_observation();
+        Ok(())
+    }
+    /// 漏识别保留已确认队伍；仅在可见槽位符合其循环顺序时继续按名字切人。
+    fn observe_team(&mut self, observed: &[String]) -> bool {
+        let unique: std::collections::BTreeSet<_> =
+            observed.iter().filter(|name| !name.is_empty()).collect();
+        if unique.is_empty()
+            || unique.len() != observed.iter().filter(|name| !name.is_empty()).count()
+        {
+            return false;
+        }
+        if unique.len() == observed.len() && observed.len() >= self.progress.team.len() {
+            self.progress.team = observed.to_vec();
+            return true;
+        }
+        let Some(front) = observed.first().filter(|name| !name.is_empty()) else {
+            return false;
+        };
+        let Some(offset) = self.progress.team.iter().position(|name| name == front) else {
+            return false;
+        };
+        let mut ordered = self.progress.team.clone();
+        ordered.rotate_left(offset);
+        if observed.len() > ordered.len()
+            || observed
+                .iter()
+                .enumerate()
+                .any(|(position, name)| !name.is_empty() && name != &ordered[position])
+        {
+            return false;
+        }
+        self.progress.team = ordered;
+        true
     }
     fn intervals(&mut self) -> Result<BTreeMap<String, f64>> {
         let mut result = BTreeMap::new();
@@ -472,8 +518,80 @@ impl CombatRun {
             Duration,
         ) -> Result<CombatFrameGate>,
     ) -> Result<Option<InnerEnd>> {
+        if !self.parented && !check_end && self.patrol_ui_timeout.is_none() {
+            recognizer.reset();
+            let worker = crate::combat_worker::CombatWorker::new(
+                native.combat_reader(recognizer)?,
+                recognizer.clone(),
+            )?;
+            self.execute_with_worker(native, recognizer, allow_audio, publish, guard, worker)
+        } else {
+            self.execute_loop(
+                native,
+                recognizer,
+                publish,
+                guard,
+                CombatLoopOptions {
+                    allow_audio,
+                    check_end,
+                    worker: None,
+                },
+            )
+        }
+    }
+    fn execute_with_worker(
+        &mut self,
+        native: &mut NativeSession,
+        recognizer: &mut CombatRecognizer,
+        allow_audio: bool,
+        publish: &mut impl FnMut(CombatProgress) -> Result<()>,
+        guard: &mut impl FnMut(
+            &NativeSession,
+            &CombatRecognizer,
+            &CombatFrame,
+            Duration,
+        ) -> Result<CombatFrameGate>,
+        mut worker: crate::combat_worker::CombatWorker,
+    ) -> Result<Option<InnerEnd>> {
+        let result = self.execute_loop(
+            native,
+            recognizer,
+            publish,
+            guard,
+            CombatLoopOptions {
+                allow_audio,
+                check_end: false,
+                worker: Some(&mut worker),
+            },
+        );
+        // 输入先释放，再等待在途识别；慢推理不能拖长持有按键。
+        let released = native.release_inputs();
+        let state = worker.finish();
+        released?;
+        *recognizer = state?;
+        result
+    }
+    fn execute_loop(
+        &mut self,
+        native: &mut NativeSession,
+        recognizer: &mut CombatRecognizer,
+        publish: &mut impl FnMut(CombatProgress) -> Result<()>,
+        guard: &mut impl FnMut(
+            &NativeSession,
+            &CombatRecognizer,
+            &CombatFrame,
+            Duration,
+        ) -> Result<CombatFrameGate>,
+        options: CombatLoopOptions<'_>,
+    ) -> Result<Option<InnerEnd>> {
+        let CombatLoopOptions {
+            allow_audio,
+            check_end,
+            mut worker,
+        } = options;
         native.check_combat_input_mode(self.progress.config.mode)?;
         recognizer.reset();
+        self.progress.team.clear();
         for prefix in [
             "前台-",
             "后台-1-",
@@ -567,6 +685,7 @@ impl CombatRun {
         let mut until = None;
         let mut next_frame = 0.0;
         let mut recognition_seconds = 0.0_f64;
+        let mut capture_seconds = 0.0_f64;
         let mut last_fresh = None;
         let mut refresh_pending = false;
         let mut last_publish = 0.0;
@@ -574,8 +693,10 @@ impl CombatRun {
         let mut last_turn = 0.0;
         let mut last_audio = -1.0;
         let mut last_ultimate = -2.0;
+        let mut flash_dispatch_until = 0.0;
         let mut pending_states = Vec::new();
         let mut observation = CombatObservation::default();
+        let mut team_ready = false;
         let mut patrol_visible_frames = 0_u8;
         let mut patrol_last_hud = Instant::now();
         self.progress.inputs_released = false;
@@ -603,13 +724,79 @@ impl CombatRun {
                 || (matches!(
                     queue.front(),
                     Some(Step::Button(_, false) | Step::ReleaseTurn)
-                ) && until
-                    .is_none_or(|deadline| deadline - now <= recognition_seconds.max(0.005)));
-            if now >= next_frame && !release_due {
-                let recognition_started = Instant::now();
-                let frame_at = now;
-                let Some(mut frame) = native.combat_frame(&cancel)? else {
+                ) && until.is_none_or(|deadline| {
+                    let blocking = if worker.is_some() {
+                        (capture_seconds + 0.005).max(0.02)
+                    } else {
+                        recognition_seconds.max(0.005)
+                    };
+                    deadline - now <= blocking
+                }));
+            let asynchronous = worker.is_some();
+            let mut completed = None;
+            if let Some(background) = worker.as_mut() {
+                let mut early = Vec::new();
+                completed = background.poll(&mut early)?;
+                for flash in early {
+                    if flash.captured.elapsed().as_millis()
+                        <= u128::from(self.progress.config.max_frame_age_ms)
+                    {
+                        pending_states.extend(flash.states);
+                        last_fresh = Some(flash.at);
+                        refresh_pending = false;
+                        self.progress.in_battle = true;
+                        flash_dispatch_until =
+                            self.elapsed + started.elapsed().as_secs_f64() + 0.02;
+                    }
+                }
+                // 先消费已完成结果，避免新截图再次延后闪光事件的调度。
+                let input_ready = until.is_none()
+                    && matches!(
+                        queue.front(),
+                        Some(Step::Button(_, _) | Step::ClearInputs | Step::ReleaseTurn)
+                    );
+                if completed.is_none()
+                    && now >= next_frame
+                    && !release_due
+                    && !input_ready
+                    && !(now < flash_dispatch_until && until.is_none())
+                {
+                    let capture_started = Instant::now();
+                    let Some(frame) = native.combat_frame(&cancel)? else {
+                        return Ok(None);
+                    };
+                    capture_seconds = capture_started.elapsed().as_secs_f64();
+                    background.capture(frame, now);
+                    next_frame = now + self.progress.config.frame_interval_ms as f64 / 1000.0;
+                }
+                if background.needs_submission() {
+                    let mut intervals = self.intervals()?;
+                    intervals.insert("flash_enabled".into(), f64::from(flash_enabled));
+                    background.submit(intervals, recognition_dodge_only)?;
+                }
+                now = self.elapsed + started.elapsed().as_secs_f64();
+                if self.control.requested().is_some() {
                     return Ok(None);
+                }
+                ensure!(
+                    self.parent_deadline
+                        .is_none_or(|deadline| Instant::now() < deadline),
+                    "应用总运行预算已耗尽"
+                );
+                ensure!(
+                    now * 1000.0 < self.progress.config.timeout_ms as f64,
+                    "战斗运行达到超时上限"
+                );
+            }
+            if completed.is_some() || (!asynchronous && now >= next_frame && !release_due) {
+                let recognition_started = Instant::now();
+                let (mut frame, frame_at, prefetched) = if let Some(result) = completed {
+                    (result.frame, result.at, Some(result.observation))
+                } else {
+                    let Some(frame) = native.combat_frame(&cancel)? else {
+                        return Ok(None);
+                    };
+                    (frame, now, None)
                 };
                 self.progress.frames += 1;
                 if self.control.requested().is_some() {
@@ -651,13 +838,7 @@ impl CombatRun {
                     queue.clear();
                     until = None;
                     if gate == CombatFrameGate::Refresh {
-                        // 已执行的状态操作可能尚待下一次 tick 合并；只提交其自定义更新。
-                        for update in pending_states
-                            .iter()
-                            .filter(|s: &&StateUpdate| s.name.starts_with("自定义-"))
-                        {
-                            self.scheduler.states.apply(update)?;
-                        }
+                        self.refresh_observation(&mut pending_states)?;
                     }
                     pending_states.clear();
                     if let Some((capture, detector)) = &mut audio {
@@ -665,7 +846,6 @@ impl CombatRun {
                         detector.reset();
                     }
                     if gate == CombatFrameGate::Refresh {
-                        self.scheduler.refresh_observation();
                         refresh_pending = true;
                     } else {
                         self.scheduler.pause();
@@ -673,6 +853,7 @@ impl CombatRun {
                         refresh_pending = false;
                     }
                     self.sequence = None;
+                    team_ready = false;
                     last_fresh = None;
                     self.progress.in_battle = false;
                     self.progress.inputs_released = true;
@@ -715,14 +896,18 @@ impl CombatRun {
                 }
                 let mut intervals = self.intervals()?;
                 intervals.insert("flash_enabled".into(), f64::from(flash_enabled));
-                let fresh = recognizer.observe(
-                    native,
-                    &frame,
-                    frame_at,
-                    &intervals,
-                    recognition_dodge_only,
-                    &cancel,
-                )?;
+                let fresh = if let Some(observation) = prefetched {
+                    observation
+                } else {
+                    recognizer.observe(
+                        native,
+                        &frame,
+                        frame_at,
+                        &intervals,
+                        recognition_dodge_only,
+                        &cancel,
+                    )?
+                };
                 if self.control.requested().is_some() {
                     return Ok(None);
                 }
@@ -787,21 +972,19 @@ impl CombatRun {
                 }
                 now = self.elapsed + started.elapsed().as_secs_f64();
                 recognition_seconds = recognition_started.elapsed().as_secs_f64();
-                next_frame = now + self.progress.config.frame_interval_ms as f64 / 1000.0;
+                if !asynchronous {
+                    next_frame = frame_at + self.progress.config.frame_interval_ms as f64 / 1000.0;
+                }
                 if frame.age_ms() > self.progress.config.max_frame_age_ms {
                     self.progress.stale_frames += 1;
                     native.release_inputs()?;
                     ledger.clear();
                     queue.clear();
                     until = None;
-                    pending_states.clear();
-                    if refresh_pending {
-                        self.scheduler.refresh_observation();
-                    } else {
-                        self.scheduler.pause();
-                        self.scheduler.resume();
-                    }
+                    self.refresh_observation(&mut pending_states)?;
+                    refresh_pending = true;
                     self.sequence = None;
+                    team_ready = false;
                     last_fresh = None;
                     self.progress.in_battle = false;
                 } else {
@@ -825,7 +1008,7 @@ impl CombatRun {
                     pending_states.extend(fresh.states.iter().cloned());
                     self.progress.in_battle = fresh.in_battle;
                     if !fresh.team.is_empty() {
-                        self.progress.team = fresh.team.clone();
+                        team_ready = self.observe_team(&fresh.team);
                     }
                     last_fresh = (fresh.in_battle
                         || fresh.states.iter().any(|s| {
@@ -874,10 +1057,11 @@ impl CombatRun {
                     until = None;
                 }
                 if !refresh_pending {
-                    self.scheduler.pause();
-                    self.scheduler.resume();
+                    self.refresh_observation(&mut pending_states)?;
+                    refresh_pending = true;
                 }
                 self.sequence = None;
+                team_ready = false;
                 pending_states.clear();
             } else {
                 let decision = self
@@ -987,6 +1171,13 @@ impl CombatRun {
                                     time_add: None,
                                     clear: false,
                                 });
+                                if name.starts_with("切换角色-") || name.starts_with("连携技-")
+                                {
+                                    recognizer.refresh_agents();
+                                    if let Some(background) = worker.as_mut() {
+                                        background.refresh_agents();
+                                    }
+                                }
                                 let team = &mut self.progress.team;
                                 if team.len() > 1 {
                                     if name == "切换角色-下一个" {
@@ -1004,7 +1195,6 @@ impl CombatRun {
                                     }
                                     if name.starts_with("切换角色-") || name.starts_with("连携技-")
                                     {
-                                        recognizer.refresh_agents();
                                         for (position, name) in team.iter().enumerate() {
                                             if let Some(agent) = recognizer
                                                 .bundle
@@ -1111,23 +1301,40 @@ impl CombatRun {
                                     }
                                 }
                                 Action::SwitchAgent { name } => {
-                                    let index = self
-                                        .progress
-                                        .team
-                                        .iter()
-                                        .position(|n| n == &name)
-                                        .context(format!("切换目标 {name} 不在已识别队伍中"))?;
-                                    if index > 0 {
-                                        queue.push_front(Step::Action(Action::Button {
-                                            name: if index == 1 {
-                                                "切换角色-下一个"
-                                            } else {
-                                                "切换角色-上一个"
-                                            }
-                                            .into(),
-                                            way: ButtonWay::Tap,
-                                            press: None,
-                                        }));
+                                    let index = team_ready
+                                        .then(|| self.progress.team.iter().position(|n| n == &name))
+                                        .flatten();
+                                    if let Some(index) = index {
+                                        if index > 0 {
+                                            queue.push_front(Step::Action(Action::Button {
+                                                name: if index == 1 {
+                                                    "切换角色-下一个"
+                                                } else {
+                                                    "切换角色-上一个"
+                                                }
+                                                .into(),
+                                                way: ButtonWay::Tap,
+                                                press: None,
+                                            }));
+                                        }
+                                    } else {
+                                        // 目标身份或方向尚不可靠，不能继续队列里的攻击动作。
+                                        native.release_inputs()?;
+                                        ledger.clear();
+                                        queue.clear();
+                                        until = None;
+                                        self.refresh_observation(&mut pending_states)?;
+                                        self.sequence = None;
+                                        last_fresh = None;
+                                        refresh_pending = true;
+                                        team_ready = false;
+                                        recognizer.refresh_agents();
+                                        if let Some(background) = worker.as_mut() {
+                                            background.refresh_agents();
+                                        }
+                                        next_frame = now;
+                                        self.message =
+                                            format!("切换目标 {name} 信息暂不完整，重新识别队伍");
                                     }
                                 }
                                 Action::QuickAssist => {
@@ -1189,5 +1396,426 @@ impl CombatRun {
             }
             std::thread::sleep(Duration::from_millis(2));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use od_core::conditional::FileTemplates;
+
+    struct SlowReader {
+        calls: std::sync::atomic::AtomicUsize,
+        busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl maa_adapter::CombatVision for SlowReader {
+        fn match_template(
+            &self,
+            _: &CombatFrame,
+            _: [i32; 4],
+            _: &maa_adapter::CombatTemplate,
+        ) -> Result<Option<f64>> {
+            if self.calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel) > 0 {
+                self.busy.store(true, std::sync::atomic::Ordering::Release);
+                std::thread::sleep(Duration::from_millis(300));
+                self.busy.store(false, std::sync::atomic::Ordering::Release);
+            }
+            Ok(Some(0.99))
+        }
+        fn recognize_prepared_cancellable(
+            &self,
+            _: &maa_adapter::RecognitionImage,
+            _: &str,
+            _: &serde_json::Value,
+            _: &maa_adapter::RawRecognitionControl,
+        ) -> Result<maa_adapter::RecognitionMeasurement> {
+            Ok(maa_adapter::RecognitionMeasurement {
+                detail: serde_json::json!({"adaptation":{"class_index":1}}),
+                native_status: "fixture-flash".into(),
+                timing: maa_adapter::RecognitionTiming {
+                    session_setup_us: 0,
+                    prepare_us: 0,
+                    enqueue_us: 0,
+                    completion_us: 0,
+                    details_us: 0,
+                    total_us: 0,
+                },
+            })
+        }
+    }
+    type TimedKeys = std::sync::Arc<std::sync::Mutex<Vec<(bool, Instant, bool)>>>;
+    struct TimedController {
+        png: Vec<u8>,
+        busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        keys: TimedKeys,
+    }
+    impl maa_adapter::CustomControllerCallback for TimedController {
+        fn connect(&self) -> bool {
+            true
+        }
+        fn request_uuid(&self) -> Option<String> {
+            Some("combat-timer-during-inference".into())
+        }
+        fn screencap(&self) -> Option<Vec<u8>> {
+            Some(self.png.clone())
+        }
+        fn key_down(&self, key: i32) -> bool {
+            if key == 69 || key == 16 {
+                self.keys.lock().unwrap().push((
+                    true,
+                    Instant::now(),
+                    self.busy.load(std::sync::atomic::Ordering::Acquire),
+                ));
+            }
+            true
+        }
+        fn key_up(&self, key: i32) -> bool {
+            if key == 69 || key == 16 {
+                self.keys.lock().unwrap().push((
+                    false,
+                    Instant::now(),
+                    self.busy.load(std::sync::atomic::Ordering::Acquire),
+                ));
+            }
+            true
+        }
+    }
+
+    #[test]
+    #[ignore = "需要固定 Maa SDK、战斗资源及固定截图；只使用模拟控制器"]
+    fn slow_recognition_does_not_delay_timed_release_or_stop_cleanup() -> Result<()> {
+        use base64::Engine;
+        use std::sync::{Arc, Mutex, atomic::AtomicBool};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()?;
+        maa_adapter::load_sdk(
+            &root.join("sdk/maa/bin"),
+            &root.join("artifacts/combat-timer-logs"),
+        )?;
+        let png = {
+            let fixture = NativeSession::for_fixture(
+                &root.join("zzz-od-test/screens/战斗画面/默认.webp"),
+                &root.join("resources/generated/combat"),
+                maa_adapter::InferenceDevice::Cpu,
+            )?;
+            base64::engine::general_purpose::STANDARD.decode(fixture.screenshot()?.png_base64)?
+        };
+        for way in [ButtonWay::Tap, ButtonWay::Down] {
+            let busy = Arc::new(AtomicBool::new(false));
+            let keys: TimedKeys = Arc::new(Mutex::new(Vec::new()));
+            let mut native = NativeSession::for_custom_controller(
+                TimedController {
+                    png: png.clone(),
+                    busy: busy.clone(),
+                    keys: keys.clone(),
+                },
+                &root.join("resources/generated/combat"),
+                od_core::InputMode::Foreground,
+            )?;
+            let mut recognizer =
+                native.load_combat_bundle(&root.join("resources/generated/combat"))?;
+            let mut script = Script::parse(
+                "timer",
+                "timer.yml",
+                r#"
+auto_lock_interval: -1
+auto_turn_interval: -1
+scenes:
+  - handlers:
+      - states: "[按键可用-普通攻击]"
+        operations:
+          - op_name: 等待秒数
+            seconds: 0.04
+          - op_name: 按键-特殊攻击
+          - op_name: 等待秒数
+            seconds: 1
+"#,
+                &FileTemplates {
+                    root: root.join("resources/generated/combat/scripts"),
+                },
+            )?;
+            script.scenes[0].handlers[0].actions[1] = Action::Button {
+                name: "特殊攻击".into(),
+                way,
+                press: None,
+            };
+            let mut run = CombatRun::new(
+                Uuid::new_v4(),
+                CombatConfig {
+                    start_delay_ms: 0,
+                    timeout_ms: 3000,
+                    ..Default::default()
+                },
+                script,
+            )?;
+            let control = run.control();
+            let worker = crate::combat_worker::CombatWorker::new(
+                SlowReader {
+                    calls: 0.into(),
+                    busy: busy.clone(),
+                },
+                recognizer.clone(),
+            )?;
+            run.execute_with_worker(
+                &mut native,
+                &mut recognizer,
+                false,
+                &mut |_| {
+                    let events = keys.lock().unwrap();
+                    if (way == ButtonWay::Down && events.iter().any(|e| e.0))
+                        || (way == ButtonWay::Tap && events.iter().any(|e| !e.0))
+                    {
+                        control.stop();
+                    }
+                    Ok(())
+                },
+                &mut |_, _, _, _| Ok(CombatFrameGate::Proceed),
+                worker,
+            )?;
+            let events = keys.lock().unwrap();
+            let down = events.iter().find(|e| e.0).context("未发送按下")?;
+            let up = events.iter().find(|e| !e.0).context("未释放按键")?;
+            let hold_ms = (up.1 - down.1).as_millis();
+            eprintln!(
+                "{way:?}: 持有 {hold_ms}ms，按下/释放时识别在途 {}/{}",
+                down.2, up.2
+            );
+            assert!(down.2 && up.2, "按下和释放均须发生在慢识别尚未结束时");
+            if way == ButtonWay::Tap {
+                assert!(hold_ms >= 20, "计时点按不能提前松开");
+                assert!(hold_ms < 100, "20ms 点按不能被 300ms 识别拖住");
+            }
+            assert!(
+                !busy.load(std::sync::atomic::Ordering::Acquire),
+                "返回前必须等待工作线程结束"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "需要固定 Maa SDK、战斗资源及固定截图；只使用模拟控制器"]
+    fn flash_is_dispatched_before_slow_agent_recognition_finishes() -> Result<()> {
+        use base64::Engine;
+        use std::sync::{Arc, Mutex, atomic::AtomicBool};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()?;
+        maa_adapter::load_sdk(
+            &root.join("sdk/maa/bin"),
+            &root.join("artifacts/combat-timer-logs"),
+        )?;
+        let png = {
+            let fixture = NativeSession::for_fixture(
+                &root.join("zzz-od-test/screens/战斗画面/默认.webp"),
+                &root.join("resources/generated/combat"),
+                maa_adapter::InferenceDevice::Cpu,
+            )?;
+            base64::engine::general_purpose::STANDARD.decode(fixture.screenshot()?.png_base64)?
+        };
+        let busy = Arc::new(AtomicBool::new(false));
+        let keys: TimedKeys = Arc::new(Mutex::new(Vec::new()));
+        let mut native = NativeSession::for_custom_controller(
+            TimedController {
+                png,
+                busy: busy.clone(),
+                keys: keys.clone(),
+            },
+            &root.join("resources/generated/combat"),
+            od_core::InputMode::Foreground,
+        )?;
+        let mut recognizer = native.load_combat_bundle(&root.join("resources/generated/combat"))?;
+        let script = Script::parse(
+            "early-flash",
+            "early-flash.yml",
+            r#"
+auto_lock_interval: -1
+auto_turn_interval: -1
+scenes:
+  - triggers: [闪避识别-红光]
+    priority: 99
+    handlers:
+      - states: "[闪避识别-红光]"
+        operations:
+          - op_name: 按键-闪避
+  - handlers:
+      - states: "[前台-露西]"
+        operations:
+          - op_name: 等待秒数
+            seconds: 1
+"#,
+            &FileTemplates {
+                root: root.join("resources/generated/combat/scripts"),
+            },
+        )?;
+        let mut run = CombatRun::new(
+            Uuid::new_v4(),
+            CombatConfig {
+                start_delay_ms: 0,
+                timeout_ms: 3000,
+                ..Default::default()
+            },
+            script,
+        )?;
+        let control = run.control();
+        let worker = crate::combat_worker::CombatWorker::new(
+            SlowReader {
+                calls: 0.into(),
+                busy: busy.clone(),
+            },
+            recognizer.clone(),
+        )?;
+        run.execute_with_worker(
+            &mut native,
+            &mut recognizer,
+            false,
+            &mut |progress| {
+                if keys.lock().unwrap().iter().any(|e| !e.0) {
+                    assert_eq!(progress.frames, 0, "首个完整识别尚未结束时应已响应闪光");
+                    control.stop();
+                }
+                Ok(())
+            },
+            &mut |_, _, _, _| Ok(CombatFrameGate::Proceed),
+            worker,
+        )?;
+        let events = keys.lock().unwrap();
+        assert_eq!(
+            events.iter().filter(|e| e.0).count(),
+            1,
+            "同一闪光不能被完整结果重复触发"
+        );
+        assert!(events.iter().all(|e| e.2), "闪避输入不能等慢头像识别结束");
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "需要固定 Maa SDK、战斗资源及固定截图；只使用模拟控制器"]
+    fn worker_drops_old_epoch_and_keeps_only_latest_pending_frame() -> Result<()> {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()?;
+        maa_adapter::load_sdk(
+            &root.join("sdk/maa/bin"),
+            &root.join("artifacts/combat-timer-logs"),
+        )?;
+        let bundle = maa_adapter::combat_vision::CombatBundle::load(
+            &root.join("resources/generated/combat"),
+        )?;
+        let native = NativeSession::for_fixture(
+            &root.join("zzz-od-test/screens/战斗画面/默认.webp"),
+            &bundle.root,
+            maa_adapter::InferenceDevice::Cpu,
+        )?;
+        let busy = Arc::new(AtomicBool::new(false));
+        let mut worker = crate::combat_worker::CombatWorker::new(
+            SlowReader {
+                calls: 1.into(),
+                busy: busy.clone(),
+            },
+            CombatRecognizer::new(bundle),
+        )?;
+        let cancel = AtomicBool::new(false);
+        let intervals = BTreeMap::from([("flash_enabled".into(), 0.0)]);
+        worker.capture(native.combat_frame(&cancel)?.unwrap(), 0.0);
+        worker.submit(intervals.clone(), true)?;
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !busy.load(Ordering::Acquire) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(busy.load(Ordering::Acquire));
+        worker.refresh_agents();
+        worker.capture(native.combat_frame(&cancel)?.unwrap(), 1.0);
+        worker.capture(native.combat_frame(&cancel)?.unwrap(), 2.0);
+        let observed = loop {
+            ensure!(Instant::now() < deadline, "等待新代际识别超时");
+            if let Some(frame) = worker.poll(&mut Vec::new())? {
+                break frame;
+            }
+            worker.submit(intervals.clone(), true)?;
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        assert_eq!(observed.at, 2.0, "旧代际与被覆盖的待识别帧均不能回放");
+        worker.capture(native.combat_frame(&cancel)?.unwrap(), 3.0);
+        worker.submit(BTreeMap::from([("flash_enabled".into(), 1.0)]), true)?;
+        let mut early = Vec::new();
+        let completed = loop {
+            ensure!(Instant::now() < deadline, "等待闪光结果超时");
+            if let Some(frame) = worker.poll(&mut early)? {
+                break frame;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        assert_eq!(early.len(), 1, "一帧闪光只提前投递一次");
+        assert!(early[0].states.iter().any(|s| s.name == "闪避识别-红光"));
+        assert!(
+            !completed
+                .observation
+                .states
+                .iter()
+                .any(|s| s.name == "闪避识别-红光"),
+            "完整结果不能再次触发已经投递的闪光"
+        );
+        worker.finish()?;
+        Ok(())
+    }
+
+    fn run() -> Result<CombatRun> {
+        let script = Script::parse(
+            "team-test",
+            "team-test.yml",
+            r#"
+scenes:
+  - handlers:
+      - states: ""
+        operations:
+          - op_name: 等待秒数
+            seconds: 0.02
+"#,
+            &FileTemplates {
+                root: std::path::PathBuf::new(),
+            },
+        )?;
+        CombatRun::new(Uuid::new_v4(), CombatConfig::default(), script)
+    }
+    fn names(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn partial_portraits_preserve_known_quick_assist_members() -> Result<()> {
+        let mut run = run()?;
+        assert!(run.observe_team(&names(&["露西", "叶瞬光", "照"])));
+        assert!(run.observe_team(&names(&["露西", "", ""])));
+        assert_eq!(run.progress.team, names(&["露西", "叶瞬光", "照"]));
+        // 兼容只报告前台的旧观察，不能将已有三人队伍覆盖成单人。
+        assert!(run.observe_team(&names(&["露西"])));
+        assert_eq!(run.progress.team, names(&["露西", "叶瞬光", "照"]));
+        assert!(run.observe_team(&names(&["照", "", "叶瞬光"])));
+        assert_eq!(run.progress.team, names(&["照", "露西", "叶瞬光"]));
+        Ok(())
+    }
+
+    #[test]
+    fn unknown_or_conflicting_slots_do_not_authorize_a_named_switch() -> Result<()> {
+        let mut run = run()?;
+        assert!(!run.observe_team(&names(&["露西", "", ""])));
+        assert!(run.progress.team.is_empty());
+        assert!(run.observe_team(&names(&["露西", "叶瞬光", "照"])));
+        for observed in [
+            names(&["", "叶瞬光", "照"]),
+            names(&["露西", "照", ""]),
+            names(&["露西", "露西", "照"]),
+            names(&["千夏", "", ""]),
+        ] {
+            assert!(!run.observe_team(&observed));
+            assert_eq!(run.progress.team, names(&["露西", "叶瞬光", "照"]));
+        }
+        Ok(())
     }
 }

@@ -5,18 +5,15 @@ use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::Path};
 
 pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Value> {
-    for path in [reference, models, output] {
+    for path in [reference, output] {
         od_core::config::reject_links(path)?;
     }
     let reference = reference.canonicalize()?;
-    let models = models.canonicalize()?;
     let output = crate::mail::resolved_output(output)?;
-    for source in [&reference, &models] {
-        ensure!(
-            !output.starts_with(source) && !source.starts_with(&output),
-            "迷失之地画面资源来源与输出不能重叠"
-        );
-    }
+    ensure!(
+        !output.starts_with(&reference) && !reference.starts_with(&output),
+        "迷失之地画面资源来源与输出不能重叠"
+    );
     let sources: Value = serde_json::from_str(include_str!(
         "../../../resources/lost-void/screen-source-lock.json"
     ))?;
@@ -37,8 +34,6 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
         };
         ensure!(source["sha256"] == digest, "迷失之地画面来源已变化：{name}");
     }
-    let mut files = BTreeMap::<String, Vec<u8>>::new();
-    let local_source = od_core::lost_void_loading::lore_source();
     for (name, raw, mask) in od_core::lost_void_settlement::reward_sources() {
         for (kind, bytes) in [("raw", raw), ("mask", mask)] {
             ensure!(
@@ -50,11 +45,6 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
             );
         }
     }
-    ensure!(
-        local_source["asset_sha256"]
-            == hex::encode(Sha256::digest(od_core::lost_void_loading::lore_logo())),
-        "加载标识与留档来源摘要不一致"
-    );
     for (name, raw, mask) in od_core::random_play::source_images()
         .into_iter()
         .filter(|(name, _, _)| name.starts_with("avatar_"))
@@ -69,6 +59,31 @@ pub fn build_bundle(reference: &Path, models: &Path, output: &Path) -> Result<Va
             );
         }
     }
+    build_embedded_bundle(models, &output)
+}
+
+/// 使用本仓留档的模板、识别规则和来源清单；OCR 仍须匹配固定模型哈希。
+pub fn build_embedded_bundle(models: &Path, output: &Path) -> Result<Value> {
+    for path in [models, output] {
+        od_core::config::reject_links(path)?;
+    }
+    let models = models.canonicalize()?;
+    let output = crate::mail::resolved_output(output)?;
+    ensure!(
+        !output.starts_with(&models) && !models.starts_with(&output),
+        "迷失之地画面资源来源与输出不能重叠"
+    );
+    // sources 记录迁移时的历史依据，不代表读取了开发者当前的参考仓。
+    let sources: Value = serde_json::from_str(include_str!(
+        "../../../resources/lost-void/screen-source-lock.json"
+    ))?;
+    let local_source = od_core::lost_void_loading::lore_source();
+    ensure!(
+        local_source["asset_sha256"]
+            == hex::encode(Sha256::digest(od_core::lost_void_loading::lore_logo())),
+        "加载标识与留档来源摘要不一致"
+    );
+    let mut files = BTreeMap::<String, Vec<u8>>::new();
     for (name, bytes) in od_core::lost_void_scene::templates() {
         files.insert(format!("image/lost-void-scene/{name}.png"), bytes.to_vec());
     }

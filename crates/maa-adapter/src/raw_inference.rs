@@ -252,77 +252,91 @@ impl NativeSession {
         params: &Value,
         control: &RawRecognitionControl,
     ) -> Result<RecognitionMeasurement> {
-        let started = Instant::now();
-        let config = FlashConfig::parse_raw(params)?;
-        let mut cached = self
-            .raw_flash
-            .lock()
-            .map_err(|_| anyhow::anyhow!("原始闪光会话锁失效"))?;
-        let setup_at = Instant::now();
-        let session_setup_us = if cached.is_none() {
-            let root = self.combat_bundle.as_ref().unwrap_or(&self.resource_root);
-            let path = root
-                .join("model/classify")
-                .join(RAW_FLASH_MODEL)
-                .canonicalize()
-                .context("缺少固定原始闪光模型")?;
-            ensure!(path.starts_with(root), "原始闪光模型指向资源目录之外");
-            *cached = Some(RawClassifier::new(
-                &path,
-                self.inference_device,
-                self.raw_cpu_threads,
-            )?);
-            setup_at.elapsed().as_micros() as u64
-        } else {
-            0
-        };
-        let classifier = cached.as_mut().unwrap();
-        control.checkpoint(RawRecognitionPhase::Preprocessing)?;
-        let prepare_at = Instant::now();
-        let prepared = flash::prepare_flash_image(image, config.roi)?;
-        let tensor = Tensor::from_array((
-            [1, 3, 640, 640],
-            bgr_to_rgb_tensor_controlled(&prepared.bgr, [640, 640], Some(control))?,
-        ))?;
-        let prepare_us = prepare_at.elapsed().as_micros() as u64;
-        let completion_at = Instant::now();
-        let options = control.start_inference()?;
-        let output = classifier
-            .session
-            .run_with_options(ort::inputs!["images"=>tensor], &options);
-        control.end_inference(output.as_ref().err().map(ToString::to_string))?;
-        control.checkpoint(RawRecognitionPhase::Postprocessing)?;
-        let output = output?;
-        let completion_us = completion_at.elapsed().as_micros() as u64;
-        let details_at = Instant::now();
-        let (shape, scores) = output["output0"].try_extract_tensor::<f32>()?;
-        ensure!(
-            **shape == [1, 3] && scores.len() == 3,
-            "原始闪光输出张量尺寸无效"
-        );
-        let scores: [f32; 3] = scores.try_into()?;
-        let mut detail = raw_flash_decision(scores, &config)?;
-        detail["adaptation"]["runtime"] = serde_json::to_value(&classifier.runtime)?;
-        detail["adaptation"]["threading"] = raw_threading(classifier.device, self.raw_cpu_threads)?;
-        detail["adaptation"]["model_sha256"] = json!(classifier.sha256);
-        detail["adaptation"]["device"] = json!(format!("{:?}", classifier.device));
-        detail["adaptation"]["directml_registration_confirmed"] = match classifier.device {
-            InferenceDevice::Cpu => Value::Null,
-            InferenceDevice::DirectMl(_) => json!(true),
-        };
-        detail["adaptation"]["scaled_size"] = json!(prepared.scaled_size);
-        let details_us = details_at.elapsed().as_micros() as u64;
-        Ok(RecognitionMeasurement {
-            detail,
-            native_status: "RawInferenceSucceeded".into(),
-            timing: RecognitionTiming {
-                session_setup_us,
-                prepare_us,
-                enqueue_us: 0,
-                completion_us,
-                details_us,
-                total_us: started.elapsed().as_micros() as u64,
-            },
-        })
+        recognize_raw_flash_cached(
+            &self.raw_flash,
+            self.combat_bundle.as_ref().unwrap_or(&self.resource_root),
+            self.inference_device,
+            self.raw_cpu_threads,
+            image,
+            params,
+            control,
+        )
     }
+}
+
+pub(crate) fn recognize_raw_flash_cached(
+    cache: &Mutex<Option<RawClassifier>>,
+    root: &Path,
+    device: InferenceDevice,
+    cpu_threads: usize,
+    image: &RecognitionImage,
+    params: &Value,
+    control: &RawRecognitionControl,
+) -> Result<RecognitionMeasurement> {
+    let started = Instant::now();
+    let config = FlashConfig::parse_raw(params)?;
+    let mut cached = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("原始闪光会话锁失效"))?;
+    let setup_at = Instant::now();
+    let session_setup_us = if cached.is_none() {
+        let path = root
+            .join("model/classify")
+            .join(RAW_FLASH_MODEL)
+            .canonicalize()
+            .context("缺少固定原始闪光模型")?;
+        ensure!(path.starts_with(root), "原始闪光模型指向资源目录之外");
+        *cached = Some(RawClassifier::new(&path, device, cpu_threads)?);
+        setup_at.elapsed().as_micros() as u64
+    } else {
+        0
+    };
+    let classifier = cached.as_mut().unwrap();
+    control.checkpoint(RawRecognitionPhase::Preprocessing)?;
+    let prepare_at = Instant::now();
+    let prepared = flash::prepare_flash_image(image, config.roi)?;
+    let tensor = Tensor::from_array((
+        [1, 3, 640, 640],
+        bgr_to_rgb_tensor_controlled(&prepared.bgr, [640, 640], Some(control))?,
+    ))?;
+    let prepare_us = prepare_at.elapsed().as_micros() as u64;
+    let completion_at = Instant::now();
+    let options = control.start_inference()?;
+    let output = classifier
+        .session
+        .run_with_options(ort::inputs!["images"=>tensor], &options);
+    control.end_inference(output.as_ref().err().map(ToString::to_string))?;
+    control.checkpoint(RawRecognitionPhase::Postprocessing)?;
+    let output = output?;
+    let completion_us = completion_at.elapsed().as_micros() as u64;
+    let details_at = Instant::now();
+    let (shape, scores) = output["output0"].try_extract_tensor::<f32>()?;
+    ensure!(
+        **shape == [1, 3] && scores.len() == 3,
+        "原始闪光输出张量尺寸无效"
+    );
+    let scores: [f32; 3] = scores.try_into()?;
+    let mut detail = raw_flash_decision(scores, &config)?;
+    detail["adaptation"]["runtime"] = serde_json::to_value(&classifier.runtime)?;
+    detail["adaptation"]["threading"] = raw_threading(classifier.device, cpu_threads)?;
+    detail["adaptation"]["model_sha256"] = json!(classifier.sha256);
+    detail["adaptation"]["device"] = json!(format!("{:?}", classifier.device));
+    detail["adaptation"]["directml_registration_confirmed"] = match classifier.device {
+        InferenceDevice::Cpu => Value::Null,
+        InferenceDevice::DirectMl(_) => json!(true),
+    };
+    detail["adaptation"]["scaled_size"] = json!(prepared.scaled_size);
+    let details_us = details_at.elapsed().as_micros() as u64;
+    Ok(RecognitionMeasurement {
+        detail,
+        native_status: "RawInferenceSucceeded".into(),
+        timing: RecognitionTiming {
+            session_setup_us,
+            prepare_us,
+            enqueue_us: 0,
+            completion_us,
+            details_us,
+            total_us: started.elapsed().as_micros() as u64,
+        },
+    })
 }

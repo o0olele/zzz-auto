@@ -1,4 +1,4 @@
-use crate::{NativeSession, RecognitionImage};
+use crate::{CombatVision, NativeSession, RecognitionImage};
 use anyhow::{Context, Result, ensure};
 use od_core::{
     combat_vision::{AgentStateDef, VisionSpec},
@@ -7,6 +7,7 @@ use od_core::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
+    cell::{Ref, RefCell},
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{
@@ -22,6 +23,7 @@ pub struct CombatBundle {
     pub scripts: Vec<String>,
     pub dodge_scripts: Vec<String>,
     masks: BTreeMap<String, Vec<u8>>,
+    templates: BTreeMap<String, crate::CombatTemplate>,
 }
 impl CombatBundle {
     pub fn load(root: &Path) -> Result<Self> {
@@ -181,19 +183,38 @@ impl CombatBundle {
                 false,
             )?)?;
         }
+        let templates = spec
+            .templates
+            .iter()
+            .map(|(key, template)| {
+                Ok((
+                    key.clone(),
+                    crate::CombatTemplate::load(
+                        &root.join(&template.image),
+                        template.mask.is_some(),
+                    )?,
+                ))
+            })
+            .collect::<Result<_>>()?;
         Ok(Self {
             root,
             spec,
             scripts,
             dodge_scripts,
             masks,
+            templates,
         })
+    }
+
+    pub fn template(&self, key: &str) -> Option<&crate::CombatTemplate> {
+        self.templates.get(key)
     }
 }
 
 pub struct CombatFrame {
     pub(crate) image: RecognitionImage,
     pub captured: Instant,
+    crops: RefCell<BTreeMap<[i32; 4], RecognitionImage>>,
 }
 impl CombatFrame {
     pub fn recognition_image(&self) -> &RecognitionImage {
@@ -202,6 +223,30 @@ impl CombatFrame {
 
     pub fn age_ms(&self) -> u32 {
         self.captured.elapsed().as_millis().min(u32::MAX as u128) as u32
+    }
+    /// 同帧同区域只复制一次，避免每个头像模板都向 SDK 传入整张 1080p 图。
+    pub fn template_crop(&self, rect: [i32; 4]) -> Result<Ref<'_, RecognitionImage>> {
+        od_core::Roi::from_legacy(rect).map_err(anyhow::Error::msg)?;
+        let mut cache = self.crops.borrow_mut();
+        if let std::collections::btree_map::Entry::Vacant(entry) = cache.entry(rect) {
+            let [x, y, right, bottom] = rect;
+            let width = (right - x) as usize;
+            let height = (bottom - y) as usize;
+            let source = self.image.buffer.raw_data().context("战斗帧像素缺失")?;
+            let mut pixels = Vec::with_capacity(width * height * 3);
+            for row in y..bottom {
+                let start = (row as usize * 1920 + x as usize) * 3;
+                pixels.extend_from_slice(&source[start..start + width * 3]);
+            }
+            let mut buffer = maa_framework::buffer::MaaImageBuffer::new()?;
+            buffer.set_raw_data(&pixels, width as i32, height as i32, 16)?;
+            entry.insert(RecognitionImage {
+                buffer,
+                prepare_us: 0,
+            });
+        }
+        drop(cache);
+        Ok(Ref::map(self.crops.borrow(), |c| &c[&rect]))
     }
 }
 impl NativeSession {
@@ -267,6 +312,7 @@ impl NativeSession {
                 prepare_us: captured.elapsed().as_micros() as u64,
             },
             captured,
+            crops: RefCell::new(BTreeMap::new()),
         }))
     }
 }
@@ -279,10 +325,12 @@ pub struct CombatObservation {
     pub quick_assist: Option<String>,
     pub chain: Vec<Option<String>>,
 }
+#[derive(Clone)]
 pub struct CombatRecognizer {
-    pub bundle: CombatBundle,
+    pub bundle: Arc<CombatBundle>,
     candidates: Vec<usize>,
     stable: u32,
+    team_size: usize,
     last_team: Vec<Option<usize>>,
     last: BTreeMap<String, f64>,
     raw: Arc<Mutex<Option<crate::RawRecognitionControl>>>,
@@ -292,8 +340,12 @@ pub struct CombatRecognizer {
     patrol_avatar_cache: BTreeMap<[i32; 4], usize>,
     patrol_avatar_scan: BTreeMap<[i32; 4], usize>,
     patrol_portrait_template: BTreeMap<[i32; 4], (usize, String)>,
+    avatar_scan: BTreeMap<(String, [i32; 4]), usize>,
+    avatar_template: BTreeMap<(String, [i32; 4]), (usize, String)>,
     agent_scope: Option<Vec<usize>>,
+    flash_observer: Option<FlashObserver>,
 }
+pub type FlashObserver = Arc<dyn Fn(&[StateUpdate]) + Send + Sync>;
 impl CombatRecognizer {
     /// 只读取同一截图中的固定普通结算区域；调用方须确认已进入战斗，
     /// 且不再出现战斗按钮。结果不能单独用于记录应用成功。
@@ -356,9 +408,10 @@ impl CombatRecognizer {
 
     pub fn new(bundle: CombatBundle) -> Self {
         Self {
-            bundle,
+            bundle: Arc::new(bundle),
             candidates: Vec::new(),
             stable: 0,
+            team_size: 0,
             last_team: Vec::new(),
             last: BTreeMap::new(),
             raw: Arc::new(Mutex::new(None)),
@@ -368,11 +421,18 @@ impl CombatRecognizer {
             patrol_avatar_cache: BTreeMap::new(),
             patrol_avatar_scan: BTreeMap::new(),
             patrol_portrait_template: BTreeMap::new(),
+            avatar_scan: BTreeMap::new(),
+            avatar_template: BTreeMap::new(),
             agent_scope: None,
+            flash_observer: None,
         }
     }
     pub fn cancellation_handle(&self) -> Arc<Mutex<Option<crate::RawRecognitionControl>>> {
         self.raw.clone()
+    }
+    /// 独立后台识别可先发布闪光，避免等待较慢的头像和角色状态。
+    pub fn set_flash_observer(&mut self, observer: Option<FlashObserver>) {
+        self.flash_observer = observer;
     }
     /// 本次完整实际队伍已确认后限制正常前后台头像候选；None 恢复通用识别。
     /// 重置状态或暂停不改变冻结名单，不能用这个设置补齐未识别的成员。
@@ -406,9 +466,12 @@ impl CombatRecognizer {
         self.candidates.clear();
         self.last_team.clear();
         self.stable = 0;
+        self.team_size = self.agent_scope.as_ref().map_or(0, Vec::len);
         self.last.clear();
         self.quick = None;
         self.chain = None;
+        self.avatar_scan.clear();
+        self.avatar_template.clear();
     }
     /// 仅用于锄大地：用攻击按钮的高分匹配校准 HUD，再统一平移识别帧。
     /// 不改变控制器的截图或输入坐标；战斗按键仍沿用原有绑定。
@@ -461,6 +524,7 @@ impl CombatRecognizer {
                 aligned[to..to + bytes].copy_from_slice(&source[from..from + bytes]);
             }
             frame.image.buffer.set_raw_data(&aligned, 1920, 1080, 16)?;
+            frame.crops.get_mut().clear();
         }
         Ok(matched)
     }
@@ -542,35 +606,66 @@ impl CombatRecognizer {
     }
     pub(crate) fn matched(
         &self,
-        session: &NativeSession,
+        session: &impl CombatVision,
         frame: &CombatFrame,
         key: &str,
         rect: [i32; 4],
         threshold: f64,
     ) -> Result<Option<f64>> {
-        let Some(template) = self.bundle.spec.templates.get(key) else {
+        let Some(template) = self.bundle.template(key) else {
             return Ok(None);
         };
-        let roi = od_core::Roi::from_legacy(rect).map_err(anyhow::Error::msg)?;
-        let template_path = template
-            .image
-            .strip_prefix("image/")
-            .context("战斗模板须位于 Maa image 目录")?;
-        let result = session.recognize_prepared(&frame.image, "TemplateMatch", &json!({"roi":roi,"template":template_path,"threshold":threshold,"method":5,"green_mask":template.mask.is_some(),"order_by":"Score"}))?;
-        Ok(result.detail["detail"]["best"]["score"]
-            .as_f64()
-            .filter(|_| result.detail["hit"] == true))
+        Ok(session
+            .match_template(frame, rect, template)?
+            .filter(|score| *score > threshold))
     }
     fn avatar(
         &mut self,
-        session: &NativeSession,
+        session: &impl CombatVision,
         frame: &CombatFrame,
         prefix: &str,
         rect: [i32; 4],
         cancel: &AtomicBool,
     ) -> Result<Option<usize>> {
+        if cancel.load(Ordering::Acquire) {
+            return Ok(None);
+        }
         let scoped = self.agent_scope.is_some() && matches!(prefix, "avatar_1_" | "avatar_2_");
         let patrol = self.patrol_hud_offset.is_some() && !scoped;
+        if !patrol && !scoped {
+            let slot = (prefix.to_string(), rect);
+            if let Some((index, key)) = self.avatar_template.get(&slot)
+                && self.matched(session, frame, key, rect, 0.8)?.is_some()
+            {
+                return Ok(Some(*index));
+            }
+            self.avatar_template.remove(&slot);
+            // 已发现的队友先在新画面上验证，切人不需要重新遍历全角色。
+            if let Some((index, key)) =
+                self.avatar_candidates(session, frame, prefix, rect, cancel, &self.candidates)?
+            {
+                self.avatar_template.insert(slot, (index, key));
+                return Ok(Some(index));
+            }
+            // 每槽位每轮只发现两个角色。缺失的双人槽、支援按钮或动画帧
+            // 不能触发完整串行扫描，阻塞同一循环中的松键与闪避。
+            let count = self.bundle.spec.agents.len();
+            if count == 0 {
+                return Ok(None);
+            }
+            let cursor = self.avatar_scan.entry(slot.clone()).or_default();
+            let candidates: Vec<_> = (0..count.min(2))
+                .map(|offset| (*cursor + offset) % count)
+                .filter(|index| !self.candidates.contains(index))
+                .collect();
+            *cursor = (*cursor + 2) % count;
+            let best = self.avatar_candidates(session, frame, prefix, rect, cancel, &candidates)?;
+            if let Some((index, key)) = best {
+                self.avatar_template.insert(slot, (index, key));
+                return Ok(Some(index));
+            }
+            return Ok(None);
+        }
         if patrol {
             if let Some((index, key)) = self.patrol_portrait_template.get(&rect)
                 && self.matched(session, frame, key, rect, 0.9)?.is_some()
@@ -624,7 +719,7 @@ impl CombatRecognizer {
     }
     fn avatar_candidates(
         &self,
-        session: &NativeSession,
+        session: &impl CombatVision,
         frame: &CombatFrame,
         prefix: &str,
         rect: [i32; 4],
@@ -667,7 +762,7 @@ impl CombatRecognizer {
     }
     pub fn observe(
         &mut self,
-        session: &NativeSession,
+        session: &impl CombatVision,
         frame: &CombatFrame,
         now: f64,
         intervals: &BTreeMap<String, f64>,
@@ -756,6 +851,9 @@ impl CombatRecognizer {
                 };
                 if let Some(state) = state {
                     observation.states.push(update(state.into(), None, false));
+                    if let Some(observer) = &self.flash_observer {
+                        observer(&observation.states);
+                    }
                 }
             }
             if dodge_only {
@@ -773,10 +871,8 @@ impl CombatRecognizer {
                     ("头像-3-3", "avatar_2_"),
                     ("头像-2-2", "avatar_2_"),
                 ] {
-                    if self.patrol_hud_offset.is_some()
-                        && name == "头像-2-2"
-                        && found[1].is_some()
-                        && found[2].is_some()
+                    if name == "头像-2-2"
+                        && (self.team_size == 3 || (found[1].is_some() && found[2].is_some()))
                     {
                         found.push(None);
                         break;
@@ -786,9 +882,18 @@ impl CombatRecognizer {
                     }
                     found.push(self.avatar(session, frame, prefix, self.area(name)?, cancel)?);
                 }
-                let team = if found[1].is_some() && found[2].is_some() {
-                    found[..3].to_vec()
+                let detected_size = if found[1].is_some() && found[2].is_some() {
+                    3
                 } else if found[3].is_some() {
+                    2
+                } else {
+                    1
+                };
+                // 一帧没读到后台不能证明减员。保留已确认的槽位，缺失身份留空。
+                self.team_size = self.team_size.max(detected_size);
+                let team = if self.team_size == 3 {
+                    found[..3].to_vec()
+                } else if self.team_size == 2 {
                     vec![found[0], found[3]]
                 } else {
                     vec![found[0]]
@@ -800,14 +905,19 @@ impl CombatRecognizer {
                     })
                     .collect();
                 if team.iter().all(Option::is_none) {
-                    self.reset();
+                    // 保留分帧发现游标，否则始终只能扫描目录前两个角色。
+                    self.last_team.clear();
+                    self.stable = 0;
+                    self.last.remove("agents");
                 } else {
                     self.stable = if self.last_team == team {
                         self.stable + 1
                     } else {
                         0
                     };
-                    self.candidates = team.iter().flatten().copied().collect();
+                    if team.iter().all(Option::is_some) {
+                        self.candidates = team.iter().flatten().copied().collect();
+                    }
                     self.last_team = team.clone();
                     for (position, index) in team.iter().enumerate() {
                         let Some(index) = index else {
@@ -953,7 +1063,7 @@ impl CombatRecognizer {
                         ));
                     }
                 }
-                let key = if self.last_team.len() == 3 {
+                let key = if self.team_size == 3 {
                     "LIFE_DEDUCTION_31"
                 } else {
                     "LIFE_DEDUCTION_21"
@@ -1101,7 +1211,7 @@ impl CombatRecognizer {
 
     fn agent_state(
         &self,
-        session: &NativeSession,
+        session: &impl CombatVision,
         frame: &CombatFrame,
         definition: &AgentStateDef,
         template_id: &str,

@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "python": "python",
+  "app": "map_exploration",
+  "settings": "configs/map_exploration.json"
+}

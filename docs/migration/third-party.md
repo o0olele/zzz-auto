@@ -7,6 +7,7 @@
 - 桌面：[Tauri](https://github.com/tauri-apps/tauri)，MIT / Apache-2.0；[React](https://github.com/facebook/react)、[Fluent UI](https://github.com/microsoft/fluentui) 与 [Vite](https://github.com/vitejs/vite)，MIT。
 - M4 声音回录：[wasapi 0.26.0](https://github.com/HEnquist/wasapi-rs)，MIT；复数运算：[num-complex 0.4.6](https://github.com/rust-num/num-complex)，MIT / Apache-2.0。WASAPI 静音数据包由 Windows 官方接口读取，FFT 与滤波为 Rust 实现。
 - M4 组合轮廓识别：[imageproc 0.27.0](https://github.com/image-rs/imageproc)，MIT；仅补充 Maa 模板识别未覆盖的轮廓层级、面积、周长与相邻中心组合，不引入另一套 OpenCV DLL。
+- 战斗直接模板匹配：[OpenCV 4.12.0](https://github.com/opencv/opencv/tree/4.12.0)，固定上游提交 `49486f61fb25722cbcf586b7f4320921d46fb38e`。构建所需的 32 个原始头文件、哈希和版权说明保存在 `crates/maa-adapter/native/opencv/`；总体许可证为 Apache-2.0，部分原始文件保留 BSD 版权条款。运行时复用已经校验的 `opencv_world4_maa.dll`，不引入另一套运行库。发布目录保留 `resources/licenses/OpenCV.LICENSE` 与 `OpenCV-headers.NOTICE`，C++ 桥接静态编入引擎，构建使用现有 MSVC 工具链和固定 `cc 1.8.0`。
 - Maa SDK 包含 OpenCV、ONNX Runtime、DirectML 等原生依赖。本轮记录实际 DLL SHA-256；M7 仍须核对每项原生依赖的许可、可再分发范围与发布清单。该步骤未由编译成功代替。
 
 Rust 与前端精确依赖分别保存在 `Cargo.lock` 和 `apps/desktop/package-lock.json`。SDK 中的 Node 包装器、CLI、示例插件和 AgentBinary 不列入本项目运行包；只打包固定运行 DLL。

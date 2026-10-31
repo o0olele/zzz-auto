@@ -14,8 +14,9 @@ struct Args {
 enum Tool {
     /// 生成迷失之地全画面与入口识别资源。
     LostVoidSceneBundle {
+        /// 可选：额外核对参考仓与迁移时固定的来源；默认使用本仓留档资源。
         #[arg(long)]
-        reference: PathBuf,
+        reference: Option<PathBuf>,
         #[arg(long, default_value = "sdk/models")]
         models: PathBuf,
         #[arg(long, default_value = "resources/generated/lost-void-scene")]
@@ -669,10 +670,13 @@ fn main() -> Result<()> {
             models,
             output,
         } => {
-            println!(
-                "{}",
-                od_tools::lost_void_scene::build_bundle(&reference, &models, &output)?
-            );
+            let manifest = match reference {
+                Some(reference) => {
+                    od_tools::lost_void_scene::build_bundle(&reference, &models, &output)?
+                }
+                None => od_tools::lost_void_scene::build_embedded_bundle(&models, &output)?,
+            };
+            println!("{manifest}");
             Ok(())
         }
         Tool::LostVoidCatalog { reference, output } => {

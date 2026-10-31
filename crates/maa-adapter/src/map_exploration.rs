@@ -392,6 +392,7 @@ pub struct ExplorationSight {
     pub guide_ambiguous: bool,
     pub road_route: Option<RoadRoute>,
     pub world_marker: Option<WorldMarker>,
+    pub mini_frame: Option<RgbImage>,
     pub close_details: Option<[i32; 2]>,
     pub zoom: Option<ZoomControl>,
     pub cargo_count: Option<[u16; 2]>,
@@ -636,6 +637,14 @@ mod tests {
     }
 }
 impl ExplorationSight {
+    pub fn script_observation(&self, target: ExplorationTarget) -> serde_json::Value {
+        use base64::Engine as _;
+        json!({"fresh":self.fresh(),"world_controls":self.world_controls,"map_open":self.map_open,
+            "mini_map":self.mini_map,"heading":self.heading,"guide":self.guide,
+            "guide_ambiguous":self.guide_ambiguous,"road_route":self.road_route,"world_marker":self.world_marker,
+            "arrival_point":self.arrival_point(target),"interact":self.interact(target),
+            "mini_rgb_b64":self.mini_frame.as_ref().map(|mini|base64::engine::general_purpose::STANDARD.encode(mini.as_raw()))})
+    }
     pub fn target_label(&self, target: ExplorationTarget) -> Option<[i32; 2]> {
         self.texts
             .iter()
@@ -807,6 +816,15 @@ fn navigation_overview(texts: &[Word], back: bool, local_map: bool) -> bool {
 }
 
 impl NativeSession {
+    pub fn inspect_map_exploration_script(
+        &self,
+        target: ExplorationTarget,
+    ) -> Result<serde_json::Value> {
+        let sight = self
+            .read_map_exploration_with_guide_policy(target, false, &AtomicBool::new(false))?
+            .context("Python 空洞探索截图读取超时")?;
+        Ok(sight.script_observation(target))
+    }
     pub fn inspect_map_exploration(&self, target: ExplorationTarget) -> Result<serde_json::Value> {
         let sight = self
             .read_map_exploration(target, &AtomicBool::new(false))?
@@ -1000,6 +1018,7 @@ impl NativeSession {
             guide_ambiguous,
             road_route,
             world_marker: None,
+            mini_frame: None,
             close_details,
             zoom,
             cargo_count,
@@ -1021,6 +1040,7 @@ impl NativeSession {
             sight.world_marker = Some(WorldMarker { point, meters });
         }
         sight.map_frame = map_open.then_some(rgb);
+        sight.mini_frame = mini;
         if cancel.load(Ordering::Acquire) || !sight.fresh() {
             return Ok(None);
         }

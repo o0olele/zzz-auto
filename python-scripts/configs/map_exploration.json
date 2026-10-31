@@ -1,0 +1,12 @@
+{
+  "green_min": 135,
+  "green_red_ratio": 1.12,
+  "green_blue_ratio": 1.5,
+  "branch_angle": 45.0,
+  "seed_max_distance": 38.0,
+  "dot_max_gap": 20.0,
+  "road_progress_pixels": 2.0,
+  "marker_progress_meters": 0.5,
+  "no_progress_ms": 4000,
+  "marker_max_meters": 35.0
+}

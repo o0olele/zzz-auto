@@ -1,2 +1,4 @@
 # 模型清单按原始字节计算哈希，检出时保持字节不变。
 models.lock.json -text
+# 固定上游 OpenCV 头文件保留原始字节和空白，与随附 SHA-256 清单一致。
+crates/maa-adapter/native/opencv/include/** -text -whitespace

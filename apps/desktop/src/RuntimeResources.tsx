@@ -129,7 +129,7 @@ export function RuntimeResources({ manager, blocked, maintenance = false }: { ma
     <Card><div className="card-title"><h2>当前选择</h2><Badge appearance="outline">{catalog ? name(catalog.selection.current) : '尚未读取'}</Badge></div>
       <p>先停止游戏任务并等待输入收尾，再切换版本。目标完整校验通过后会重启引擎，请重新连接游戏；不会自动运行应用。</p>
       <p>安装后自动刷新版本列表；通过 CLI 安装的版本可点击“刷新版本”读取。模型缓存准备不会直接改变运行资源。</p>
-      {catalog && <><p>上一选择：{catalog.selection.can_rollback ? name(catalog.selection.previous) : '尚无可回滚版本'}</p><div className="button-row"><Button disabled={disabled || !catalog.selection.can_rollback} onClick={() => void start({ type: 'rollback', revision: catalog.revision })}>回滚并重启引擎</Button></div><p className="resource-path">版本目录：{catalog.directory}</p></>}
+      {catalog && <><p>上一选择：{catalog.selection.can_rollback ? name(catalog.selection.previous) : '尚无可回滚版本'}</p><div className="button-row"><Button disabled={disabled || !catalog.selection.current} onClick={() => void start({ type: 'use_bundled', revision: catalog.revision })}>使用随程序资源并重启引擎</Button><Button disabled={disabled || !catalog.selection.can_rollback} onClick={() => void start({ type: 'rollback', revision: catalog.revision })}>回滚并重启引擎</Button></div><p>升级后旧资源不兼容时，可恢复随程序资源。已安装资源包和账号配置会保留。</p><p className="resource-path">版本目录：{catalog.directory}</p></>}
     </Card>
     {catalog && <div className="resource-grid">{catalog.versions.map(version => <Card key={version.id} role="group" aria-label={version.version ?? version.id}>
       <div className="card-title"><h2>{version.version ?? '不可用版本'}</h2><Badge appearance="tint" color={!version.compatible ? 'danger' : 'informative'}>{version.id === catalog.selection.current ? '当前选择' : version.compatible ? '清单可用' : '不可用'}</Badge></div>

@@ -40,6 +40,8 @@ cargo run --locked -p zzz-engine -- lost-void-preview --input resources/lost-voi
 
 完整应用共用 `LostVoidObservation` 同帧观察和独立 schema 1 `lost-void-scene` 资源。场景分类包含常规 / 周期入口、三类副本、矩阵编队教学、通用选择、武备、商店、抽奖、路径迭换、结算和失败；悬赏只接受完整且唯一的 `当前值/8000`，缺字、冲突及超出上限都保持未知。当前固定 254 份参考来源记录，另有加载标识、完整奖励格及普通出战人数三份本地来源元信息，包含 OCR、模板掩码及 87 个代理人头像变体；生成包共 107 个文件。所有 Pipeline 节点均只读，输入由 Rust 子流程控制。来源增加或节点变化后必须重新生成，旧生成目录不能直接复用。
 
+`lost-void-scene-bundle` 默认从本仓留档生成模板和识别规则，并按 `models.lock.json` 校验 OCR 缓存；桌面准备脚本使用此模式。清单中的 `sources` 保留迁移时的历史依据，不要求开发者当前参考仓仍包含相同 Python 文件。显式传入 `--reference <目录>` 时，额外严格核对全部历史来源、奖励原图与头像原图；该模式用于迁移来源审计，参考仓有改动或缺失文件时仍拒绝生成。两种模式的包内容及运行时逐文件校验保持一致。
+
 入口子流程冻结运行 UUID、完整配置和活动预算。从大世界经作战手册，按目录中的“周期征讨”或旧“零号空洞”分类同帧配对“迷失之地”与前往按钮；选中分类须有本行蓝底证明。打开手册、切页、选分类、有界滚动、传送确认、入口切页和副本选择分别保存意图与投递结果。新帧才确认后态，不能用点击完成提供到达证明。已有入口或副本可以直接识别，已有传送弹窗需要本次意图才可确认。
 
 入口提示沿用固定 `lost_void_entry.yml` 更新弹窗关闭区 `[1234,160,366,190]` 和 `menu/btn_close` 模板，要求同帧入口“周期 / 常规”和“探索收集”上下文，以及唯一且完整落在区域内的关闭图标。图文信息层不依赖未经证实的更新正文；悬赏标题、全部领取及更窄关闭区共同构成独立的悬赏面板类型。未知 X、多个关闭图标、决策或奖励控件均不能当作信息提示。当前没有可靠更新弹窗原图，此分支以明确标注的组合帧验证，保留实机兼容验收。
@@ -51,7 +53,7 @@ cargo run --locked -p zzz-engine -- lost-void-preview --input resources/lost-voi
 实际原图核对了窄区域截断及 OCR 行拆分：入口进度从有上下文的同帧完整标题读取；结算标题增加固定单行复读，确定按钮使用独立结果页区域；多选计数统一全角 / 半角括号，仍须完整数字比例。教学遮罩只接受两条完整教学文案，战败按钮覆盖原两种布局。手册按目录标题配对前往，不将“奖励进度”等按钮当作下一行标题。
 
 ```powershell
-cargo run --locked --target-dir target/lost-void -p od-tools -- lost-void-scene-bundle --reference E:/Code/ZenlessZoneZero-OneDragon
+cargo run --locked --target-dir target/lost-void -p od-tools -- lost-void-scene-bundle
 cargo run --locked --target-dir target/lost-void -p zzz-engine -- lost-void-scene-bundle-check
 cargo run --locked --target-dir target/lost-void -p zzz-engine -- lost-void-scene-inspect --image 'zzz-od-test/screens/迷失之地-入口-常规/常规副本.webp'
 cargo run --locked --target-dir target/lost-void -p zzz-engine -- lost-void-scene-inspect --image 'zzz-od-test/screens/迷失之地-通用选择/选2项.webp' --choices

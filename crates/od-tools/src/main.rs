@@ -792,6 +792,20 @@ fn main() -> Result<()> {
                     "const chargePlanLevels = {} as const;",
                     serde_json::to_string(&od_core::charge_plan::LEVELS)?
                 ),
+                format!(
+                    "const notoriousHuntDefaults = {} as NotoriousHuntConfig;",
+                    serde_json::to_string(&od_core::notorious_hunt::NotoriousHuntConfig::default())?
+                ),
+                format!(
+                    "const notoriousHuntItem = {} as ChargePlanItem;",
+                    serde_json::to_string(&od_core::notorious_hunt::default_item())?
+                ),
+                od_core::notorious_hunt::NotoriousHuntConfig::decl(),
+                od_core::notorious_hunt::HuntDecision::decl(),
+                od_core::notorious_hunt::HuntPreviewItem::decl(),
+                od_core::notorious_hunt::HuntAttempt::decl(),
+                od_core::notorious_hunt::NotoriousHuntPreview::decl(),
+                od_core::notorious_hunt::NotoriousHuntGroupPreview::decl(),
                 od_core::charge_plan::RestoreCharge::decl(),
                 od_core::charge_plan::ChargePlanItem::decl(),
                 od_core::charge_plan::ChargePlanConfig::decl(),

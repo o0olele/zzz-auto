@@ -1,6 +1,7 @@
 import { SuibianTempleSummary } from './SuibianTempleSettings';
 import { LostVoidSummary } from './LostVoidSettings';
 import { ChargePlanSummary } from './ChargePlanSettings';
+import { NotoriousHuntSummary } from './NotoriousHuntSettings';
 import { RedemptionConfigSummary } from './RedemptionSettings';
 import { dismantleSummary } from './DismantleSettings';
 import { randomPlaySummary } from './RandomPlaySettings';
@@ -71,6 +72,7 @@ function BackupComparison({ preview, apps }: { preview: ConfigBackupPreview; app
     <p>拆解设置：{oldGroup ? dismantleSummary(oldGroup.dismantle) : '无此组'} → {newGroup ? dismantleSummary(newGroup.dismantle) : '无此组'}。</p>
     <p>录像店设置：{oldGroup ? randomPlaySummary(oldGroup.random_play) : '无此组'} → {newGroup ? randomPlaySummary(newGroup.random_play) : '无此组'}。</p>
     <p>情报板设置：{oldGroup ? intelBoardSummary(oldGroup.intel_board) : '无此组'} → {newGroup ? intelBoardSummary(newGroup.intel_board) : '无此组'}。</p>
+    <div aria-label="恶名狩猎恢复差异">{oldGroup && <><p>当前恶名狩猎计划</p><NotoriousHuntSummary settings={oldGroup.notorious_hunt}/></>}{newGroup && <><p>恢复后恶名狩猎计划</p><NotoriousHuntSummary settings={newGroup.notorious_hunt}/></>}</div>
     <div aria-label="体力计划恢复差异">{oldGroup && <><p>当前体力计划</p><ChargePlanSummary settings={oldGroup.charge_plan}/></>}{newGroup && <><p>恢复后体力计划</p><ChargePlanSummary settings={newGroup.charge_plan}/></>}</div>
     <div aria-label="随便观恢复差异">{oldGroup && <><p>当前配置</p><SuibianTempleSummary settings={oldGroup.suibian_temple}/></>}{newGroup && <><p>恢复后配置</p><SuibianTempleSummary settings={newGroup.suibian_temple}/></>}</div>
     <div aria-label="迷失之地恢复差异">{oldGroup && <><p>当前配置</p><LostVoidSummary settings={oldGroup.lost_void}/></>}{newGroup && <><p>恢复后配置</p><LostVoidSummary settings={newGroup.lost_void}/></>}</div>

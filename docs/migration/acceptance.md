@@ -2385,3 +2385,15 @@ release 引擎、前端生产构建及 release 原生桌面构建通过。实际
 最终运行资源 ZIP 为 `artifacts/lost-void-final-resources-p54-daily10.zip`，共 2043 文件、504557623 字节，SHA-256 为 `147eaea51dcb742b51a27c1d5e6a32fbb12dee1705c387e79ec89b5bd93dfbbc`。新 release 引擎在独立数据目录完成 ZIP 检查、安装和 schema 10 能力检查；原账号和资源选择保持独立。最终便携包为 `artifacts/zzz-auto-0.1.4-windows-x64-prototype-20261030-174358.zip`，237721653 字节，SHA-256 为 `e1a0c2aad253be8c37598e294c0dbac3843fb0955744996cb596cf8de6a18362`。解压后 2016 文件逐项核对，两个可执行文件与 release 输出一致，配套能力纯检查及包内 SDK 对留档图的导航识别通过；没有 Python / Node 运行时或用户数据。
 
 最终核验记录为 `artifacts/lost-void-final-development-verification.json`，包含源码覆盖、二进制和资源摘要、实际日志及局限。协议 v54、日常 schema 10、场景 schema 1、v10 输入恢复和正式目录 `implemented=false` 保持。没有启动、连接或操作游戏，没有外部发布、提交或推送。当前开发工作完成，真实控制、游戏全链路、弹窗兼容、识别准确率、长时间稳定性和性能仍待另行授权验收。
+
+## 2026 年 11 月 3 日 M5 恶名狩猎周常计划
+
+继续迁移每周免费奖励的恶名狩猎，按账号及应用组保存计划、循环和开始星期；副本、等级、鸣徽、二十槽编队及脚本、次数基线和独立 UUID 沿用公共规则。旧组配置优先于账号配置，旧页签转换成训练，缺失 ID 按内容和位置确定性生成；临时跳过不保留，旧次数和周记录不变成新版通关或剩余奖励证明。复制、备份及离线恢复保持完整设置；导入和恢复界面展示周常摘要。六份参考来源已固定，副本目录复用既有唯一来源。
+
+桌面、公开引擎命令和 CLI 共用只读估算，按区服游戏日判断开始星期；人工剩余周奖励仅接受 0..3，缺失保持未知。循环保留超额余数，最多估算三场，重复副本按 ID 分别处理。预备编队采用实际槽位脚本，保持当前队伍采用计划脚本；遇到代理人培养目标即停止预分配，不假定目标存在。估算不保存配置、次数或历史，也不取得运行槽。编辑、离页、连接变化和修订冲突撤销旧估算。
+
+新增 15 项 Rust 和 5 项界面用例通过。Rust 六个目标为 notorious_hunt 15、account_config 15、charge_plan 16、config_backups 9、config_recovery 13、lost_void 22，共 90 个不同用例；界面为周常 5、体力 7、备份 8、离线恢复 8、迷失之地 5，共 33 个。首轮相邻体力和迷失之地各一条旧断言仍假定应用未接入，已按既有试运行入口修正并完整复跑；正式 implemented=false 的断言保留。恢复 CLI 首轮指向旧默认引擎失败，显式设置 ZZZ_AUTO_TEST_ENGINE 为本轮构建后完整 13 项通过。界面共享临时缓存拒绝访问后，改用工作区内 PWTEST_CACHE_DIR，21 项相邻回归通过。
+
+前端生产构建、原生引擎和桌面构建通过；在独立 target 目录重新复制配套引擎后，源引擎、随附源文件及桌面输出的 SHA-256 一致。无 SDK 的 CLI 对空计划和非法余量完成真实检查，两者均未创建数据目录。核心、协议和工具的严格 Clippy 通过；引擎采用 --no-deps，并仅豁免既有 map_exploration.rs 的 unnecessary_unwrap 和 python_script.rs 的 needless_question_mark 后通过。未豁免的工作区严格检查仍因既有地图探索测试的 field_reassign_with_default、适配器的 needless_borrow / collapsible_if 和上述两项告警失败，本轮未修改这些实现。格式及两仓差异检查通过。
+
+协议为 v56、导入预览为 v22，执行资源和输入恢复版本不变。验证摘要及源码、二进制指纹保存于 artifacts/notorious-hunt-config-verification.json。没有启动、连接或操作游戏，没有外部发布、提交或推送；测试仓原有 Cargo.lock 改动保留。恶名狩猎仍不开放独立或应用组执行，实际副本传送、免费次数及模式、等级、挑战、领奖与周记录继续开发，全部实机及性能验收保留。

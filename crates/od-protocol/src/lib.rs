@@ -8,7 +8,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 // v34 接通 Rust 战斗；桌面与引擎须成套使用。
-pub const PROTOCOL_VERSION: u32 = 55;
+pub const PROTOCOL_VERSION: u32 = 56;
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -43,6 +43,13 @@ pub struct Request {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "params", rename_all = "snake_case")]
 pub enum Command {
+    PreviewNotoriousHunt {
+        instance_id: u32,
+        group_id: String,
+        revision: u32,
+        #[serde(default)]
+        rewards_left: Option<u8>,
+    },
     PreviewChargePlan {
         instance_id: u32,
         group_id: String,
@@ -237,6 +244,7 @@ pub enum Command {
 )]
 pub enum Payload {
     ChargePlanPreview(od_core::charge_plan::ChargeGroupPreview),
+    NotoriousHuntPreview(od_core::notorious_hunt::NotoriousHuntGroupPreview),
     CombatScripts(od_core::combat::CombatScriptCatalog),
     CombatScriptImport(od_core::combat_scripts::CombatScriptImportPreview),
     GameLaunched(od_core::game_launch::GameLaunchResult),

@@ -72,6 +72,7 @@ pub mod map_exploration;
 pub mod map_transport;
 pub mod model_resources;
 pub mod navigation;
+pub mod notorious_hunt;
 pub mod ocr;
 pub mod pipeline;
 pub mod predefined_teams;

@@ -135,6 +135,14 @@ enum Action {
     ResourceDiagnostics(ResourceDiagnostics),
     /// 按保存计划和人工资源数估算下一项，不初始化 SDK 或写入配置。
     ChargePlanPreview(ChargePlanPreviewArgs),
+    NotoriousHuntPreview {
+        #[arg(long)]
+        instance_id: u32,
+        #[arg(long, default_value = "one_dragon")]
+        group_id: String,
+        #[arg(long)]
+        rewards_left: Option<u8>,
+    },
     /// 使用当前账号保存的战斗设置，Ctrl+C 请求停止与输入收尾。
     Combat {
         #[arg(long)]
@@ -987,6 +995,7 @@ async fn run() -> Result<()> {
                 | Action::BasicDailyBundleCheck { .. }
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
+                | Action::NotoriousHuntPreview { .. }
                 | Action::ChargePlanPreview(_)
                 | Action::LostVoidPreview { .. }
                 | Action::LostVoidSceneBundleCheck { .. }
@@ -1053,6 +1062,24 @@ async fn run() -> Result<()> {
                 )?)?
             );
             return Ok(());
+        }
+        Action::NotoriousHuntPreview {
+            instance_id,
+            group_id,
+            rewards_left,
+        } => {
+            let config = od_core::config::ConfigStore::new(&paths.data)?.read()?;
+            return print(
+                od_core::notorious_hunt::preview_group(
+                    &config,
+                    instance_id,
+                    &group_id,
+                    config.revision,
+                    chrono::Utc::now(),
+                    rewards_left,
+                )
+                .map_err(anyhow::Error::msg)?,
+            );
         }
         Action::ChargePlanPreview(ChargePlanPreviewArgs {
             instance_id,

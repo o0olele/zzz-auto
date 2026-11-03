@@ -480,6 +480,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
             if parts.len() == 2 && parts[1] == "_group.yml" {
                 let group: LegacyGroup = parse(file)?;
                 groups.push(AppGroup {
+                    notorious_hunt: Default::default(),
                     lost_void: Default::default(),
                     world_patrol: Default::default(),
                     charge_plan: Default::default(),
@@ -506,6 +507,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
         }
         if !groups.iter().any(|g| g.id == "one_dragon") {
             let mut group = AppGroup {
+                notorious_hunt: Default::default(),
                 lost_void: Default::default(),
                 world_patrol: Default::default(),
                 charge_plan: Default::default(),
@@ -618,6 +620,19 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
                     converted.insert(source.relative.clone());
                 }
                 warnings.push(format!("账号 {} 的 {} 组迷失之地及挑战方案已转换；旧日周次数和奖励标记仅归档，完整游戏执行仍在开发。", item.idx, group.id));
+            }
+            let grouped_hunt = format!("{prefix}{}/notorious_hunt.yml", group.id);
+            let old_hunt = format!("{prefix}notorious_hunt.yml");
+            if let Some(file) = files
+                .iter()
+                .find(|f| f.relative == grouped_hunt)
+                .or_else(|| files.iter().find(|f| f.relative == old_hunt))
+            {
+                *group.notorious_hunt =
+                    crate::notorious_hunt::import(&parse::<serde_json::Value>(file)?)
+                        .map_err(anyhow::Error::msg)?;
+                converted.insert(file.relative.clone());
+                warnings.push(format!("账号 {} 的 {} 组恶名狩猎计划已转换，共 {} 项；旧次数仅作基线，不作为新版周奖励或通关证明。周常执行仍在开发。", item.idx, group.id, group.notorious_hunt.plan_list.len()));
             }
             let grouped_charge = format!("{prefix}{}/charge_plan.yml", group.id);
             let old_charge = format!("{prefix}charge_plan.yml");
@@ -812,7 +827,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     }
     let mut hash = Sha256::new();
     // 变更转换语义后使旧预览失效，避免用旧确认启用新的转换结果。
-    hash.update(b"zzz-auto-config-import-v21\0");
+    hash.update(b"zzz-auto-config-import-v22\0");
     let mut manifest = Vec::new();
     for file in files {
         hash.update((file.relative.len() as u64).to_le_bytes());

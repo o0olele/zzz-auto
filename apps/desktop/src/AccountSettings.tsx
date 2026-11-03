@@ -1,4 +1,5 @@
 import { WorldPatrolSettings } from './WorldPatrolSettings';
+import { NotoriousHuntSettings } from './NotoriousHuntSettings';
 import { LostVoidSettings } from './LostVoidSettings';
 import { ChargePlanSettings } from './ChargePlanSettings';
 import { SuibianTempleSettings } from './SuibianTempleSettings';
@@ -124,6 +125,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       else if (change.type === 'save_daily') setMessage('日常设置已保存。');
       else if (change.type === 'save_dismantle') setMessage('拆解设置已保存。');
       else if (change.type === 'save_random_play') setMessage('录像店设置已保存。');
+      else if (change.type === 'save_notorious_hunt') setMessage('恶名狩猎计划已保存。');
       else if (change.type === 'save_charge_plan') setMessage('体力计划已保存。');
       else if (change.type === 'save_suibian_temple') setMessage('随便观设置已保存。');
       else if (change.type === 'save_world_patrol') setMessage('锄大地设置已保存。');
@@ -262,6 +264,7 @@ export function AccountSettings({ connected, active, blocked, apps, snapshot, on
       {instance && group && <WorldPatrolSettings key={`world-patrol/${instance.id}/${group.id}/${config.revision}`} settings={group.world_patrol} disabled={disabled} onSave={settings => void update({ type: 'save_world_patrol', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <LostVoidSettings key={`lost-void/${instance.id}/${group.id}/${config.revision}`} settings={group.lost_void} disabled={disabled} onSave={settings => void update({ type: 'save_lost_void', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <IntelBoardSettings key={`intel-board/${instance.id}/${group.id}/${config.revision}`} settings={group.intel_board} teams={instance.predefined_teams} disabled={disabled} onSave={settings => void update({ type: 'save_intel_board', instance_id: instance.id, group_id: group.id, settings })}/>}
+      {instance && group && <NotoriousHuntSettings key={`notorious-hunt/${instance.id}/${group.id}/${config.revision}`} settings={group.notorious_hunt} teams={instance.predefined_teams} instanceId={instance.id} groupId={group.id} revision={config.revision} disabled={disabled} onSave={settings => void update({ type: 'save_notorious_hunt', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <ChargePlanSettings key={`charge-plan/${instance.id}/${group.id}/${config.revision}`} settings={group.charge_plan} teams={instance.predefined_teams} instanceId={instance.id} groupId={group.id} revision={config.revision} disabled={disabled} onSave={settings => void update({ type: 'save_charge_plan', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <SuibianTempleSettings key={`suibian-temple/${instance.id}/${group.id}/${config.revision}`} settings={group.suibian_temple} disabled={disabled} onSave={settings => void update({ type: 'save_suibian_temple', instance_id: instance.id, group_id: group.id, settings })}/>}
       {instance && group && <DailySettings key={`daily/${instance.id}/${group.id}/${config.revision}`} settings={group.daily} disabled={disabled} onSave={settings => void update({ type: 'save_daily', instance_id: instance.id, group_id: group.id, settings })}/>}

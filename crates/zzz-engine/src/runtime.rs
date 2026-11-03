@@ -526,6 +526,24 @@ impl Engine {
 
     async fn execute_inner(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
+            Command::PreviewNotoriousHunt {
+                instance_id,
+                group_id,
+                revision,
+                rewards_left,
+            } => {
+                let config = self.config.read().map_err(config_error)?;
+                od_core::notorious_hunt::preview_group(
+                    &config,
+                    instance_id,
+                    &group_id,
+                    revision,
+                    Utc::now(),
+                    rewards_left,
+                )
+                .map(Payload::NotoriousHuntPreview)
+                .map_err(|e| ApiError::new("invalid_notorious_hunt", e))
+            }
             Command::PreviewChargePlan {
                 instance_id,
                 group_id,

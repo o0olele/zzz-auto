@@ -79,6 +79,9 @@ pub struct GroupApp {
 #[serde(deny_unknown_fields)]
 pub struct AppGroup {
     #[serde(default)]
+    #[ts(as = "Option<crate::notorious_hunt::NotoriousHuntConfig>", optional)]
+    pub notorious_hunt: Box<crate::notorious_hunt::NotoriousHuntConfig>,
+    #[serde(default)]
     #[ts(as = "Option<crate::lost_void::LostVoidConfig>", optional)]
     pub lost_void: Box<crate::lost_void::LostVoidConfig>,
     #[serde(default)]
@@ -179,6 +182,11 @@ pub struct AccountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConfigChange {
+    SaveNotoriousHunt {
+        instance_id: u32,
+        group_id: String,
+        settings: Box<crate::notorious_hunt::NotoriousHuntConfig>,
+    },
     SaveLostVoid {
         instance_id: u32,
         group_id: String,
@@ -333,6 +341,7 @@ pub fn default_group() -> AppGroup {
     let mut apps = crate::applications().expect("内置应用登记无效");
     apps.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
     AppGroup {
+        notorious_hunt: Default::default(),
         lost_void: Default::default(),
         world_patrol: Default::default(),
         charge_plan: Default::default(),
@@ -426,6 +435,7 @@ impl AccountConfig {
             let mut groups = HashSet::new();
             for group in &instance.groups {
                 group.intel_board.validate().map_err(invalid)?;
+                group.notorious_hunt.validate().map_err(invalid)?;
                 group.lost_void.validate().map_err(invalid)?;
                 group.world_patrol.validate().map_err(invalid)?;
                 group.suibian_temple.validate().map_err(invalid)?;
@@ -458,6 +468,19 @@ impl AccountConfig {
 
     fn change(&mut self, change: ConfigChange) -> Result<(), ConfigError> {
         match change {
+            ConfigChange::SaveNotoriousHunt {
+                instance_id,
+                group_id,
+                settings,
+            } => {
+                settings.validate().map_err(invalid)?;
+                self.instance_mut(instance_id)?
+                    .groups
+                    .iter_mut()
+                    .find(|g| g.id == group_id)
+                    .ok_or_else(|| invalid("应用组不存在"))?
+                    .notorious_hunt = settings;
+            }
             ConfigChange::SaveLostVoid {
                 instance_id,
                 group_id,

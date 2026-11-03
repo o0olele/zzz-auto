@@ -1,3 +1,4 @@
+import { NotoriousHuntSummary } from './NotoriousHuntSettings';
 import { ChargePlanSummary } from './ChargePlanSettings';
 import { SuibianTempleSummary } from './SuibianTempleSettings';
 import { LostVoidSummary } from './LostVoidSettings';
@@ -106,6 +107,7 @@ export function ConfigImport({ connected, active, blocked, current, apps, onImpo
           <p>拆解设置：{dismantleSummary(group.dismantle)}。</p>
           <p>录像店设置：{randomPlaySummary(group.random_play)}。</p>
           <p>情报板设置：{intelBoardSummary(group.intel_board)}。</p>
+          <NotoriousHuntSummary settings={group.notorious_hunt}/>
           <ChargePlanSummary settings={group.charge_plan}/>
           <SuibianTempleSummary settings={group.suibian_temple}/>
           <LostVoidSummary settings={group.lost_void}/>

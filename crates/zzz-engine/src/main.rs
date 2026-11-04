@@ -575,6 +575,8 @@ enum ResourceDiagnostics {
     DeepHuntBundleCheck(HuntBundleArgs),
     /// 固定图只读识别目标、周常与深度状态，不证明消费或成功。
     DeepHuntInspect(HuntInspectArgs),
+    /// 固定图只读检查周常免费奖励余量，不授权出战。
+    WeeklyHuntInspect(HuntInspectArgs),
     /// 校验专业挑战资源，不加载 SDK。
     ExpertChallengeBundleCheck(ExpertBundleArgs),
     /// 固定图只读识别专业挑战与燃竭状态，不证明消费成功。
@@ -1023,6 +1025,7 @@ async fn run() -> Result<()> {
                 | Action::ResourceDiagnostics(ResourceDiagnostics::AgentMarkersInspect(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntBundleCheck(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::WeeklyHuntInspect(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::ExpertChallengeInspect(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::AreaPatrolInspect(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::ChargeTransportInspect(..))
@@ -1694,7 +1697,10 @@ async fn run() -> Result<()> {
                 serde_json::json!({"valid":true,"accepted":false,"input_sent":false,"completion_verified":false,"bundle":maa_adapter::deep_hunt::validate_deep_hunt_bundle(bundle)?}),
             );
         }
-        Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntInspect(ref args)) => {
+        Action::ResourceDiagnostics(
+            ResourceDiagnostics::DeepHuntInspect(ref args)
+            | ResourceDiagnostics::WeeklyHuntInspect(ref args),
+        ) => {
             anyhow::ensure!(
                 od_core::charge_transport::canonical_name("恶名狩猎", &args.mission_type).is_some(),
                 "未知的恶名狩猎目标"
@@ -2211,6 +2217,19 @@ async fn run() -> Result<()> {
             ResourceDiagnostics::AgentMarkersInspect(..)
             | ResourceDiagnostics::ChargeLevelBundleCheck(..),
         ) => unreachable!("只读诊断已完成"),
+        Action::ResourceDiagnostics(ResourceDiagnostics::WeeklyHuntInspect(args)) => {
+            let native =
+                NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;
+            let observation = native.inspect_weekly_hunt(
+                &maa_adapter::RecognitionImage::load(&args.image)?,
+                &args.mission_type,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"completion_verified":false,"observation":observation}),
+            )
+        }
         Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntInspect(args)) => {
             let native =
                 NativeSession::for_fixture(&args.image, &args.bundle, InferenceDevice::Cpu)?;

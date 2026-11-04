@@ -21,6 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 struct Sight {
+    free_detail: bool,
     goal: Option<od_core::agent_goal::AgentGoalStatus>,
     view: HuntView,
     next: Option<[i32; 2]>,
@@ -33,6 +34,28 @@ struct Sight {
     levels: BTreeMap<String, [i32; 2]>,
 }
 impl Sight {
+    fn weekly(&self) -> od_core::notorious_hunt_entry::WeeklyEntryView {
+        use od_core::notorious_hunt_entry::WeeklyEntryView as V;
+        match &self.view {
+            HuntView::Unknown => V::Unknown,
+            HuntView::List { matches } => V::List { matches: *matches },
+            HuntView::Detail {
+                mission_type,
+                back,
+                weekly,
+                ..
+            } => V::Detail {
+                mission_type: mission_type.clone(),
+                back: *back,
+                rewards: match weekly {
+                    WeeklyState::Remaining(n @ 1..=3) if self.free_detail => Some(*n),
+                    WeeklyState::Exhausted => Some(0),
+                    _ => None,
+                },
+            },
+            _ => V::Blocked,
+        }
+    }
     fn settlement(&self, expected: &str) -> SettlementView {
         match &self.view {
             HuntView::Unknown => SettlementView::Unknown,
@@ -154,6 +177,7 @@ impl NativeSession {
             };
             let read = |n: &str| words(&r.read(&format!("Hunt.{n}"), None)?);
             let mut s = Sight {
+                free_detail: false,
                 goal: None,
                 view: HuntView::Unknown,
                 next: None,
@@ -223,12 +247,9 @@ impl NativeSession {
                 {
                     return Ok(s);
                 }
-                let has_label = point(
-                    &read("RewardsLabel")?,
-                    "剩余奖励次数",
-                    [1380, 1004, 1506, 1050],
-                )
-                .is_some();
+                let reward_labels = read("RewardsLabel")?;
+                let has_label =
+                    point(&reward_labels, "剩余奖励次数", [1380, 1004, 1506, 1050]).is_some();
                 let info = r.hit("Hunt.Info", None)?;
                 let weekly = if has_label {
                     match number("RewardsCount")? {
@@ -321,6 +342,14 @@ impl NativeSession {
                 } else {
                     None
                 };
+                // 周常免费模式由完整奖励标签提供正向证明，不能从模式漏读推断。
+                s.free_detail = has_label
+                    && s.next.is_some()
+                    && !info
+                    && !no_reward
+                    && modes.is_empty()
+                    && charge.is_none()
+                    && !reward_labels.iter().any(|w| w.text.contains("电量消耗"));
                 s.view = HuntView::Detail {
                     mission_type: titles[0].text.clone(),
                     weekly,
@@ -411,6 +440,53 @@ impl NativeSession {
         Ok(self
             .hunt_sight(frame, expected, cancel, timeout)?
             .map(|s| s.view))
+    }
+    pub fn inspect_weekly_hunt(
+        &self,
+        frame: &RecognitionImage,
+        expected: &str,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<od_core::notorious_hunt_entry::WeeklyEntryView>> {
+        self.require_deep_hunt()?;
+        Ok(self
+            .hunt_sight(frame, expected, cancel, timeout)?
+            .map(|s| s.weekly()))
+    }
+    pub fn read_weekly_hunt(
+        &self,
+        expected: &str,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<od_core::notorious_hunt_entry::WeeklyEntryView>> {
+        Ok(self
+            .read_hunt_sight(expected, cancel, timeout)?
+            .map(|s| s.weekly()))
+    }
+    pub fn act_weekly_hunt_entry(
+        &mut self,
+        flow: &od_core::notorious_hunt_entry::WeeklyEntryFlow,
+        action: od_core::notorious_hunt_entry::WeeklyEntryAction,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<HuntInputEnd> {
+        use od_core::notorious_hunt_entry::WeeklyEntryAction as A;
+        flow.validate().map_err(anyhow::Error::msg)?;
+        self.deep_hunt_click(
+            cancel,
+            timeout,
+            game,
+            &flow.request().plan.mission_type_name,
+            |s| {
+                flow.allows(action, &s.weekly())
+                    .then_some(match action {
+                        A::Back => s.back,
+                        A::Select => s.select,
+                    })
+                    .flatten()
+            },
+        )
     }
     fn read_hunt_sight(
         &self,

@@ -55,6 +55,7 @@ pub mod mail;
 pub mod map_exploration;
 pub mod map_transport;
 pub mod model_resources;
+pub mod notorious_hunt_entry;
 pub mod python_script;
 pub mod recognition;
 pub mod restore_charge;

@@ -9,6 +9,9 @@ use od_core::{
     deep_hunt::{
         DeepState, HuntEntryAction, HuntEntryFlow, HuntSettlementFlow, HuntView, WeeklyState,
     },
+    notorious_hunt_preparation::{
+        WeeklyPreparationAction, WeeklyPreparationFlow, WeeklyPreparationView,
+    },
     simulation_cards::CardsCharge,
     simulation_settlement::{SettlementAction, SettlementView},
 };
@@ -22,6 +25,7 @@ use std::{
 };
 struct Sight {
     free_detail: bool,
+    weekly_levels: Option<WeeklyPreparationView>,
     goal: Option<od_core::agent_goal::AgentGoalStatus>,
     view: HuntView,
     next: Option<[i32; 2]>,
@@ -34,6 +38,29 @@ struct Sight {
     levels: BTreeMap<String, [i32; 2]>,
 }
 impl Sight {
+    fn weekly_preparation(&self) -> WeeklyPreparationView {
+        use WeeklyPreparationView as V;
+        if let Some(menu) = &self.weekly_levels {
+            return menu.clone();
+        }
+        match (&self.view, self.weekly()) {
+            (
+                HuntView::Detail { level, .. },
+                od_core::notorious_hunt_entry::WeeklyEntryView::Detail {
+                    mission_type,
+                    rewards,
+                    ..
+                },
+            ) => V::Detail {
+                mission_type,
+                rewards,
+                level: level.clone(),
+            },
+            (HuntView::Deployment, _) => V::Deployment,
+            (HuntView::Unknown, _) => V::Unknown,
+            _ => V::Blocked,
+        }
+    }
     fn weekly(&self) -> od_core::notorious_hunt_entry::WeeklyEntryView {
         use od_core::notorious_hunt_entry::WeeklyEntryView as V;
         match &self.view {
@@ -178,6 +205,7 @@ impl NativeSession {
             let read = |n: &str| words(&r.read(&format!("Hunt.{n}"), None)?);
             let mut s = Sight {
                 free_detail: false,
+                weekly_levels: None,
                 goal: None,
                 view: HuntView::Unknown,
                 next: None,
@@ -303,6 +331,14 @@ impl NativeSession {
                     );
                     s.back = Some([x + w / 2, y + h / 2]);
                 }
+                // 周常免费模式由完整奖励标签提供正向证明，不能从模式漏读推断。
+                s.free_detail = has_label
+                    && s.next.is_some()
+                    && !info
+                    && !no_reward
+                    && modes.is_empty()
+                    && charge.is_none()
+                    && !reward_labels.iter().any(|w| w.text.contains("电量消耗"));
                 let level = if self.charge_level_bundle.is_some() {
                     match self.hunt_level_sight(
                         frame,
@@ -314,6 +350,17 @@ impl NativeSession {
                             choices,
                         }) => {
                             if !reading.choices.is_empty() {
+                                if od_core::deep_hunt::same_mission(expected, &titles[0].text)
+                                    && s.free_detail
+                                    && let WeeklyState::Remaining(n @ 1..=3) = weekly
+                                {
+                                    s.weekly_levels = Some(WeeklyPreparationView::Levels {
+                                        mission_type: titles[0].text.clone(),
+                                        rewards: n,
+                                        names: reading.choices.clone(),
+                                    });
+                                    s.levels = choices.clone();
+                                }
                                 if !od_core::deep_hunt::same_mission(expected, &titles[0].text)
                                     || weekly != WeeklyState::Exhausted
                                     || mode != DeepState::On
@@ -342,14 +389,6 @@ impl NativeSession {
                 } else {
                     None
                 };
-                // 周常免费模式由完整奖励标签提供正向证明，不能从模式漏读推断。
-                s.free_detail = has_label
-                    && s.next.is_some()
-                    && !info
-                    && !no_reward
-                    && modes.is_empty()
-                    && charge.is_none()
-                    && !reward_labels.iter().any(|w| w.text.contains("电量消耗"));
                 s.view = HuntView::Detail {
                     mission_type: titles[0].text.clone(),
                     weekly,
@@ -462,6 +501,61 @@ impl NativeSession {
         Ok(self
             .read_hunt_sight(expected, cancel, timeout)?
             .map(|s| s.weekly()))
+    }
+    pub fn inspect_weekly_hunt_preparation(
+        &self,
+        frame: &RecognitionImage,
+        expected: &str,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<WeeklyPreparationView>> {
+        self.require_deep_hunt()?;
+        ensure!(
+            self.charge_level_bundle.is_some(),
+            "周常准备需要等级识别以排除未关闭的菜单"
+        );
+        Ok(self
+            .hunt_sight(frame, expected, cancel, timeout)?
+            .map(|s| s.weekly_preparation()))
+    }
+    pub fn read_weekly_hunt_preparation(
+        &self,
+        expected: &str,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<WeeklyPreparationView>> {
+        ensure!(self.charge_level_bundle.is_some(), "周常准备缺少等级资源");
+        Ok(self
+            .read_hunt_sight(expected, cancel, timeout)?
+            .map(|s| s.weekly_preparation()))
+    }
+    pub fn act_weekly_hunt_preparation(
+        &mut self,
+        flow: &WeeklyPreparationFlow,
+        action: WeeklyPreparationAction,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<HuntInputEnd> {
+        flow.validate().map_err(anyhow::Error::msg)?;
+        ensure!(self.charge_level_bundle.is_some(), "周常准备缺少等级资源");
+        self.deep_hunt_click(
+            cancel,
+            timeout,
+            game,
+            &flow.request().plan.mission_type_name,
+            |s| {
+                flow.allows(action, &s.weekly_preparation())
+                    .then_some(match action {
+                        WeeklyPreparationAction::OpenLevel => Some([1689, 48]),
+                        WeeklyPreparationAction::SelectLevel => {
+                            s.levels.get(&flow.request().plan.level).copied()
+                        }
+                        WeeklyPreparationAction::Next => s.next,
+                    })
+                    .flatten()
+            },
+        )
     }
     pub fn act_weekly_hunt_entry(
         &mut self,

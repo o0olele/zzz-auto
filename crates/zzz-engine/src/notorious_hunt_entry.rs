@@ -128,11 +128,16 @@ impl WeeklyHuntApproachRun {
         self.snapshot.clone()
     }
     pub fn receipt(&self) -> Option<WeeklyApproachReceipt> {
+        if self.control.requested().is_some() {
+            return None;
+        }
+        self.receipt_for_parent()
+    }
+    pub(crate) fn receipt_for_parent(&self) -> Option<WeeklyApproachReceipt> {
         if !matches!(
             self.end,
             Some(WeeklyApproachEnd::Observed | WeeklyApproachEnd::Exhausted)
         ) || !self.snapshot.inputs_released
-            || self.control.requested().is_some()
         {
             return None;
         }
@@ -152,6 +157,21 @@ impl WeeklyHuntApproachRun {
         ensure!(
             self.end == Some(WeeklyApproachEnd::Paused) && self.snapshot.inputs_released,
             "周常入口尚未安全暂停"
+        );
+        self.resume_after_parent_pause()
+    }
+    pub(crate) fn resume_after_parent_pause(&mut self) -> Result<()> {
+        ensure!(
+            matches!(
+                self.end,
+                Some(
+                    WeeklyApproachEnd::Paused
+                        | WeeklyApproachEnd::Observed
+                        | WeeklyApproachEnd::Exhausted
+                        | WeeklyApproachEnd::AwaitingVerification
+                )
+            ) && self.snapshot.inputs_released,
+            "周常入口尚未安全交回"
         );
         if let Some(flow) = &mut self.snapshot.entry {
             flow.resume().map_err(anyhow::Error::msg)?;

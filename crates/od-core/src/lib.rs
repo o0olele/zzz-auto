@@ -74,6 +74,7 @@ pub mod model_resources;
 pub mod navigation;
 pub mod notorious_hunt;
 pub mod notorious_hunt_entry;
+pub mod notorious_hunt_preparation;
 pub mod ocr;
 pub mod pipeline;
 pub mod predefined_teams;

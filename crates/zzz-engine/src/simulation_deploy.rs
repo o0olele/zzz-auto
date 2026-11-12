@@ -201,12 +201,14 @@ impl<R: DeploymentContext> DeploymentRun<R> {
             self.snapshot.combat == self.prepared.plan,
             "出战战斗快照与冻结配置不一致"
         );
-        CombatRun::new_segment(
+        let mut run = CombatRun::new_segment(
             self.id,
             self.prepared.plan.config,
             self.prepared.script,
             self.control,
-        )
+        )?;
+        run.progress.script_revision = self.prepared.plan.script_revision;
+        Ok(run)
     }
     pub fn execute_with_budget(
         &mut self,
@@ -270,10 +272,11 @@ impl<R: DeploymentContext> DeploymentRun<R> {
                 if self.snapshot.flow.completed() {
                     return Ok(DeploymentEnd::Entered);
                 }
-                let read = session.read_simulation_deploy(
+                let read = session.read_deployment_entry(
                     &recognizer,
                     &self.control.cancellation(),
                     remaining(self.snapshot.flow.deployment_started()),
+                    self.snapshot.flow.request().accepts_interaction_entry(),
                 );
                 self.snapshot.inputs_released = session.release_inputs().is_ok();
                 ensure!(self.snapshot.inputs_released, "出战读帧后输入未释放");

@@ -395,7 +395,7 @@ impl Engine {
             None
         };
         config.read_for_startup()?;
-        let charge_recovery = config.recover_charge_runs()?;
+        let (charge_recovery, weekly_recovery) = config.recover_application_runs()?;
         let history = RunStore::new(&paths.data)?;
         std::fs::create_dir_all(paths.data.join("runs"))?;
         let state = Arc::new(Mutex::new(State {
@@ -432,6 +432,12 @@ impl Engine {
             state.lock().expect("运行状态锁失效").event(None, "info", format!(
                 "体力运行历史检查：补交 {} 个运行的已确认次数；{} 个旧配置分支仅保留历史，不重放游戏输入。",
                 charge_recovery.recovered, charge_recovery.stale,
+            ));
+        }
+        if weekly_recovery.recovered > 0 || weekly_recovery.stale > 0 {
+            state.lock().expect("运行状态锁失效").event(None, "info", format!(
+                "恶名狩猎历史检查：补交 {} 个运行的已确认次数；{} 个旧配置分支仅保留历史，不重放游戏输入。",
+                weekly_recovery.recovered, weekly_recovery.stale,
             ));
         }
         let (sender, receiver) = mpsc::sync_channel(8);
@@ -526,6 +532,11 @@ impl Engine {
 
     async fn execute_inner(&self, command: Command) -> Result<Payload, ApiError> {
         match command {
+            Command::GetNotoriousHuntRecord { instance_id } => self
+                .config
+                .weekly_hunt_observation(instance_id, Utc::now())
+                .map(Payload::NotoriousHuntRecord)
+                .map_err(config_error),
             Command::PreviewNotoriousHunt {
                 instance_id,
                 group_id,

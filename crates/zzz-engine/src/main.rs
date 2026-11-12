@@ -143,6 +143,11 @@ enum Action {
         #[arg(long)]
         rewards_left: Option<u8>,
     },
+    /// 读取当前游戏周的历史观察，不初始化 SDK 或推定免费余量。
+    NotoriousHuntRecord {
+        #[arg(long)]
+        instance_id: u32,
+    },
     /// 使用当前账号保存的战斗设置，Ctrl+C 请求停止与输入收尾。
     Combat {
         #[arg(long)]
@@ -1007,6 +1012,7 @@ async fn run() -> Result<()> {
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
                 | Action::NotoriousHuntPreview { .. }
+                | Action::NotoriousHuntRecord { .. }
                 | Action::ChargePlanPreview(_)
                 | Action::LostVoidPreview { .. }
                 | Action::LostVoidSceneBundleCheck { .. }
@@ -1077,6 +1083,12 @@ async fn run() -> Result<()> {
                 )?)?
             );
             return Ok(());
+        }
+        Action::NotoriousHuntRecord { instance_id } => {
+            return print(
+                od_core::config::ConfigStore::new(&paths.data)?
+                    .weekly_hunt_observation(instance_id, chrono::Utc::now())?,
+            );
         }
         Action::NotoriousHuntPreview {
             instance_id,

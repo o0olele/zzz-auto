@@ -58,16 +58,17 @@ pub struct WeeklyPreparationReceipt {
     pub level: String,
     pub teams: TeamsResult,
 }
-struct Resources {
+#[derive(Clone)]
+pub(crate) struct Resources {
     route: PathBuf,
-    hunt: PathBuf,
+    pub(crate) hunt: PathBuf,
     level: PathBuf,
-    daily: PathBuf,
+    pub(crate) daily: PathBuf,
     simulation: PathBuf,
     hashes: Vec<(PathBuf, Vec<u8>)>,
 }
 impl Resources {
-    fn load(root: &Path) -> Result<Self> {
+    pub(crate) fn load(root: &Path) -> Result<Self> {
         od_core::config::reject_links(root)?;
         let mut r = Self {
             route: maa_adapter::charge_transport::validate_charge_transport_bundle(
@@ -97,7 +98,7 @@ impl Resources {
         .collect::<Result<_>>()?;
         Ok(r)
     }
-    fn verify(&self) -> Result<()> {
+    pub(crate) fn verify(&self) -> Result<()> {
         for (p, h) in &self.hashes {
             od_core::config::reject_links(p)?;
             ensure!(
@@ -125,6 +126,25 @@ pub struct WeeklyHuntPreparationRun {
     steps: u32,
 }
 impl WeeklyHuntPreparationRun {
+    pub(crate) fn after_agent_transport(
+        id: Uuid,
+        request: WeeklyPreparationRequest,
+        root: &Path,
+        control: PipelineControl,
+        agent: &crate::agent_transport::AgentTransportRun,
+    ) -> Result<Self> {
+        let approach = WeeklyHuntApproachRun::after_agent_transport(
+            id,
+            request.entry_request(),
+            root,
+            control.clone(),
+            agent,
+        )?;
+        let mut run = Self::new(id, request, root, control)?;
+        run.snapshot.approach = approach.snapshot();
+        run.approach = approach;
+        Ok(run)
+    }
     pub fn new(
         id: Uuid,
         request: WeeklyPreparationRequest,
@@ -160,10 +180,13 @@ impl WeeklyHuntPreparationRun {
         self.snapshot.clone()
     }
     pub fn receipt(&self) -> Option<WeeklyPreparationReceipt> {
-        if self.end != Some(WeeklyPreparationEnd::Prepared)
-            || !self.snapshot.inputs_released
-            || self.control.requested().is_some()
-        {
+        if self.control.requested().is_some() {
+            return None;
+        }
+        self.receipt_for_parent()
+    }
+    pub(crate) fn receipt_for_parent(&self) -> Option<WeeklyPreparationReceipt> {
+        if self.end != Some(WeeklyPreparationEnd::Prepared) || !self.snapshot.inputs_released {
             return None;
         }
         Some(WeeklyPreparationReceipt {
@@ -182,7 +205,23 @@ impl WeeklyHuntPreparationRun {
     }
     pub fn resume(&mut self) -> Result<()> {
         ensure!(
-            self.end == Some(WeeklyPreparationEnd::Paused) && self.snapshot.inputs_released,
+            self.end == Some(WeeklyPreparationEnd::Paused),
+            "周常准备尚未暂停"
+        );
+        self.resume_after_parent_pause()
+    }
+    pub(crate) fn resume_after_parent_pause(&mut self) -> Result<()> {
+        ensure!(
+            matches!(
+                self.end,
+                Some(
+                    WeeklyPreparationEnd::Paused
+                        | WeeklyPreparationEnd::Prepared
+                        | WeeklyPreparationEnd::Exhausted
+                        | WeeklyPreparationEnd::AwaitingVerification
+                )
+            ) && self.snapshot.inputs_released
+                && self.control.requested() == Some(Interrupt::Pause),
             "周常准备尚未安全暂停"
         );
         use WeeklyPreparationPhase as P;

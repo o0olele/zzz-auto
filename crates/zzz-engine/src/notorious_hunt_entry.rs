@@ -92,6 +92,36 @@ pub struct WeeklyHuntApproachRun {
     steps: u32,
 }
 impl WeeklyHuntApproachRun {
+    pub(crate) fn after_agent_transport(
+        id: Uuid,
+        request: WeeklyEntryRequest,
+        root: &Path,
+        control: PipelineControl,
+        agent: &crate::agent_transport::AgentTransportRun,
+    ) -> Result<Self> {
+        let transport = TrainingTransportRun::from_agent_route(
+            TrainingTransportRequest {
+                plan: request.plan.clone(),
+                timeout_ms: request.timeout_ms,
+            },
+            agent,
+            control.clone(),
+        )?;
+        let entry = WeeklyEntryFlow::new(
+            request.clone(),
+            transport
+                .receipt_for_parent()
+                .context("周常培养尚无本次导航结果")?
+                .clone(),
+        )
+        .map_err(anyhow::Error::msg)?;
+        let mut run = Self::new(id, request, root, control)?;
+        run.snapshot.transport = transport.snapshot();
+        run.snapshot.entry = Some(entry);
+        run.transport = transport;
+        run.transport_started = true;
+        Ok(run)
+    }
     pub fn new(
         id: Uuid,
         request: WeeklyEntryRequest,

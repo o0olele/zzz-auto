@@ -9,9 +9,11 @@ use od_core::{
     deep_hunt::{
         DeepState, HuntEntryAction, HuntEntryFlow, HuntSettlementFlow, HuntView, WeeklyState,
     },
+    notorious_hunt_challenge::{WeeklySettlementFlow, WeeklySettlementView},
     notorious_hunt_preparation::{
         WeeklyPreparationAction, WeeklyPreparationFlow, WeeklyPreparationView,
     },
+    notorious_hunt_recovery::{WeeklyRecoveryAction, WeeklyRecoveryFlow, WeeklyRecoveryView},
     simulation_cards::CardsCharge,
     simulation_settlement::{SettlementAction, SettlementView},
 };
@@ -25,6 +27,7 @@ use std::{
 };
 struct Sight {
     free_detail: bool,
+    weekly_list: Option<Vec<String>>,
     weekly_levels: Option<WeeklyPreparationView>,
     goal: Option<od_core::agent_goal::AgentGoalStatus>,
     view: HuntView,
@@ -36,8 +39,53 @@ struct Sight {
     select: Option<[i32; 2]>,
     back: Option<[i32; 2]>,
     levels: BTreeMap<String, [i32; 2]>,
+    retreat: Option<[i32; 2]>,
+    exit: Option<[i32; 2]>,
 }
 impl Sight {
+    fn weekly_recovery(&self) -> WeeklyRecoveryView {
+        use WeeklyRecoveryView as V;
+        if self.view == HuntView::Failed {
+            return match (self.retreat, self.exit) {
+                (Some(_), None) => V::Retreat,
+                (None, Some(_)) => V::Exit,
+                _ => V::Blocked,
+            };
+        }
+        match self.weekly_settlement() {
+            WeeklySettlementView::Returned {
+                mission_type,
+                rewards,
+            } => V::Returned {
+                mission_type,
+                rewards,
+            },
+            WeeklySettlementView::Unknown => V::Unknown,
+            WeeklySettlementView::Blocked => V::Blocked,
+            _ => V::Other,
+        }
+    }
+    fn weekly_settlement(&self) -> WeeklySettlementView {
+        use WeeklySettlementView as V;
+        match &self.view {
+            HuntView::Unknown => V::Unknown,
+            HuntView::Settlement => V::Settlement,
+            HuntView::Reward => V::Reward,
+            HuntView::Failed => V::Failed,
+            HuntView::Deployment => V::Other,
+            _ => match self.weekly() {
+                od_core::notorious_hunt_entry::WeeklyEntryView::Detail {
+                    mission_type,
+                    rewards: Some(rewards),
+                    ..
+                } => V::Returned {
+                    mission_type,
+                    rewards,
+                },
+                _ => V::Blocked,
+            },
+        }
+    }
     fn weekly_preparation(&self) -> WeeklyPreparationView {
         use WeeklyPreparationView as V;
         if let Some(menu) = &self.weekly_levels {
@@ -65,6 +113,9 @@ impl Sight {
         use od_core::notorious_hunt_entry::WeeklyEntryView as V;
         match &self.view {
             HuntView::Unknown => V::Unknown,
+            HuntView::List { matches: 0 } if self.weekly_list.is_some() => V::SearchList {
+                visible: self.weekly_list.clone().unwrap_or_default(),
+            },
             HuntView::List { matches } => V::List { matches: *matches },
             HuntView::Detail {
                 mission_type,
@@ -205,6 +256,7 @@ impl NativeSession {
             let read = |n: &str| words(&r.read(&format!("Hunt.{n}"), None)?);
             let mut s = Sight {
                 free_detail: false,
+                weekly_list: None,
                 weekly_levels: None,
                 goal: None,
                 view: HuntView::Unknown,
@@ -216,6 +268,8 @@ impl NativeSession {
                 select: None,
                 back: None,
                 levels: BTreeMap::new(),
+                retreat: None,
+                exit: None,
             };
             let modal = read("Modal")?;
             if modal.iter().any(|w| w.text == "恢复电量") {
@@ -420,6 +474,19 @@ impl NativeSession {
                             && od_core::deep_hunt::same_mission(expected, &w.text)
                     })
                     .collect();
+                let visible: Vec<_> = names
+                    .iter()
+                    .filter(|w| w.inside([240, 216, 1752, 466]))
+                    .filter_map(|w| {
+                        od_core::charge_transport::canonical_name("恶名狩猎", &w.text)
+                            .map(str::to_owned)
+                    })
+                    .collect();
+                if candidates.is_empty()
+                    && od_core::notorious_hunt_search::direction(expected, &visible).is_some()
+                {
+                    s.weekly_list = Some(visible);
+                }
                 if candidates.len() == 1 {
                     let [x, y] = candidates[0].center();
                     if (240..1752).contains(&x) && (216..566).contains(&(y + 100)) {
@@ -437,15 +504,12 @@ impl NativeSession {
                 s.view = HuntView::Deployment;
                 return Ok(s);
             }
-            for (n, text, roi) in [
-                ("Retreat", "撤退", [526, 848, 746, 912]),
-                ("Rewind", "倒带", [874, 850, 1088, 914]),
-                ("Exit", "退出", [1566, 1004, 1832, 1056]),
-            ] {
-                if point(&read(n)?, text, roi).is_some() {
-                    s.view = HuntView::Failed;
-                    return Ok(s);
-                }
+            s.retreat = point(&read("Retreat")?, "撤退", [526, 848, 746, 912]);
+            s.exit = point(&read("Exit")?, "退出", [1566, 1004, 1832, 1056]);
+            let rewind = point(&read("Rewind")?, "倒带", [874, 850, 1088, 914]);
+            if s.retreat.is_some() || s.exit.is_some() || rewind.is_some() {
+                s.view = HuntView::Failed;
+                return Ok(s);
             }
             s.finish = point(&read("Finish")?, "完成", [1566, 1004, 1832, 1056]);
             // 上游单场收尾直接选“完成”，并不要求同时存在可重试按钮。
@@ -567,6 +631,9 @@ impl NativeSession {
     ) -> Result<HuntInputEnd> {
         use od_core::notorious_hunt_entry::WeeklyEntryAction as A;
         flow.validate().map_err(anyhow::Error::msg)?;
+        if let A::Drag(direction) = action {
+            return self.weekly_hunt_drag(flow, direction, cancel, timeout, game);
+        }
         self.deep_hunt_click(
             cancel,
             timeout,
@@ -577,10 +644,100 @@ impl NativeSession {
                     .then_some(match action {
                         A::Back => s.back,
                         A::Select => s.select,
+                        A::Drag(_) => unreachable!(),
                     })
                     .flatten()
             },
         )
+    }
+    fn weekly_hunt_drag(
+        &mut self,
+        flow: &od_core::notorious_hunt_entry::WeeklyEntryFlow,
+        direction: od_core::notorious_hunt_search::HuntDrag,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<HuntInputEnd> {
+        let started = Instant::now();
+        let result = (|| -> Result<_> {
+            self.require_deep_hunt()?;
+            self.check_ether_synthesis_target(game)?;
+            if cancel.load(Ordering::Acquire) {
+                return Ok(HuntInputEnd::NotPosted);
+            }
+            if started.elapsed() >= timeout {
+                return Ok(HuntInputEnd::TimedOut);
+            }
+            if game {
+                self.prepare_input_target(
+                    od_core::mail::MailConfig::recovery_inputs()[1],
+                    cancel,
+                    &mut None,
+                )?;
+            }
+            let Some(frame) = self.navigation_frame(cancel)? else {
+                return Ok(HuntInputEnd::NotPosted);
+            };
+            let sight = self.hunt_sight(
+                &frame.image,
+                &flow.request().plan.mission_type_name,
+                cancel,
+                timeout.saturating_sub(started.elapsed()),
+            )?;
+            if cancel.load(Ordering::Acquire) {
+                return Ok(HuntInputEnd::NotPosted);
+            }
+            if started.elapsed() >= timeout {
+                return Ok(HuntInputEnd::TimedOut);
+            }
+            let Some(sight) = sight else {
+                return Ok(HuntInputEnd::NotPosted);
+            };
+            if frame.age() > Duration::from_millis(1500)
+                || !flow.allows(
+                    od_core::notorious_hunt_entry::WeeklyEntryAction::Drag(direction),
+                    &sight.weekly(),
+                )
+            {
+                return Ok(HuntInputEnd::Changed);
+            }
+            let input = |x| od_core::InputProbeAction::MouseButton {
+                button: od_core::MouseButton::Left,
+                x,
+                y: 341,
+            };
+            if !self.combat_input(input(996), true, cancel)? {
+                return Ok(HuntInputEnd::NotPosted);
+            }
+            let held = Instant::now();
+            let mut x = 996;
+            while held.elapsed() < Duration::from_millis(500)
+                && !cancel.load(Ordering::Acquire)
+                && started.elapsed() < timeout
+            {
+                x = 996 + direction.delta() * held.elapsed().as_millis().min(500) as i32 / 500;
+                if !self.combat_input(input(x), true, cancel)? {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            if !cancel.load(Ordering::Acquire) && started.elapsed() < timeout {
+                x = 996 + direction.delta();
+                self.combat_input(input(x), true, cancel)?;
+            }
+            self.combat_input(input(x), false, &AtomicBool::new(false))?;
+            let settle = Instant::now();
+            while settle.elapsed() < Duration::from_millis(500)
+                && !cancel.load(Ordering::Acquire)
+                && started.elapsed() < timeout
+            {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            // 起点已经投递，部分拖动和取消也保留意图；只能从后续新列表继续，不能原样重发。
+            Ok(HuntInputEnd::Posted)
+        })();
+        let released = self.release_inputs();
+        result.and_then(|end| released.map(|_| end))
     }
     fn read_hunt_sight(
         &self,
@@ -629,6 +786,111 @@ impl NativeSession {
         Ok(self
             .read_hunt_sight(expected, cancel, timeout)?
             .map(|s| s.settlement(expected)))
+    }
+    pub fn read_weekly_hunt_settlement(
+        &self,
+        expected: &str,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<WeeklySettlementView>> {
+        Ok(self
+            .read_hunt_sight(expected, cancel, timeout)?
+            .map(|s| s.weekly_settlement()))
+    }
+    pub fn read_weekly_hunt_agent_settlement(
+        &self,
+        expected: &str,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<
+        Option<(
+            WeeklySettlementView,
+            Option<od_core::agent_goal::AgentGoalStatus>,
+        )>,
+    > {
+        self.require_agent_goal()?;
+        Ok(self
+            .read_hunt_sight(expected, cancel, timeout)?
+            .map(|s| (s.weekly_settlement(), s.goal)))
+    }
+    pub fn act_weekly_hunt_agent_finish(
+        &mut self,
+        flow: &WeeklySettlementFlow,
+        goal: od_core::agent_goal::AgentGoalStatus,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<HuntInputEnd> {
+        flow.validate().map_err(anyhow::Error::msg)?;
+        self.require_agent_goal()?;
+        self.deep_hunt_click(cancel, timeout, game, flow.mission_type(), |s| {
+            if s.goal != Some(goal)
+                || !flow.allows(SettlementAction::Finish, &s.weekly_settlement())
+            {
+                return None;
+            }
+            s.finish
+        })
+    }
+    pub fn act_weekly_hunt_settlement(
+        &mut self,
+        flow: &WeeklySettlementFlow,
+        a: SettlementAction,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<HuntInputEnd> {
+        flow.validate().map_err(anyhow::Error::msg)?;
+        self.deep_hunt_click(cancel, timeout, game, flow.mission_type(), |s| {
+            if !flow.allows(a, &s.weekly_settlement()) {
+                return None;
+            }
+            match a {
+                SettlementAction::Finish => s.finish,
+                SettlementAction::ConfirmReward => s.confirm,
+            }
+        })
+    }
+    pub(crate) fn inspect_weekly_hunt_recovery(
+        &self,
+        frame: &RecognitionImage,
+        expected: &str,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<WeeklyRecoveryView>> {
+        self.require_deep_hunt()?;
+        Ok(self
+            .hunt_sight(frame, expected, cancel, timeout)?
+            .map(|s| s.weekly_recovery()))
+    }
+    pub fn read_weekly_hunt_recovery(
+        &self,
+        expected: &str,
+        cancel: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Option<WeeklyRecoveryView>> {
+        Ok(self
+            .read_hunt_sight(expected, cancel, timeout)?
+            .map(|s| s.weekly_recovery()))
+    }
+    pub fn act_weekly_hunt_recovery(
+        &mut self,
+        flow: &WeeklyRecoveryFlow,
+        action: WeeklyRecoveryAction,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        game: bool,
+    ) -> Result<HuntInputEnd> {
+        flow.validate().map_err(anyhow::Error::msg)?;
+        self.deep_hunt_click(cancel, timeout, game, flow.mission_type(), |s| {
+            if !flow.allows(action, &s.weekly_recovery()) {
+                return None;
+            }
+            match action {
+                WeeklyRecoveryAction::Retreat => s.retreat,
+                WeeklyRecoveryAction::Exit => s.exit,
+            }
+        })
     }
     pub fn read_deep_hunt_agent_settlement(
         &self,

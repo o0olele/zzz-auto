@@ -268,11 +268,14 @@ impl ConfigStore {
     pub fn recover_charge_runs(&self) -> Result<ChargeRecovery, ConfigError> {
         let _lock = self.lock()?;
         self.read_for_startup()?;
+        self.recover_charge_locked(self.read_charge_schedules()?)
+    }
+    pub(super) fn read_charge_schedules(&self) -> Result<Vec<ChargeSchedule>, ConfigError> {
         let directory = self.charge_directory()?;
         let entries = match fs::read_dir(&directory) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(ChargeRecovery::default());
+                return Ok(Vec::new());
             }
             Err(e) => return Err(e.into()),
         };
@@ -312,9 +315,29 @@ impl ConfigStore {
                 s.request().context.run_id,
             )
         });
-        let mut result = ChargeRecovery::default();
-        let initial = self.read()?;
-        let eligible = schedules
+        Ok(schedules)
+    }
+    pub(super) fn charge_recovery_candidates(
+        initial: &AccountConfig,
+        schedules: &[ChargeSchedule],
+    ) -> Result<usize, ConfigError> {
+        for schedule in schedules {
+            let context = &schedule.request().context;
+            if let Some(receipt) = initial
+                .charge_commits
+                .iter()
+                .find(|r| r.context.run_id == context.run_id)
+                && (receipt.context != *context
+                    || schedule.records().len() < receipt.records as usize
+                    || schedule
+                        .prefix_fingerprint(receipt.records as usize)
+                        .map_err(invalid)?
+                        != receipt.prefix_sha256)
+            {
+                return Err(invalid("体力历史与已提交次数的证明不符"));
+            }
+        }
+        Ok(schedules
             .iter()
             .filter(|schedule| {
                 let context = &schedule.request().context;
@@ -331,8 +354,15 @@ impl ConfigStore {
                             .and_then(|s| s.progress())
                             .is_ok_and(|p| p.config != schedule.request().config))
             })
-            .count();
-        if eligible > 1 {
+            .count())
+    }
+    pub(super) fn recover_charge_locked(
+        &self,
+        schedules: Vec<ChargeSchedule>,
+    ) -> Result<ChargeRecovery, ConfigError> {
+        let mut result = ChargeRecovery::default();
+        let initial = self.read()?;
+        if Self::charge_recovery_candidates(&initial, &schedules)? > 1 {
             return Err(invalid(
                 "多个体力运行争用同一配置基线，请先核对历史，未自动选择结果",
             ));

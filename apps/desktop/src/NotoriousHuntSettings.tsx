@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Field, Input, Select } from '@fluentui/react-components';
 import { chargePlanCatalog, chargePlanLevels, notoriousHuntDefaults, notoriousHuntItem, teamDefaultConfig, type ChargePlanItem, type NotoriousHuntConfig, type NotoriousHuntGroupPreview, type TeamConfig } from './generated/protocol';
 import { errorMessage, request } from './bridge';
+import type { WeeklyHuntObservation } from './generated/protocol';
 
 const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const missions = chargePlanCatalog.find(c => c.category_name === '恶名狩猎')!.mission_type_list;
@@ -28,6 +29,21 @@ export function NotoriousHuntSettings({ settings = notoriousHuntDefaults, teams 
   const [selected, setSelected] = useState(settings.plan_list[0]?.plan_id ?? '');
   const [left, setLeft] = useState('');
   const [forecast, setForecast] = useState<NotoriousHuntGroupPreview | null>(null);
+  const [record, setRecord] = useState<WeeklyHuntObservation | null>(null);
+  const [recordBusy, setRecordBusy] = useState(false);
+  const [recordError, setRecordError] = useState('');
+  const recordGeneration = useRef(0);
+  useEffect(() => () => { recordGeneration.current++; }, []);
+  const readRecord = async () => {
+    const token = ++recordGeneration.current; setRecordBusy(true); setRecordError(''); setRecord(null);
+    try {
+      const result = await request({ type: 'get_notorious_hunt_record', params: { instance_id: instanceId } });
+      if (token !== recordGeneration.current) return;
+      if (result.type !== 'notorious_hunt_record' || result.data.instance_id !== instanceId) throw new Error('周记录来源已变化，请重新读取。');
+      setRecord(result.data);
+    } catch (e) { if (token === recordGeneration.current) setRecordError(errorMessage(e)); }
+    finally { if (token === recordGeneration.current) setRecordBusy(false); }
+  };
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
@@ -51,8 +67,13 @@ export function NotoriousHuntSettings({ settings = notoriousHuntDefaults, teams 
     finally { if (token === generation.current) setBusy(false); }
   };
   return <Card aria-label="应用组恶名狩猎设置">
-    <div className="card-title"><h2>恶名狩猎周常计划</h2><Badge appearance="outline">配置与只读估算</Badge></div>
-    <p>每周免费奖励计划，与消耗电量的深度追猎分别配置。本阶段只保存及估算，挑战和领奖仍在开发。</p>
+    <div className="card-title"><h2>恶名狩猎周常计划</h2><Badge appearance="outline">计划与周记录</Badge></div>
+    <p>每周免费奖励计划，与消耗电量的深度追猎分别配置。自动挑战入口与周奖励领取仍在开发。</p>
+    <Button disabled={recordBusy} onClick={() => void readRecord()}>{recordBusy ? '正在读取本周记录' : '读取本周记录'}</Button>
+    {recordError && <p role="alert">{recordError}</p>}
+    {record && <section aria-label="恶名狩猎本周记录"><p>游戏周从 {record.week.monday} 开始 · 已登记成功 {record.successful_runs} 次 · 最近读取的免费余量：{record.rewards_left ?? '未知'}。</p>
+      <p>{record.observed_game_day ? `观察游戏日 ${record.observed_game_day.date}。` : '本周暂无免费余量观察。'}实际挑战会重新确认余量。</p>
+    </section>}
     <Field label="恶名狩猎开始星期"><Select value={options.weekly_challenge_start_weekday} disabled={disabled} onChange={(_, d) => { invalidate(); setOptions(v => ({ ...v, weekly_challenge_start_weekday: Number(d.value) })); }}>{days.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}</Select></Field>
     <Checkbox label="恶名狩猎计划循环" checked={options.loop} disabled={disabled} onChange={(_, d) => { invalidate(); setOptions(v => ({ ...v, loop: d.checked === true })); }}/>
     <Field label="编辑恶名狩猎计划"><Select value={selected} disabled={disabled || !plans.length} onChange={(_, d) => setSelected(d.value)}>{!plans.length && <option value="">暂无计划</option>}{plans.map((p, i) => <option key={p.plan_id} value={p.plan_id}>{i + 1} · {p.mission_type_name}</option>)}</Select></Field>

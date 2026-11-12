@@ -863,6 +863,7 @@ fn plan(files: &[SourceFile]) -> Result<ImportPreview> {
     let preview_id = hex::encode(hash.finalize());
     let config = AccountConfig {
         charge_commits: Vec::new(),
+        weekly_hunt_commits: Vec::new(),
         redemption,
         reserved_instance_ids: Vec::new(),
         schema: CONFIG_SCHEMA,

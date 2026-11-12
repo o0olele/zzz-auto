@@ -161,6 +161,24 @@ pub enum CombatSegmentEnd {
     Interrupted(Interrupt),
 }
 
+/// 区分本场战斗时限、父任务总预算及完成后交接超时，供父流程决定是否还能收尾。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CombatTimeout {
+    BattleLimit,
+    ParentBudget,
+    HandoffBudget,
+}
+impl std::fmt::Display for CombatTimeout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::BattleLimit => "战斗运行达到超时上限",
+            Self::ParentBudget => "应用总运行预算已耗尽",
+            Self::HandoffBudget => "战斗交接保存期间总运行预算已耗尽",
+        })
+    }
+}
+impl std::error::Error for CombatTimeout {}
+
 /// 每次新截图在状态识别和动作调度前决定；等待不能沿用旧输入或状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CombatFrameGate {
@@ -207,6 +225,7 @@ pub struct CombatRun {
     parented: bool,
     end_tracker: BattleEndTracker,
     parent_deadline: Option<Instant>,
+    deadline_kind: CombatTimeout,
     patrol_ui_timeout: Option<u16>,
     performance: Option<crate::combat_performance::PerformanceLog>,
 }
@@ -227,6 +246,7 @@ impl CombatRun {
             parented: false,
             end_tracker: BattleEndTracker::default(),
             parent_deadline: None,
+            deadline_kind: CombatTimeout::ParentBudget,
             patrol_ui_timeout: None,
             performance: None,
         })
@@ -520,11 +540,31 @@ impl CombatRun {
         self.parent_deadline = None;
         result
     }
-    fn segment_deadline(&self, budget: Duration) -> Instant {
+    fn segment_deadline(&mut self, budget: Duration) -> Instant {
         let config_remaining = Duration::from_secs_f64(
             (f64::from(self.progress.config.timeout_ms) / 1000.0 - self.elapsed).max(0.0),
         );
+        self.deadline_kind = if config_remaining < budget {
+            CombatTimeout::BattleLimit
+        } else {
+            CombatTimeout::ParentBudget
+        };
         Instant::now() + budget.min(config_remaining)
+    }
+    fn check_deadline(&self) -> Result<()> {
+        if self
+            .parent_deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            return Err(self.deadline_kind.into());
+        }
+        Ok(())
+    }
+    fn check_battle_limit(&self, elapsed: f64) -> Result<()> {
+        if elapsed * 1000.0 >= f64::from(self.progress.config.timeout_ms) {
+            return Err(CombatTimeout::BattleLimit.into());
+        }
+        Ok(())
     }
     fn execute_segment_guarded(
         &mut self,
@@ -570,11 +610,21 @@ impl CombatRun {
         self.sequence = None;
         let result = result.and_then(|result| released.map(|_| result));
         let mut end = match result {
-            Err(error) => {
+            Err(mut error) => {
+                if self.control.requested().is_none()
+                    && error
+                        .downcast_ref::<maa_adapter::RawRecognitionCancelled>()
+                        .is_some()
+                    && let Err(timeout) = self.check_deadline()
+                {
+                    error = timeout;
+                }
                 self.progress.state = RunState::Failed;
                 self.message = format!("应用内战斗失败：{error:#}");
-                // 错误不能被一次失败的状态发布吞掉，外层仍负责持久化并收尾。
-                let _ = publish(self.progress.clone());
+                // 保存失败保留两个错误，但不能再向父任务提供可继续收尾的超时类型。
+                if let Err(save_error) = publish(self.progress.clone()) {
+                    anyhow::bail!("战斗失败：{error:#}；状态保存失败：{save_error:#}");
+                }
                 return Err(error);
             }
             Ok(result) => match self.control.requested() {
@@ -630,7 +680,7 @@ impl CombatRun {
         {
             self.progress.state = RunState::Failed;
             self.message = "战斗交接保存期间总运行预算已耗尽".into();
-            anyhow::bail!("战斗交接保存期间总运行预算已耗尽");
+            return Err(CombatTimeout::HandoffBudget.into());
         }
         Ok(end)
     }
@@ -869,11 +919,7 @@ impl CombatRun {
             if self.control.requested().is_some() {
                 return Ok(None);
             }
-            ensure!(
-                self.parent_deadline
-                    .is_none_or(|deadline| Instant::now() < deadline),
-                "应用总运行预算已耗尽"
-            );
+            self.check_deadline()?;
             let mut now = self.elapsed + started.elapsed().as_secs_f64();
             input_release.poll(native)?;
             if let Some(input) = &mut pending_input
@@ -888,10 +934,7 @@ impl CombatRun {
                 }
                 pending_input = None;
             }
-            ensure!(
-                now * 1000.0 < self.progress.config.timeout_ms as f64,
-                "战斗运行达到超时上限"
-            );
+            self.check_battle_limit(now)?;
             // 已排入的定时松键优先于可能阻塞的截图和识别。
             let release_due = matches!(queue.front(), Some(Step::Delay(_)))
                 && matches!(
@@ -1010,15 +1053,8 @@ impl CombatRun {
                 if self.control.requested().is_some() {
                     return Ok(None);
                 }
-                ensure!(
-                    self.parent_deadline
-                        .is_none_or(|deadline| Instant::now() < deadline),
-                    "应用总运行预算已耗尽"
-                );
-                ensure!(
-                    now * 1000.0 < self.progress.config.timeout_ms as f64,
-                    "战斗运行达到超时上限"
-                );
+                self.check_deadline()?;
+                self.check_battle_limit(now)?;
             }
             if completed.is_some() || (!asynchronous && now >= next_frame && !release_due) {
                 let recognition_started = Instant::now();
@@ -1035,16 +1071,8 @@ impl CombatRun {
                 if self.control.requested().is_some() {
                     return Ok(None);
                 }
-                ensure!(
-                    self.parent_deadline
-                        .is_none_or(|deadline| Instant::now() < deadline),
-                    "应用总运行预算已耗尽"
-                );
-                ensure!(
-                    (self.elapsed + started.elapsed().as_secs_f64()) * 1000.0
-                        < f64::from(self.progress.config.timeout_ms),
-                    "战斗运行达到超时上限"
-                );
+                self.check_deadline()?;
+                self.check_battle_limit(self.elapsed + started.elapsed().as_secs_f64())?;
                 let remaining = self
                     .parent_deadline
                     .map(|deadline| deadline.saturating_duration_since(Instant::now()))
@@ -1055,16 +1083,8 @@ impl CombatRun {
                 if self.control.requested().is_some() {
                     return Ok(None);
                 }
-                ensure!(
-                    self.parent_deadline
-                        .is_none_or(|deadline| Instant::now() < deadline),
-                    "应用总运行预算已耗尽"
-                );
-                ensure!(
-                    (self.elapsed + started.elapsed().as_secs_f64()) * 1000.0
-                        < f64::from(self.progress.config.timeout_ms),
-                    "战斗运行达到超时上限"
-                );
+                self.check_deadline()?;
+                self.check_battle_limit(self.elapsed + started.elapsed().as_secs_f64())?;
                 if gate != CombatFrameGate::Proceed {
                     native.release_inputs()?;
                     ledger.clear();
@@ -1146,11 +1166,7 @@ impl CombatRun {
                 if self.control.requested().is_some() {
                     return Ok(None);
                 }
-                ensure!(
-                    self.parent_deadline
-                        .is_none_or(|deadline| Instant::now() < deadline),
-                    "应用总运行预算已耗尽"
-                );
+                self.check_deadline()?;
                 let has_chain = fresh.states.iter().any(|state| {
                     !state.clear
                         && (state.name == "连携技-准备"
@@ -1185,16 +1201,8 @@ impl CombatRun {
                     return Ok(None);
                 }
                 if check_end {
-                    ensure!(
-                        self.parent_deadline
-                            .is_none_or(|deadline| Instant::now() < deadline),
-                        "应用总运行预算已耗尽"
-                    );
-                    ensure!(
-                        (self.elapsed + started.elapsed().as_secs_f64()) * 1000.0
-                            < f64::from(self.progress.config.timeout_ms),
-                        "战斗运行达到超时上限"
-                    );
+                    self.check_deadline()?;
+                    self.check_battle_limit(self.elapsed + started.elapsed().as_secs_f64())?;
                 }
                 self.progress.frame_age_ms = frame.age_ms();
                 if check_end

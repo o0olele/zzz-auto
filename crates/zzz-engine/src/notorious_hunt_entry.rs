@@ -92,6 +92,36 @@ pub struct WeeklyHuntApproachRun {
     steps: u32,
 }
 impl WeeklyHuntApproachRun {
+    pub(crate) fn after_agent_transport(
+        id: Uuid,
+        request: WeeklyEntryRequest,
+        root: &Path,
+        control: PipelineControl,
+        agent: &crate::agent_transport::AgentTransportRun,
+    ) -> Result<Self> {
+        let transport = TrainingTransportRun::from_agent_route(
+            TrainingTransportRequest {
+                plan: request.plan.clone(),
+                timeout_ms: request.timeout_ms,
+            },
+            agent,
+            control.clone(),
+        )?;
+        let entry = WeeklyEntryFlow::new(
+            request.clone(),
+            transport
+                .receipt_for_parent()
+                .context("周常培养尚无本次导航结果")?
+                .clone(),
+        )
+        .map_err(anyhow::Error::msg)?;
+        let mut run = Self::new(id, request, root, control)?;
+        run.snapshot.transport = transport.snapshot();
+        run.snapshot.entry = Some(entry);
+        run.transport = transport;
+        run.transport_started = true;
+        Ok(run)
+    }
     pub fn new(
         id: Uuid,
         request: WeeklyEntryRequest,
@@ -128,11 +158,16 @@ impl WeeklyHuntApproachRun {
         self.snapshot.clone()
     }
     pub fn receipt(&self) -> Option<WeeklyApproachReceipt> {
+        if self.control.requested().is_some() {
+            return None;
+        }
+        self.receipt_for_parent()
+    }
+    pub(crate) fn receipt_for_parent(&self) -> Option<WeeklyApproachReceipt> {
         if !matches!(
             self.end,
             Some(WeeklyApproachEnd::Observed | WeeklyApproachEnd::Exhausted)
         ) || !self.snapshot.inputs_released
-            || self.control.requested().is_some()
         {
             return None;
         }
@@ -152,6 +187,21 @@ impl WeeklyHuntApproachRun {
         ensure!(
             self.end == Some(WeeklyApproachEnd::Paused) && self.snapshot.inputs_released,
             "周常入口尚未安全暂停"
+        );
+        self.resume_after_parent_pause()
+    }
+    pub(crate) fn resume_after_parent_pause(&mut self) -> Result<()> {
+        ensure!(
+            matches!(
+                self.end,
+                Some(
+                    WeeklyApproachEnd::Paused
+                        | WeeklyApproachEnd::Observed
+                        | WeeklyApproachEnd::Exhausted
+                        | WeeklyApproachEnd::AwaitingVerification
+                )
+            ) && self.snapshot.inputs_released,
+            "周常入口尚未安全交回"
         );
         if let Some(flow) = &mut self.snapshot.entry {
             flow.resume().map_err(anyhow::Error::msg)?;

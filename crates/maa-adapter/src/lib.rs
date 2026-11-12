@@ -666,6 +666,7 @@ impl Drop for NativeSession {
 
 pub mod charge_level;
 pub mod deep_hunt;
+pub mod notorious_hunt_timeout;
 pub mod suibian_adventure;
 pub mod suibian_boo_box;
 pub mod suibian_craft;

@@ -44,6 +44,7 @@ impl NativeSession {
         recognizer: &CombatRecognizer,
         cancel: &AtomicBool,
         timeout: Duration,
+        accepts_interaction: bool,
     ) -> Result<(V, Option<[i32; 2]>)> {
         let started = Instant::now();
         let r = Reader {
@@ -105,8 +106,26 @@ impl NativeSession {
                 0.7,
             )?
             .is_some();
+        let interaction = accepts_interaction
+            && !attack
+            && recognizer
+                .matched(
+                    self,
+                    frame,
+                    "battle/btn_interact",
+                    recognizer.area("按键-交互")?,
+                    0.7,
+                )?
+                .is_some();
         ensure!(started.elapsed() < timeout, "出战识别超时");
-        Ok((if attack { V::Battle } else { V::Unknown }, None))
+        Ok((
+            if attack || interaction {
+                V::Battle
+            } else {
+                V::Unknown
+            },
+            None,
+        ))
     }
     pub fn inspect_simulation_deploy(
         &self,
@@ -117,7 +136,7 @@ impl NativeSession {
     ) -> Result<V> {
         self.require_simulation_deploy()?;
         Ok(self
-            .simulation_deploy_sight(frame, recognizer, cancel, timeout)?
+            .simulation_deploy_sight(frame, recognizer, cancel, timeout, false)?
             .0)
     }
     pub fn read_simulation_deploy(
@@ -125,6 +144,15 @@ impl NativeSession {
         recognizer: &CombatRecognizer,
         cancel: &AtomicBool,
         timeout: Duration,
+    ) -> Result<Option<V>> {
+        self.read_deployment_entry(recognizer, cancel, timeout, false)
+    }
+    pub fn read_deployment_entry(
+        &self,
+        recognizer: &CombatRecognizer,
+        cancel: &AtomicBool,
+        timeout: Duration,
+        accepts_interaction: bool,
     ) -> Result<Option<V>> {
         let started = Instant::now();
         self.require_simulation_deploy()?;
@@ -139,6 +167,7 @@ impl NativeSession {
             recognizer,
             cancel,
             timeout.saturating_sub(started.elapsed()),
+            accepts_interaction,
         );
         if cancel.load(Ordering::Acquire) || started.elapsed() >= timeout || frame.age_ms() > 1500 {
             return Ok(None);
@@ -184,6 +213,7 @@ impl NativeSession {
                 recognizer,
                 cancel,
                 timeout.saturating_sub(started.elapsed()),
+                flow.request().accepts_interaction_entry(),
             );
             if cancel.load(Ordering::Acquire) {
                 return Ok(DeployInputEnd::NotPosted);

@@ -22,6 +22,9 @@ pub trait DeploymentContext: std::fmt::Debug + Clone + PartialEq {
     fn requires_forward(&self) -> bool {
         true
     }
+    fn accepts_interaction_entry(&self) -> bool {
+        false
+    }
 }
 impl DeploymentContext for DeployRequest {
     fn validate(&self) -> Result<(), &'static str> {
@@ -147,6 +150,7 @@ impl<R: DeploymentContext> DeployFlow<R> {
         self.request.validate()?;
         if (self.confirm.is_some() && self.deploy.is_none())
             || (self.forward.is_some() && self.deploy.is_none())
+            || (self.entered && self.deploy.is_none())
             || (self.entered && self.request.requires_forward() && self.forward.is_none())
         {
             return Err("模拟室出战检查点缺少投递或战斗进入证明");

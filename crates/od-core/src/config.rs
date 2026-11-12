@@ -15,6 +15,33 @@ mod charge_history;
 pub use backups::{ConfigBackup, ConfigBackupPreview, ConfigBackups};
 pub(crate) use charge_history::read_checkpoint as read_charge_checkpoint;
 pub use charge_history::{ChargeCommit, ChargeCommitResult, ChargeRecovery};
+#[path = "notorious_hunt_history.rs"]
+mod notorious_hunt_history;
+pub use notorious_hunt_history::{
+    WeeklyCommit, WeeklyCommitResult, WeeklyHuntObservation, WeeklyRecovery,
+};
+
+impl ConfigStore {
+    /// 同一账号文件下的消费日志必须一起预检，不能由应用恢复顺序选中冲突分支。
+    pub fn recover_application_runs(
+        &self,
+    ) -> Result<(ChargeRecovery, WeeklyRecovery), ConfigError> {
+        let _lock = self.lock()?;
+        let config = self.read_for_startup()?;
+        let charge = self.read_charge_schedules()?;
+        let weekly = self.read_weekly_hunt_schedules()?;
+        if Self::charge_recovery_candidates(&config, &charge)?
+            + Self::weekly_hunt_recovery_candidates(&config, &weekly)?
+            > 1
+        {
+            return Err(invalid("多个应用运行争用同一配置基线，未自动选择结果"));
+        }
+        Ok((
+            self.recover_charge_locked(charge)?,
+            self.recover_weekly_hunt_locked(weekly)?,
+        ))
+    }
+}
 #[path = "config_recovery.rs"]
 mod recovery;
 pub use recovery::{
@@ -159,6 +186,9 @@ pub struct AccountInstance {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AccountConfig {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<WeeklyCommit>>", optional)]
+    pub weekly_hunt_commits: Vec<WeeklyCommit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(as = "Option<Vec<ChargeCommit>>", optional)]
     pub charge_commits: Vec<ChargeCommit>,
@@ -369,6 +399,7 @@ impl Default for AccountConfig {
     fn default() -> Self {
         Self {
             charge_commits: Vec::new(),
+            weekly_hunt_commits: Vec::new(),
             schema: CONFIG_SCHEMA,
             redemption: Default::default(),
             revision: 0,
@@ -398,6 +429,7 @@ impl AccountConfig {
             return Err(invalid("账号配置版本不支持"));
         }
         charge_history::validate_commits(&self.charge_commits, self.revision)?;
+        notorious_hunt_history::validate_commits(&self.weekly_hunt_commits, self.revision)?;
         self.general.validate()?;
         self.redemption.validate().map_err(invalid)?;
         for instance in &self.instances {

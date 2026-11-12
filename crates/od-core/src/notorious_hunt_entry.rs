@@ -3,6 +3,7 @@ use crate::{
     charge_plan::ChargePlanItem,
     charge_transport::{TrainingArrival, TrainingTransportReceipt, TrainingTransportRequest},
     deep_hunt::same_mission,
+    notorious_hunt_search::{HuntDrag, WeeklyListSearch},
 };
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +35,9 @@ pub enum WeeklyEntryView {
     List {
         matches: u8,
     },
+    SearchList {
+        visible: Vec<String>,
+    },
     Detail {
         mission_type: String,
         back: bool,
@@ -45,12 +49,14 @@ pub enum WeeklyEntryView {
 pub enum WeeklyEntryAction {
     Back,
     Select,
+    Drag(HuntDrag),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WeeklyEntryStage {
     Inspect,
     AwaitList,
+    AwaitSearch,
     AwaitDetail,
     Observed,
     AwaitingVerification,
@@ -71,6 +77,8 @@ pub struct WeeklyEntryFlow {
     candidate: Option<u8>,
     stable: u8,
     unknown: u8,
+    #[serde(default)]
+    search: WeeklyListSearch,
 }
 impl WeeklyEntryFlow {
     pub fn new(
@@ -86,6 +94,7 @@ impl WeeklyEntryFlow {
             candidate: None,
             stable: 0,
             unknown: 0,
+            search: WeeklyListSearch::default(),
         };
         flow.validate()?;
         Ok(flow)
@@ -104,6 +113,7 @@ impl WeeklyEntryFlow {
     pub fn validate(&self) -> Result<(), &'static str> {
         use WeeklyEntryStage as S;
         self.request.validate()?;
+        self.search.validate(&self.request.plan.mission_type_name)?;
         if self.route.category_name != "恶名狩猎"
             || self.route.selection_verified
             || !same_mission(
@@ -121,6 +131,7 @@ impl WeeklyEntryFlow {
             || self.stable > 0 && self.candidate.is_none()
             || self.stage == S::AwaitList && self.back.is_none()
             || self.stage == S::AwaitDetail && self.select.is_none()
+            || self.stage == S::AwaitSearch && !self.search.pending()
             || self.stage == S::Observed && (self.stable != 2 || self.candidate.is_none())
         {
             return Err("周常入口的目标、路径、意图或连续余量证明无效");
@@ -128,6 +139,7 @@ impl WeeklyEntryFlow {
         Ok(())
     }
     fn uncertain(&mut self) {
+        self.search.uncertain();
         self.candidate = None;
         self.stable = 0;
         self.unknown = (self.unknown + 1).min(3);
@@ -145,7 +157,29 @@ impl WeeklyEntryFlow {
             return Ok(None);
         }
         match view {
+            WeeklyEntryView::SearchList { visible }
+                if matches!(self.stage, S::Inspect | S::AwaitList | S::AwaitSearch)
+                    && self.select.is_none() =>
+            {
+                self.candidate = None;
+                self.stable = 0;
+                self.unknown = 0;
+                let direction = self
+                    .search
+                    .observe(&self.request.plan.mission_type_name, visible)?;
+                if !self.search.pending() && self.stage == S::AwaitSearch {
+                    self.stage = S::Inspect;
+                }
+                if self.search.exhausted() {
+                    self.stage = S::AwaitingVerification;
+                }
+                return Ok(direction.map(WeeklyEntryAction::Drag));
+            }
             WeeklyEntryView::List { matches: 1 } if self.stage != S::AwaitDetail => {
+                self.search.target_seen();
+                if self.stage == S::AwaitSearch {
+                    self.stage = S::Inspect;
+                }
                 self.candidate = None;
                 self.stable = 0;
                 self.unknown = 0;
@@ -175,7 +209,11 @@ impl WeeklyEntryFlow {
             } if same_mission(&self.request.plan.mission_type_name, mission_type)
                 && self.stage != S::AwaitList =>
             {
+                self.search.target_seen();
                 self.unknown = 0;
+                if self.stage == S::AwaitSearch {
+                    self.stage = S::Inspect;
+                }
                 if self.candidate == Some(*n) {
                     self.stable = (self.stable + 1).min(2);
                 } else {
@@ -194,7 +232,21 @@ impl WeeklyEntryFlow {
     }
     pub fn prepare(&mut self, action: WeeklyEntryAction) -> Result<(), &'static str> {
         self.validate()?;
+        if let WeeklyEntryAction::Drag(direction) = action {
+            if !matches!(
+                self.stage,
+                WeeklyEntryStage::Inspect | WeeklyEntryStage::AwaitList
+            ) || self.select.is_some()
+            {
+                return Err("周常列表不在可查找阶段");
+            }
+            self.search
+                .prepare(&self.request.plan.mission_type_name, direction)?;
+            self.stage = WeeklyEntryStage::AwaitSearch;
+            return Ok(());
+        }
         let allowed = match action {
+            WeeklyEntryAction::Drag(_) => unreachable!(),
             WeeklyEntryAction::Back => {
                 self.stage == WeeklyEntryStage::Inspect
                     && self.back.is_none()
@@ -211,6 +263,7 @@ impl WeeklyEntryFlow {
             return Err("周常入口不能重复或越阶段保存输入意图");
         }
         match action {
+            WeeklyEntryAction::Drag(_) => unreachable!(),
             WeeklyEntryAction::Back => {
                 self.back = Some(Delivery::Intent);
                 self.stage = WeeklyEntryStage::AwaitList;
@@ -230,6 +283,12 @@ impl WeeklyEntryFlow {
             return false;
         }
         match (action, view) {
+            (WeeklyEntryAction::Drag(direction), WeeklyEntryView::SearchList { visible }) => {
+                self.stage == WeeklyEntryStage::AwaitSearch
+                    && self
+                        .search
+                        .allows(&self.request.plan.mission_type_name, direction, visible)
+            }
             (
                 WeeklyEntryAction::Back,
                 WeeklyEntryView::Detail {
@@ -251,6 +310,7 @@ impl WeeklyEntryFlow {
     }
     pub fn posted(&mut self, action: WeeklyEntryAction) -> Result<(), &'static str> {
         let receipt = match action {
+            WeeklyEntryAction::Drag(direction) => return self.search.posted(direction),
             WeeklyEntryAction::Back => &mut self.back,
             WeeklyEntryAction::Select => &mut self.select,
         };
@@ -261,7 +321,17 @@ impl WeeklyEntryFlow {
         Ok(())
     }
     pub fn not_posted(&mut self, action: WeeklyEntryAction) -> Result<(), &'static str> {
+        if let WeeklyEntryAction::Drag(direction) = action {
+            self.search.not_posted(direction)?;
+            self.stage = if self.back.is_some() {
+                WeeklyEntryStage::AwaitList
+            } else {
+                WeeklyEntryStage::Inspect
+            };
+            return Ok(());
+        }
         let receipt = match action {
+            WeeklyEntryAction::Drag(_) => unreachable!(),
             WeeklyEntryAction::Back => &mut self.back,
             WeeklyEntryAction::Select => &mut self.select,
         };
@@ -280,6 +350,7 @@ impl WeeklyEntryFlow {
     }
     pub fn resume(&mut self) -> Result<(), &'static str> {
         self.validate()?;
+        self.search.reset_observation();
         self.candidate = None;
         self.stable = 0;
         self.unknown = 0;

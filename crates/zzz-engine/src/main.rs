@@ -143,6 +143,11 @@ enum Action {
         #[arg(long)]
         rewards_left: Option<u8>,
     },
+    /// 读取当前游戏周的历史观察，不初始化 SDK 或推定免费余量。
+    NotoriousHuntRecord {
+        #[arg(long)]
+        instance_id: u32,
+    },
     /// 使用当前账号保存的战斗设置，Ctrl+C 请求停止与输入收尾。
     Combat {
         #[arg(long)]
@@ -577,6 +582,8 @@ enum ResourceDiagnostics {
     DeepHuntInspect(HuntInspectArgs),
     /// 固定图只读检查周常免费奖励余量，不授权出战。
     WeeklyHuntInspect(HuntInspectArgs),
+    /// 固定图核对免费模式、等级菜单与出战页，不发送输入。
+    WeeklyHuntPreparationInspect(WeeklyPreparationInspectArgs),
     /// 校验专业挑战资源，不加载 SDK。
     ExpertChallengeBundleCheck(ExpertBundleArgs),
     /// 固定图只读识别专业挑战与燃竭状态，不证明消费成功。
@@ -767,6 +774,13 @@ struct HuntInspectArgs {
     mission_type: String,
     #[arg(long)]
     image: PathBuf,
+}
+#[derive(clap::Args)]
+struct WeeklyPreparationInspectArgs {
+    #[command(flatten)]
+    hunt: HuntInspectArgs,
+    #[arg(long, default_value = "resources/generated/charge-level")]
+    level_bundle: PathBuf,
 }
 #[derive(clap::Args)]
 struct ExpertInspectArgs {
@@ -998,6 +1012,7 @@ async fn run() -> Result<()> {
                 | Action::CoffeeRunBundleCheck { .. }
                 | Action::CoffeeRunInspect { .. }
                 | Action::NotoriousHuntPreview { .. }
+                | Action::NotoriousHuntRecord { .. }
                 | Action::ChargePlanPreview(_)
                 | Action::LostVoidPreview { .. }
                 | Action::LostVoidSceneBundleCheck { .. }
@@ -1026,6 +1041,9 @@ async fn run() -> Result<()> {
                 | Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntBundleCheck(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntInspect(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::WeeklyHuntInspect(..))
+                | Action::ResourceDiagnostics(ResourceDiagnostics::WeeklyHuntPreparationInspect(
+                    ..
+                ))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::ExpertChallengeInspect(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::AreaPatrolInspect(..))
                 | Action::ResourceDiagnostics(ResourceDiagnostics::ChargeTransportInspect(..))
@@ -1065,6 +1083,12 @@ async fn run() -> Result<()> {
                 )?)?
             );
             return Ok(());
+        }
+        Action::NotoriousHuntRecord { instance_id } => {
+            return print(
+                od_core::config::ConfigStore::new(&paths.data)?
+                    .weekly_hunt_observation(instance_id, chrono::Utc::now())?,
+            );
         }
         Action::NotoriousHuntPreview {
             instance_id,
@@ -1707,6 +1731,17 @@ async fn run() -> Result<()> {
             );
             maa_adapter::deep_hunt::validate_deep_hunt_bundle(&args.bundle)?;
         }
+        Action::ResourceDiagnostics(ResourceDiagnostics::WeeklyHuntPreparationInspect(
+            ref args,
+        )) => {
+            anyhow::ensure!(
+                od_core::charge_transport::canonical_name("恶名狩猎", &args.hunt.mission_type)
+                    .is_some(),
+                "未知的恶名狩猎目标"
+            );
+            maa_adapter::deep_hunt::validate_deep_hunt_bundle(&args.hunt.bundle)?;
+            maa_adapter::charge_level::validate_charge_level_bundle(&args.level_bundle)?;
+        }
         Action::ResourceDiagnostics(ResourceDiagnostics::ExpertChallengeBundleCheck(
             ExpertBundleArgs { ref bundle },
         )) => {
@@ -2228,6 +2263,23 @@ async fn run() -> Result<()> {
             )?;
             print(
                 serde_json::json!({"accepted":false,"input_sent":false,"completion_verified":false,"observation":observation}),
+            )
+        }
+        Action::ResourceDiagnostics(ResourceDiagnostics::WeeklyHuntPreparationInspect(args)) => {
+            let mut native = NativeSession::for_fixture(
+                &args.hunt.image,
+                &args.hunt.bundle,
+                InferenceDevice::Cpu,
+            )?;
+            native.load_charge_level_bundle(&args.level_bundle)?;
+            let observation = native.inspect_weekly_hunt_preparation(
+                &maa_adapter::RecognitionImage::load(&args.hunt.image)?,
+                &args.hunt.mission_type,
+                &AtomicBool::new(false),
+                Duration::from_secs(30),
+            )?;
+            print(
+                serde_json::json!({"accepted":false,"input_sent":false,"selection_verified":false,"completion_verified":false,"observation":observation}),
             )
         }
         Action::ResourceDiagnostics(ResourceDiagnostics::DeepHuntInspect(args)) => {

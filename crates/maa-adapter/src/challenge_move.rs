@@ -23,6 +23,15 @@ pub enum MoveEnd {
     TimedOut,
 }
 
+#[derive(Debug)]
+struct MoveRecognitionTimeout;
+impl std::fmt::Display for MoveRecognitionTimeout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("战前画面识别超时")
+    }
+}
+impl std::error::Error for MoveRecognitionTimeout {}
+
 #[derive(Debug, Clone, Copy)]
 pub struct MoveOptions {
     pub game: bool,
@@ -61,7 +70,9 @@ impl NativeSession {
             if cancel.load(Ordering::Acquire) {
                 return Ok(false);
             }
-            ensure!(started.elapsed() < timeout, "战前画面识别超时");
+            if started.elapsed() >= timeout {
+                return Err(MoveRecognitionTimeout.into());
+            }
             Ok(true)
         };
         if !ready()? {
@@ -383,6 +394,16 @@ impl NativeSession {
                 }
             }
         })();
+        let result = match result {
+            Err(error)
+                if error.downcast_ref::<MoveRecognitionTimeout>().is_some()
+                    && !cancel.load(Ordering::Acquire)
+                    && started.elapsed() >= timeout =>
+            {
+                Ok(MoveEnd::TimedOut)
+            }
+            other => other,
+        };
         let released = self.release_inputs();
         result.and_then(|end| released.map(|_| end))
     }
